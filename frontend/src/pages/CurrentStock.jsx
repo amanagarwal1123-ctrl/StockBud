@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { formatIndianCurrency } from '@/utils/formatCurrency';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -204,7 +205,7 @@ export default function CurrentStock() {
                         <TableCell className="text-right font-mono font-semibold text-primary">{(item.net_wt / 1000).toFixed(3)}</TableCell>
                         <TableCell className="text-right font-mono text-muted-foreground">{(item.gr_wt / 1000).toFixed(3)}</TableCell>
                         <TableCell className="text-right font-mono">{(item.fine / 1000).toFixed(3)}</TableCell>
-                        <TableCell className="text-right font-mono">₹{(item.labor || 0).toLocaleString()}</TableCell>
+                        <TableCell className="text-right font-mono">{formatIndianCurrency(item.labor || 0)}</TableCell>
                       </TableRow>
                     ))}
                     
@@ -224,7 +225,7 @@ export default function CurrentStock() {
                           {(filteredTotals.fine / 1000).toFixed(3)} kg
                         </TableCell>
                         <TableCell className="text-right font-mono font-bold text-green-600">
-                          ₹{filteredTotals.labor.toLocaleString()}
+                          {formatIndianCurrency(filteredTotals.labor)}
                         </TableCell>
                       </TableRow>
                     )}
