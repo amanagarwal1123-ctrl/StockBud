@@ -585,28 +585,6 @@ async def calculate_profit(
         "least_profitable_items": item_profits[-20:] if len(item_profits) > 20 else [],
         "total_items_analyzed": len(item_profits)
     }
-        })
-    
-    # Sort by profit
-    item_profits.sort(key=lambda x: x['total_profit'], reverse=True)
-    
-    total_profit = total_tunch_profit + total_labor_profit
-    
-    # Calculate total sales/purchases value
-    total_sales_value = sum(t['total_amount'] for t in transactions if t['type'] == 'sale')
-    total_purchase_value = sum(t['total_amount'] for t in transactions if t['type'] == 'purchase')
-    
-    return {
-        "total_profit": round(total_profit, 2),
-        "tunch_profit": round(total_tunch_profit, 2),
-        "labor_profit": round(total_labor_profit, 2),
-        "total_sales_value": round(total_sales_value, 2),
-        "total_purchase_value": round(total_purchase_value, 2),
-        "profit_margin": round((total_profit / total_sales_value * 100) if total_sales_value > 0 else 0, 2),
-        "top_profitable_items": item_profits[:20],
-        "least_profitable_items": item_profits[-20:] if len(item_profits) > 20 else [],
-        "total_items_analyzed": len(item_profits)
-    }
 
 @api_router.get("/history/actions")
 async def get_action_history(limit: int = 20):
