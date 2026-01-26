@@ -737,6 +737,28 @@ async def get_party_analysis(
         "top_supplier": suppliers_list[0] if suppliers_list else None
     }
 
+@api_router.get("/analytics/sales-summary")
+async def get_sales_summary():
+    """Get total sales summary with net weight, fine weight, and labour"""
+    
+    sales_transactions = await db.transactions.find(
+        {"type": "sale"}, 
+        {"_id": 0}
+    ).to_list(10000)
+    
+    total_net_wt = sum(t.get('net_wt', 0) for t in sales_transactions)
+    total_fine_wt = sum(t.get('fine', 0) for t in sales_transactions)
+    total_labor = sum(t.get('labor', 0) for t in sales_transactions)
+    total_sales_value = sum(t.get('total_amount', 0) for t in sales_transactions)
+    
+    return {
+        "total_net_wt_kg": round(total_net_wt / 1000, 3),
+        "total_fine_wt_kg": round(total_fine_wt / 1000, 3),
+        "total_labor": round(total_labor, 2),
+        "total_sales_value": round(total_sales_value, 2),
+        "transaction_count": len(sales_transactions)
+    }
+
 @api_router.get("/analytics/profit")
 async def calculate_profit(
     start_date: Optional[str] = None,
