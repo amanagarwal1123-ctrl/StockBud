@@ -225,10 +225,10 @@ export default function CurrentStock() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right font-mono text-destructive">
-                        {item.gr_wt.toFixed(2)}
+                        {(item.net_wt / 1000).toFixed(3)}
                       </TableCell>
-                      <TableCell className="text-right font-mono text-destructive">
-                        {item.net_wt.toFixed(2)}
+                      <TableCell className="text-right font-mono text-destructive text-muted-foreground">
+                        {(item.gr_wt / 1000).toFixed(3)}
                       </TableCell>
                     </TableRow>
                   ))}
