@@ -161,6 +161,9 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                     if wt_rs_value:
                         labor_val = float(wt_rs_value) if str(wt_rs_value).replace('.', '').isdigit() else labor_val
                     
+                    # Labour is in "Total" column (total labour cost for the transaction)
+                    total_labor = float(get_column_value(row, ['Total', 'total'], 0) or 0)
+                    
                     # Calculate purchase tunch = tunch + wstg
                     tunch_val = float(get_column_value(row, ['Tunch', 'tunch'], 0) or 0)
                     wstg_val = float(get_column_value(row, ['Wstg', 'wstg'], 0) or 0)
@@ -178,7 +181,7 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                         'gr_wt': float(get_column_value(row, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'], 0) or 0) * KG_TO_GRAMS,
                         'net_wt': float(get_column_value(row, ['Net.Wt.', 'Net Wt'], 0) or 0) * KG_TO_GRAMS,
                         'fine': float(get_column_value(row, ['Fine', 'Sil.Fine', 'Sil Fine', 'Silver Fine'], 0) or 0) * KG_TO_GRAMS,
-                        'labor': labor_val,
+                        'labor': total_labor,
                         'labor_on': labor_on,
                         'dia_wt': float(get_column_value(row, ['Dia.Wt.', 'Dia Wt'], 0) or 0) * KG_TO_GRAMS,
                         'stn_wt': float(get_column_value(row, ['Stn.Wt.', 'Stn Wt'], 0) or 0) * KG_TO_GRAMS,
@@ -214,6 +217,9 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                     if on_value and str(on_value).replace('.', '').isdigit():
                         labor_val = float(on_value)
                     
+                    # Labour is in "Total" column (total labour cost for the transaction)
+                    total_labor = float(get_column_value(row, ['Total', 'total'], 0) or 0)
+                    
                     # Sale tunch is just the tunch column (no wstg)
                     sale_tunch = float(get_column_value(row, ['Tunch', 'tunch'], 0) or 0)
                     
@@ -229,7 +235,7 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                         'gr_wt': float(get_column_value(row, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'], 0) or 0) * KG_TO_GRAMS,
                         'net_wt': float(get_column_value(row, ['Gold Std.', 'Net.Wt.', 'Net Wt'], 0) or 0) * KG_TO_GRAMS,
                         'fine': float(get_column_value(row, ['Fine', 'Sil.Fine', 'Sil Fine'], 0) or 0) * KG_TO_GRAMS,
-                        'labor': labor_val,
+                        'labor': total_labor,
                         'labor_on': labor_on,
                         'dia_wt': float(get_column_value(row, ['Dia.Wt.', 'Dia Wt'], 0) or 0) * KG_TO_GRAMS,
                         'stn_wt': float(get_column_value(row, ['Stn.Wt.', 'Stn Wt'], 0) or 0) * KG_TO_GRAMS,
