@@ -22,6 +22,7 @@ function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/upload" element={<UploadManager />} />
             <Route path="/current-stock" element={<CurrentStock />} />
+            <Route path="/physical-vs-book" element={<PhysicalStockComparison />} />
             <Route path="/party-analytics" element={<PartyAnalytics />} />
             <Route path="/profit" element={<ProfitAnalysis />} />
             <Route path="/history" element={<History />} />
