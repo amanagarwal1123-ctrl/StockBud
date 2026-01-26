@@ -11,10 +11,12 @@ const API = `${BACKEND_URL}/api`;
 
 export default function ProfitAnalysis() {
   const [profitData, setProfitData] = useState(null);
+  const [salesSummary, setSalesSummary] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchProfit();
+    fetchSalesSummary();
   }, []);
 
   const fetchProfit = async () => {
@@ -25,6 +27,15 @@ export default function ProfitAnalysis() {
       console.error('Error fetching profit:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchSalesSummary = async () => {
+    try {
+      const response = await axios.get(`${API}/analytics/sales-summary`);
+      setSalesSummary(response.data);
+    } catch (error) {
+      console.error('Error fetching sales summary:', error);
     }
   };
 
@@ -87,9 +98,32 @@ export default function ProfitAnalysis() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold font-mono text-accent">
-              {formatIndianCurrency(profitData?.total_sales_value || 0)}
-            </div>
+            {salesSummary ? (
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-muted-foreground">Net Wt:</span>
+                  <span className="text-lg font-bold font-mono text-green-600">
+                    {salesSummary.total_net_wt_kg} kg
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-muted-foreground">Fine:</span>
+                  <span className="text-lg font-bold font-mono text-blue-600">
+                    {salesSummary.total_fine_wt_kg} kg
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-muted-foreground">Labour:</span>
+                  <span className="text-lg font-bold font-mono text-purple-600">
+                    {formatIndianCurrency(salesSummary.total_labor)}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="text-3xl font-bold font-mono text-accent">
+                {formatIndianCurrency(profitData?.total_sales_value || 0)}
+              </div>
+            )}
           </CardContent>
         </Card>
 
