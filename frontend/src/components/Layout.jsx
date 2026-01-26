@@ -61,7 +61,7 @@ export default function Layout({ children }) {
           <div className="border-t border-border/40 p-4">
             <div className="rounded-lg bg-muted/50 p-4 text-xs text-muted-foreground">
               <p className="font-medium">Inventory Management</p>
-              <p className="mt-1">Powered by JewelVault OS</p>
+              <p className="mt-1">Powered by StockBud</p>
             </div>
           </div>
         </div>
