@@ -122,15 +122,14 @@ export default function ProfitAnalysis() {
                   <TableHead className="text-right font-mono">Net Wt Sold (kg)</TableHead>
                   <TableHead className="text-right">Avg Purchase Tunch</TableHead>
                   <TableHead className="text-right">Avg Sale Tunch</TableHead>
-                  <TableHead className="text-right font-mono">Tunch Profit</TableHead>
-                  <TableHead className="text-right font-mono">Labour Profit</TableHead>
-                  <TableHead className="text-right font-mono">Total Profit</TableHead>
+                  <TableHead className="text-right font-mono">Silver Profit (kg)</TableHead>
+                  <TableHead className="text-right font-mono">Labour Profit (₹)</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {profitData?.top_profitable_items?.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                       No profit data available
                     </TableCell>
                   </TableRow>
@@ -138,19 +137,14 @@ export default function ProfitAnalysis() {
                   profitData?.top_profitable_items?.slice(0, 15).map((item, idx) => (
                     <TableRow key={idx} className="table-row">
                       <TableCell className="font-medium">{item.item_name}</TableCell>
-                      <TableCell className="text-right font-mono">{item.net_wt_sold}</TableCell>
+                      <TableCell className="text-right font-mono">{item.net_wt_sold_kg}</TableCell>
                       <TableCell className="text-right font-mono">{item.avg_purchase_tunch}%</TableCell>
                       <TableCell className="text-right font-mono">{item.avg_sale_tunch}%</TableCell>
-                      <TableCell className="text-right font-mono text-accent">
-                        ₹{item.tunch_profit.toLocaleString()}
+                      <TableCell className="text-right font-mono text-green-600 font-semibold">
+                        {item.silver_profit_kg} kg
                       </TableCell>
-                      <TableCell className="text-right font-mono text-secondary">
-                        ₹{item.labor_profit.toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        <Badge className={item.total_profit > 0 ? 'bg-accent' : 'bg-destructive'}>
-                          ₹{item.total_profit.toLocaleString()}
-                        </Badge>
+                      <TableCell className="text-right font-mono text-blue-600 font-semibold">
+                        ₹{item.labor_profit_inr.toLocaleString()}
                       </TableCell>
                     </TableRow>
                   ))
