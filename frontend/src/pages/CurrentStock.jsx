@@ -99,7 +99,7 @@ export default function CurrentStock() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold font-mono text-secondary">
-              {inventory.reduce((sum, item) => sum + item.gr_wt, 0).toFixed(2)}g
+              {(inventory.reduce((sum, item) => sum + item.gr_wt, 0) / 1000).toFixed(3)} kg
             </div>
           </CardContent>
         </Card>
