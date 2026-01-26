@@ -101,7 +101,6 @@ export default function CurrentStock() {
             <div className="text-3xl font-bold font-mono text-secondary">
               {(inventory.reduce((sum, item) => sum + item.net_wt, 0) / 1000).toFixed(3)} kg
             </div>
-            <p className="text-xs text-muted-foreground mt-1">Pure silver weight</p>
           </CardContent>
         </Card>
       </div>
