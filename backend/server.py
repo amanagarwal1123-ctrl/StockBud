@@ -264,10 +264,8 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                     # Handle "Gold Std." as Net Weight in stock files
                     net_wt_value = get_column_value(row, ['Gold Std.', 'Net.Wt.', 'Net Wt'], 0)
                     
-                    # Read labour from Lbr. /Wt and Lbr. /Rs. columns
-                    labor_wt = float(get_column_value(row, ['Lbr. /Wt', 'Labor Wt', 'Lbr Wt'], 0) or 0)
-                    labor_rs = float(get_column_value(row, ['Lbr. /Rs.', 'Labor Rs', 'Lbr Rs'], 0) or 0)
-                    total_labor = labor_wt + labor_rs
+                    # Labour is in "Total" column
+                    total_labor = float(get_column_value(row, ['Total', 'total'], 0) or 0)
                     
                     # Calculate stock tunch = tunch + wstg
                     tunch_val = float(get_column_value(row, ['Tunch', 'tunch'], 0) or 0)
@@ -285,7 +283,7 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                         'labor_wt': labor_wt,
                         'labor_rs': labor_rs,
                         'rate': float(get_column_value(row, ['Rate', 'rate'], 0) or 0),
-                        'total': float(get_column_value(row, ['Total', 'total'], 0) or 0)
+                        'total': total_labor
                     }
                     records.append(record)
                 except Exception as e:
