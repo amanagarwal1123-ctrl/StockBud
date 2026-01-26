@@ -7,6 +7,7 @@ import CurrentStock from './pages/CurrentStock';
 import PartyAnalytics from './pages/PartyAnalytics';
 import ProfitAnalysis from './pages/ProfitAnalysis';
 import History from './pages/History';
+import ItemDetail from './pages/ItemDetail';
 import Layout from './components/Layout';
 import { Toaster } from '@/components/ui/sonner';
 
@@ -22,6 +23,7 @@ function App() {
             <Route path="/party-analytics" element={<PartyAnalytics />} />
             <Route path="/profit" element={<ProfitAnalysis />} />
             <Route path="/history" element={<History />} />
+            <Route path="/item/:itemName" element={<ItemDetail />} />
           </Routes>
         </Layout>
       </BrowserRouter>
