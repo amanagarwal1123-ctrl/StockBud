@@ -14,7 +14,7 @@ export default function UploadManager() {
   const [uploadedFiles, setUploadedFiles] = useState({
     purchase: null,
     sale: null,
-    physical: null,
+    opening_stock: null,
   });
 
   const handleFileUpload = async (fileType, file) => {
@@ -26,8 +26,8 @@ export default function UploadManager() {
 
     try {
       let endpoint;
-      if (fileType === 'physical') {
-        endpoint = `${API}/inventory/physical/upload`;
+      if (fileType === 'opening_stock') {
+        endpoint = `${API}/opening-stock/upload`;
       } else {
         endpoint = `${API}/transactions/upload/${fileType}`;
       }
