@@ -224,7 +224,7 @@ export default function CurrentStock() {
                           {item.stamp || 'Unassigned'}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right font-mono text-destructive">
+                      <TableCell className="text-right font-mono text-destructive font-semibold">
                         {(item.net_wt / 1000).toFixed(3)}
                       </TableCell>
                       <TableCell className="text-right font-mono text-destructive text-muted-foreground">
