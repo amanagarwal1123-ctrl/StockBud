@@ -320,114 +320,65 @@ async def get_transactions(type: Optional[str] = None, limit: int = 5000):
 
 @api_router.get("/inventory/current")
 async def get_current_inventory():
-    """Calculate current inventory with opening stock + purchases - sales"""
+    """Calculate current inventory: Opening Stock + Purchases - Sales"""
     
-    # Get opening stock
+    # Get opening stock and transactions
     opening = await db.opening_stock.find({}, {"_id": 0}).to_list(10000)
     transactions = await db.transactions.find({}, {"_id": 0}).to_list(10000)
     
-    # Check if opening stock is a single TOTAL entry
-    is_total_opening = len(opening) == 1 and opening[0].get('item_name') == 'TOTAL_OPENING_STOCK'
+    # Build inventory map starting with opening stock
+    inventory_map = {}
     
-    if is_total_opening:
-        # Opening stock is a total - calculate by adding/subtracting ALL transactions
-        total_opening_net = opening[0].get('net_wt', 0)
-        total_opening_gr = opening[0].get('gr_wt', 0)
-        total_opening_fine = opening[0].get('fine', 0)
-        
-        # Sum all transactions
-        purchase_net = sum(t.get('net_wt', 0) for t in transactions if t['type'] == 'purchase')
-        sale_net = sum(t.get('net_wt', 0) for t in transactions if t['type'] == 'sale')
-        purchase_gr = sum(t.get('gr_wt', 0) for t in transactions if t['type'] == 'purchase')
-        sale_gr = sum(t.get('gr_wt', 0) for t in transactions if t['type'] == 'sale')
-        
-        current_net = total_opening_net + purchase_net - sale_net
-        current_gr = total_opening_gr + purchase_gr - sale_gr
-        
-        # Build item-level breakdown from transactions only
-        inventory_map = {}
-        for trans in transactions:
-            key = trans['item_name'].strip().lower()
-            if key not in inventory_map:
-                inventory_map[key] = {
-                    'item_name': trans['item_name'],
-                    'stamp': trans.get('stamp', 'Unassigned'),
-                    'gr_wt': 0.0,
-                    'net_wt': 0.0,
-                    'fine': 0.0,
-                    'total_pc': 0,
-                    'stamps_seen': set()
-                }
-            
-            if trans.get('stamp'):
-                inventory_map[key]['stamps_seen'].add(trans['stamp'])
-                inventory_map[key]['stamp'] = trans['stamp']
-            
-            multiplier = 1 if trans['type'] in ['purchase', 'sale_return'] else -1
-            inventory_map[key]['gr_wt'] += trans.get('gr_wt', 0) * multiplier
-            inventory_map[key]['net_wt'] += trans.get('net_wt', 0) * multiplier
-            inventory_map[key]['fine'] += trans.get('fine', 0) * multiplier
-            inventory_map[key]['total_pc'] += trans.get('total_pc', 0) * multiplier
-        
-        # Add a summary row for total opening stock
-        inventory_map['_total_opening'] = {
-            'item_name': 'TOTAL_OPENING_STOCK',
-            'stamp': 'ALL',
-            'gr_wt': total_opening_gr,
-            'net_wt': total_opening_net,
-            'fine': total_opening_fine,
-            'total_pc': 0,
-            'stamps_seen': []
-        }
-    else:
-        # Original logic: item-by-item opening stock
-        inventory_map = {}
-        
-        for item in opening:
-            key = item['item_name'].strip().lower()
-            if key not in inventory_map:
-                inventory_map[key] = {
-                    'item_name': item['item_name'],
-                    'stamp': item['stamp'] or 'Unassigned',
-                    'gr_wt': 0.0,
-                    'net_wt': 0.0,
-                    'fine': 0.0,
-                    'total_pc': 0,
-                    'stamps_seen': set()
-                }
-            inventory_map[key]['gr_wt'] += item['gr_wt']
-            inventory_map[key]['net_wt'] += item['net_wt']
-            inventory_map[key]['fine'] += item['fine']
-            inventory_map[key]['total_pc'] += item['pc']
-            if item['stamp']:
-                inventory_map[key]['stamps_seen'].add(item['stamp'])
-        
-        for trans in transactions:
-            key = trans['item_name'].strip().lower()
-            if key not in inventory_map:
-                inventory_map[key] = {
-                    'item_name': trans['item_name'],
-                    'stamp': trans.get('stamp', 'Unassigned'),
-                    'gr_wt': 0.0,
-                    'net_wt': 0.0,
-                    'fine': 0.0,
-                    'total_pc': 0,
-                    'stamps_seen': set()
-                }
-            
-            if trans.get('stamp'):
-                inventory_map[key]['stamps_seen'].add(trans['stamp'])
-                inventory_map[key]['stamp'] = trans['stamp']
-            
-            multiplier = 1 if trans['type'] in ['purchase', 'sale_return'] else -1
-            inventory_map[key]['gr_wt'] += trans.get('gr_wt', 0) * multiplier
-            inventory_map[key]['net_wt'] += trans.get('net_wt', 0) * multiplier
-            inventory_map[key]['fine'] += trans.get('fine', 0) * multiplier
-            inventory_map[key]['total_pc'] += trans.get('total_pc', 0) * multiplier
+    # Add all opening stock items
+    for item in opening:
+        key = item['item_name'].strip().lower()
+        if key not in inventory_map:
+            inventory_map[key] = {
+                'item_name': item['item_name'],
+                'stamp': item.get('stamp', '') or 'Unassigned',
+                'gr_wt': 0.0,
+                'net_wt': 0.0,
+                'fine': 0.0,
+                'total_pc': 0,
+                'stamps_seen': set()
+            }
+        inventory_map[key]['gr_wt'] += item.get('gr_wt', 0)
+        inventory_map[key]['net_wt'] += item.get('net_wt', 0)
+        inventory_map[key]['fine'] += item.get('fine', 0)
+        inventory_map[key]['total_pc'] += item.get('pc', 0)
+        if item.get('stamp'):
+            inventory_map[key]['stamps_seen'].add(item['stamp'])
     
-    # Convert to list and clean up
+    # Process all transactions
+    for trans in transactions:
+        key = trans['item_name'].strip().lower()
+        if key not in inventory_map:
+            inventory_map[key] = {
+                'item_name': trans['item_name'],
+                'stamp': trans.get('stamp', 'Unassigned'),
+                'gr_wt': 0.0,
+                'net_wt': 0.0,
+                'fine': 0.0,
+                'total_pc': 0,
+                'stamps_seen': set()
+            }
+        
+        if trans.get('stamp'):
+            inventory_map[key]['stamps_seen'].add(trans['stamp'])
+            inventory_map[key]['stamp'] = trans['stamp']
+        
+        # Purchase/sale_return increases stock, sale/purchase_return decreases
+        multiplier = 1 if trans['type'] in ['purchase', 'sale_return'] else -1
+        inventory_map[key]['gr_wt'] += trans.get('gr_wt', 0) * multiplier
+        inventory_map[key]['net_wt'] += trans.get('net_wt', 0) * multiplier
+        inventory_map[key]['fine'] += trans.get('fine', 0) * multiplier
+        inventory_map[key]['total_pc'] += trans.get('total_pc', 0) * multiplier
+    
+    # Convert to list and separate negative items
     inventory = []
     negative_items = []
+    total_gr_wt = 0.0
+    total_net_wt = 0.0
     
     for key, item in inventory_map.items():
         item['stamps_seen'] = list(item['stamps_seen']) if isinstance(item['stamps_seen'], set) else item['stamps_seen']
@@ -437,6 +388,8 @@ async def get_current_inventory():
             negative_items.append(item)
         else:
             inventory.append(item)
+            total_gr_wt += item['gr_wt']
+            total_net_wt += item['net_wt']
     
     # Group by stamp
     stamp_groups = {}
@@ -450,6 +403,8 @@ async def get_current_inventory():
         "inventory": inventory,
         "by_stamp": stamp_groups,
         "total_items": len(inventory),
+        "total_gr_wt": total_gr_wt,
+        "total_net_wt": total_net_wt,
         "negative_items": negative_items
     }
 
