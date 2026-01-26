@@ -99,6 +99,64 @@ export default function ProfitAnalysis() {
         </p>
       </div>
 
+      {/* Date Range Selector */}
+      <Card className="border-border/40 shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Calendar className="h-5 w-5 text-primary" />
+            Date Range Filter
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col md:flex-row gap-4 items-end">
+            <div className="flex-1">
+              <Label htmlFor="start-date" className="text-sm font-medium mb-2">From Date</Label>
+              <Input
+                id="start-date"
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="font-mono"
+              />
+            </div>
+            <div className="flex-1">
+              <Label htmlFor="end-date" className="text-sm font-medium mb-2">To Date</Label>
+              <Input
+                id="end-date"
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="font-mono"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={handleApplyDateRange} disabled={!startDate || !endDate}>
+                Apply
+              </Button>
+              <Button onClick={handleClearDates} variant="outline">
+                Clear
+              </Button>
+            </div>
+          </div>
+          
+          {/* Quick Range Buttons */}
+          <div className="flex flex-wrap gap-2 mt-4">
+            <Button onClick={() => setQuickRange(7)} variant="secondary" size="sm">
+              Last 7 Days
+            </Button>
+            <Button onClick={() => setQuickRange(30)} variant="secondary" size="sm">
+              Last 30 Days
+            </Button>
+            <Button onClick={() => setQuickRange(90)} variant="secondary" size="sm">
+              Last 3 Months
+            </Button>
+            <Button onClick={() => setQuickRange(365)} variant="secondary" size="sm">
+              Last Year
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Profit Cards */}
       <div className="grid gap-6 md:grid-cols-4">
         <Card className="border-border/40 shadow-sm bg-gradient-to-br from-green-500/10 to-transparent">
