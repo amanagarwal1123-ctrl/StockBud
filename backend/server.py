@@ -171,15 +171,18 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
             records = []
             for _, row in df.iterrows():
                 try:
+                    item_name = str(get_column_value(row, ['Item Name', 'Particular', 'item name', 'particular'], ''))
+                    if not item_name or len(item_name) < 2:
+                        continue
+                    
                     record = {
-                        'item_name': str(row.get('Item Name', row.get('Particular', ''))),
-                        'stamp': str(row.get('Stamp', '')),
-                        'gr_wt': float(row.get('Gross Weight', row.get('Gr.Wt.', 0)) or 0),
-                        'poly_wt': float(row.get('Poly Weight', 0) or 0),
-                        'net_wt': float(row.get('Net Weight', row.get('Net.Wt.', 0)) or 0)
+                        'item_name': item_name,
+                        'stamp': str(get_column_value(row, ['Stamp', 'stamp'], '')),
+                        'gr_wt': float(get_column_value(row, ['Gross Weight', 'Gr.Wt.', 'Gr Wt', 'gross wt', 'Gr.Wt', 'GrWt'], 0) or 0),
+                        'poly_wt': float(get_column_value(row, ['Poly Weight', 'Poly Wt', 'poly wt', 'PolyWt'], 0) or 0),
+                        'net_wt': float(get_column_value(row, ['Net Weight', 'Net.Wt.', 'Net Wt', 'net wt', 'Net.Wt', 'NetWt', 'Less'], 0) or 0)
                     }
-                    if record['item_name']:  # Only add if item name exists
-                        records.append(record)
+                    records.append(record)
                 except Exception as e:
                     continue
             return records
