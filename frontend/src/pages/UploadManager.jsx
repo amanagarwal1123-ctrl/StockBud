@@ -107,7 +107,7 @@ export default function UploadManager() {
             Transactions
           </TabsTrigger>
           <TabsTrigger value="physical" data-testid="tab-physical">
-            Physical Inventory
+            Opening Stock
           </TabsTrigger>
         </TabsList>
 
