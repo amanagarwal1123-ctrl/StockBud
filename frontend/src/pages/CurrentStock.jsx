@@ -33,6 +33,8 @@ export default function CurrentStock() {
       setInventory(response.data.inventory);
       setNegativeItems(response.data.negative_items || []);
       setByStamp(response.data.by_stamp);
+      setTotalGrWt(response.data.total_gr_wt || 0);
+      setTotalNetWt(response.data.total_net_wt || 0);
     } catch (error) {
       console.error('Error fetching inventory:', error);
     } finally {
