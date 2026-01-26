@@ -116,26 +116,26 @@ export default function Dashboard() {
         <Card className="border-border/40 shadow-sm">
           <CardHeader>
             <CardTitle className="text-xl">Getting Started</CardTitle>
-            <CardDescription>Begin managing your inventory</CardDescription>
+            <CardDescription>Begin managing your inventory with StockBud</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="flex items-start gap-2">
               <div className="h-6 w-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">
                 1
               </div>
-              <p className="text-muted-foreground">Upload purchase and sale Excel files</p>
+              <p className="text-muted-foreground">Upload opening stock (current inventory)</p>
             </div>
             <div className="flex items-start gap-2">
               <div className="h-6 w-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">
                 2
               </div>
-              <p className="text-muted-foreground">Check your book inventory calculation</p>
+              <p className="text-muted-foreground">Upload purchase and sale ledgers</p>
             </div>
             <div className="flex items-start gap-2">
               <div className="h-6 w-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">
                 3
               </div>
-              <p className="text-muted-foreground">Upload physical inventory and match</p>
+              <p className="text-muted-foreground">View party analytics and profit analysis</p>
             </div>
           </CardContent>
         </Card>
@@ -143,26 +143,26 @@ export default function Dashboard() {
         <Card className="border-border/40 shadow-sm">
           <CardHeader>
             <CardTitle className="text-xl">Key Features</CardTitle>
-            <CardDescription>What you can do</CardDescription>
+            <CardDescription>What StockBud can do for you</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p>• Track purchases and sales automatically</p>
-            <p>• Match physical vs book inventory</p>
-            <p>• Analyze fast/slow/dead stock</p>
-            <p>• Detect poly weight exceptions</p>
-            <p>• View historical snapshots</p>
+            <p>• Intelligent stock calculation with negative stock detection</p>
+            <p>• Party-wise analytics (customers & suppliers)</p>
+            <p>• Comprehensive profit analysis with margins</p>
+            <p>• Undo/Redo functionality for safe operations</p>
+            <p>• Automatic item name merging with stamp priority</p>
           </CardContent>
         </Card>
 
-        <Card className="border-border/40 shadow-sm bg-gradient-to-br from-primary/5 to-secondary/5">
+        <Card className="border-border/40 shadow-sm bg-gradient-to-br from-primary/5 via-secondary/5 to-accent/5">
           <CardHeader>
             <CardTitle className="text-xl">Pro Tip</CardTitle>
-            <CardDescription>Maximize efficiency</CardDescription>
+            <CardDescription>Maximize your efficiency</CardDescription>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
             <p>
-              Upload your files regularly to maintain accurate inventory records. The system
-              preserves all historical data for rollback and analysis.
+              Upload files regularly to maintain accurate records. StockBud automatically resolves
+              naming conflicts and identifies negative stock items that need attention.
             </p>
           </CardContent>
         </Card>
