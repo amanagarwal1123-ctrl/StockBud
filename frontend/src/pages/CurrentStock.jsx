@@ -13,6 +13,7 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
 export default function CurrentStock() {
+  const navigate = useNavigate();
   const [inventory, setInventory] = useState([]);
   const [negativeItems, setNegativeItems] = useState([]);
   const [byStamp, setByStamp] = useState({});
