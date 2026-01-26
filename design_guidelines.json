@@ -1,0 +1,134 @@
+{
+  "design_system": {
+    "name": "JewelVault OS",
+    "description": "A clinical luxury design system for high-precision inventory management. Merges the aesthetics of a Swiss bank vault with the elegance of a Cartier showroom.",
+    "theme_strategy": {
+      "default_mode": "light",
+      "support_dark_mode": true,
+      "philosophy": "Data is the jewel. The UI is the velvet display case. High contrast for readability, rich accents for value."
+    },
+    "typography": {
+      "font_family": {
+        "heading": "Playfair Display, serif",
+        "body": "Manrope, sans-serif",
+        "mono": "JetBrains Mono, monospace"
+      },
+      "usage_rules": {
+        "headings": "Use Playfair Display for all H1-H3. It adds the 'luxury' touch. Keep weights heavy (700+).",
+        "body": "Use Manrope for all UI text. It is geometric but friendly.",
+        "data": "CRITICAL: Use JetBrains Mono for ALL weights, prices, and inventory counts. Tabular figures are mandatory for alignment."
+      },
+      "scale": {
+        "h1": "text-4xl md:text-5xl font-bold tracking-tight",
+        "h2": "text-3xl font-semibold tracking-tight",
+        "h3": "text-2xl font-medium",
+        "body_lg": "text-lg leading-relaxed",
+        "body_base": "text-base leading-normal",
+        "caption": "text-sm text-muted-foreground",
+        "mono_base": "font-mono text-sm tracking-wide"
+      }
+    },
+    "colors": {
+      "palette": {
+        "primary": {
+          "name": "Emerald Vault",
+          "hex": "#047857",
+          "hsl": "158 64% 24%",
+          "usage": "Primary actions, active states, branding."
+        },
+        "secondary": {
+          "name": "Antique Gold",
+          "hex": "#D97706",
+          "hsl": "32 95% 44%",
+          "usage": "Accents, highlights, 'Premium' badges."
+        },
+        "destructive": {
+          "name": "Ruby Alert",
+          "hex": "#991B1B",
+          "hsl": "0 72% 35%",
+          "usage": "Delete actions, critical errors, 'Dead' stock."
+        },
+        "background": {
+          "light": "#F8FAFC",
+          "dark": "#0A0A0A"
+        },
+        "surface": {
+          "light": "#FFFFFF",
+          "dark": "#171717"
+        }
+      },
+      "status_colors": {
+        "fast_moving": "text-emerald-700 bg-emerald-50 border-emerald-200",
+        "good_moving": "text-blue-700 bg-blue-50 border-blue-200",
+        "slow_moving": "text-amber-700 bg-amber-50 border-amber-200",
+        "dead_stock": "text-red-700 bg-red-50 border-red-200"
+      }
+    },
+    "layout": {
+      "grid_system": "Bento Grid Mode B (High Density)",
+      "spacing": {
+        "container_padding": "p-6 md:p-8",
+        "section_gap": "gap-6",
+        "component_gap": "gap-4"
+      },
+      "containers": {
+        "dashboard_card": "bg-card border border-border/40 shadow-sm rounded-xl p-6",
+        "data_table": "w-full caption-bottom text-sm border rounded-md overflow-hidden"
+      }
+    },
+    "components": {
+      "buttons": {
+        "primary": "bg-primary text-primary-foreground hover:bg-primary/90 shadow-md rounded-md px-6 py-2 font-medium transition-all",
+        "secondary": "bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-md px-6 py-2 font-medium",
+        "outline": "border border-input bg-background hover:bg-accent hover:text-accent-foreground rounded-md px-6 py-2"
+      },
+      "inputs": {
+        "default": "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+        "file_upload": "border-2 border-dashed border-muted-foreground/25 hover:border-primary/50 transition-colors rounded-xl p-12 text-center cursor-pointer bg-muted/5"
+      },
+      "cards": {
+        "stat_card": "relative overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm p-6 flex flex-col justify-between hover:shadow-md transition-shadow"
+      },
+      "badges": {
+        "base": "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+        "outline": "text-foreground"
+      }
+    },
+    "visual_enhancers": {
+      "glassmorphism": "backdrop-blur-md bg-white/70 dark:bg-black/70 border border-white/20 shadow-lg",
+      "gradients": "Use subtle radial gradients for backgrounds. Avoid linear gradients on buttons.",
+      "shadows": "shadow-sm for cards, shadow-lg for dropdowns/modals. Keep shadows diffuse and soft."
+    },
+    "motion": {
+      "hover": "transition-all duration-200 ease-out hover:-translate-y-0.5",
+      "enter": "animate-in fade-in zoom-in-95 duration-300",
+      "exit": "animate-out fade-out zoom-out-95 duration-200"
+    },
+    "assets": {
+      "icons_library": "lucide-react",
+      "image_urls": {
+        "login_bg": "https://images.unsplash.com/photo-1605100804763-247f67b3557e?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "dashboard_hero": "https://images.unsplash.com/photo-1682364853107-9b87abbc0269?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "empty_state_inventory": "https://images.pexels.com/photos/8442354/pexels-photo-8442354.jpeg",
+        "empty_state_upload": "https://images.pexels.com/photos/20979926/pexels-photo-20979926.jpeg",
+        "gold_texture": "https://images.unsplash.com/photo-1630019680362-af0477180c02?crop=entropy&cs=srgb&fm=jpg&q=85"
+      }
+    },
+    "instructions_to_main_agent": {
+      "general": "You are building a high-precision tool. Accuracy is paramount. Do not hide data behind clicks unless necessary.",
+      "tables": "Tables are the heart of this app. Use 'TanStack Table' (React Table) logic. Ensure columns are resizable and sortable. Use sticky headers.",
+      "forms": "Use 'react-hook-form' with 'zod' validation. Inventory inputs must validate numbers strictly.",
+      "charts": "Use 'Recharts'. Style them minimally. No 3D charts. Use the Emerald and Gold palette.",
+      "layout_structure": "Sidebar Layout. Left: Navigation. Top: Global Search & User Profile. Center: Main Content.",
+      "file_handling": "The upload process is critical. Create a dedicated 'Upload Wizard' step-by-step flow: 1. Select Type (Purchase/Sale/Physical) -> 2. Drop File -> 3. Preview/Validate -> 4. Confirm."
+    },
+    "universal_guidelines": [
+      "Do not use generic centered layouts.",
+      "Create depth through layered design elements.",
+      "Use glass-morphism effects for sticky headers.",
+      "Every interaction needs micro-animations.",
+      "Use 2-3x more spacing than feels comfortable.",
+      "All interactive elements MUST include data-testid attribute."
+    ]
+  }
+}
