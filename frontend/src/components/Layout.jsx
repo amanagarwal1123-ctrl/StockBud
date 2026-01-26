@@ -31,6 +31,7 @@ export default function Layout({ children }) {
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
     { name: 'Upload Files', href: '/upload', icon: Upload },
     { name: 'Current Stock', href: '/current-stock', icon: Package },
+    { name: 'Physical vs Book', href: '/physical-vs-book', icon: Scale },
     { name: 'Stamp Management', href: '/stamps', icon: Tag },
     { name: 'Party Analytics', href: '/party-analytics', icon: Users },
     { name: 'Profit Analysis', href: '/profit', icon: TrendingUp },
