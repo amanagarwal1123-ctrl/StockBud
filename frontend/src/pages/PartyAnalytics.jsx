@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Users, TrendingUp, Award, Package, Calendar } from 'lucide-react';
+import { Users, TrendingUp, Award, Package, Calendar, Download } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -9,6 +9,7 @@ import { formatIndianCurrency } from '@/utils/formatCurrency';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { exportToCSV } from '@/utils/exportCSV';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -70,6 +71,34 @@ export default function PartyAnalytics() {
 
   const topCustomers = analytics?.customers?.slice(0, 10) || [];
   const topSuppliers = analytics?.suppliers?.slice(0, 10) || [];
+
+  const handleExportCustomers = () => {
+    const exportData = (analytics?.customers || []).map((customer, idx) => ({
+      'Rank': idx + 1,
+      'Customer Name': customer.party_name,
+      'Net Weight (kg)': (customer.total_net_wt / 1000).toFixed(3),
+      'Fine Weight (kg)': (customer.total_fine_wt / 1000).toFixed(3),
+      'Sales Value': customer.total_sales_value,
+      'Transactions': customer.transaction_count
+    }));
+    
+    const dateStr = startDate && endDate ? `_${startDate}_to_${endDate}` : '';
+    exportToCSV(exportData, `customers${dateStr}`);
+  };
+
+  const handleExportSuppliers = () => {
+    const exportData = (analytics?.suppliers || []).map((supplier, idx) => ({
+      'Rank': idx + 1,
+      'Supplier Name': supplier.party_name,
+      'Net Weight (kg)': (supplier.total_net_wt / 1000).toFixed(3),
+      'Fine Weight (kg)': (supplier.total_fine_wt / 1000).toFixed(3),
+      'Purchase Value': supplier.total_purchases_value,
+      'Transactions': supplier.transaction_count
+    }));
+    
+    const dateStr = startDate && endDate ? `_${startDate}_to_${endDate}` : '';
+    exportToCSV(exportData, `suppliers${dateStr}`);
+  };
 
   return (
     <div className="p-6 md:p-8 space-y-6" data-testid="party-analytics-page">
@@ -247,8 +276,16 @@ export default function PartyAnalytics() {
         <TabsContent value="customers">
           <Card className="border-border/40 shadow-sm">
             <CardHeader>
-              <CardTitle>Top Customers by Sales</CardTitle>
-              <CardDescription>Ranked by net silver weight sold</CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Top Customers by Sales</CardTitle>
+                  <CardDescription>Ranked by net silver weight sold</CardDescription>
+                </div>
+                <Button onClick={handleExportCustomers} variant="outline" size="sm">
+                  <Download className="h-4 w-4 mr-2" />
+                  Export CSV
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
@@ -304,8 +341,16 @@ export default function PartyAnalytics() {
         <TabsContent value="suppliers">
           <Card className="border-border/40 shadow-sm">
             <CardHeader>
-              <CardTitle>Top Suppliers by Purchases</CardTitle>
-              <CardDescription>Ranked by net silver weight purchased</CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Top Suppliers by Purchases</CardTitle>
+                  <CardDescription>Ranked by net silver weight purchased</CardDescription>
+                </div>
+                <Button onClick={handleExportSuppliers} variant="outline" size="sm">
+                  <Download className="h-4 w-4 mr-2" />
+                  Export CSV
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
