@@ -86,35 +86,59 @@ class StampAssignment(BaseModel):
     stamp: str
 
 # Helper Functions
+def get_column_value(row, possible_names, default=''):
+    """Try multiple column name variations"""
+    for name in possible_names:
+        if name in row.index and pd.notna(row.get(name)):
+            return row.get(name)
+    return default
+
 def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
     """Parse Excel file and return list of rows"""
     try:
-        df = pd.read_excel(BytesIO(file_content))
+        df = pd.read_excel(BytesIO(file_content), header=None)
+        
+        # Find the actual header row (look for row with 'Item Name' or 'Particular')
+        header_row_idx = None
+        for idx, row in df.iterrows():
+            row_str = ' '.join(str(val).lower() for val in row if pd.notna(val))
+            if 'item name' in row_str or 'particular' in row_str:
+                header_row_idx = idx
+                break
+        
+        if header_row_idx is None:
+            df = pd.read_excel(BytesIO(file_content))
+        else:
+            df = pd.read_excel(BytesIO(file_content), header=header_row_idx)
+        
         df = df.fillna('')
+        df.columns = df.columns.str.strip()
         
         if file_type == 'purchase':
-            # Map columns based on purchase file structure
             records = []
             for _, row in df.iterrows():
                 try:
+                    item_name = str(get_column_value(row, ['Item Name', 'Particular', 'item name', 'particular'], ''))
+                    if not item_name or len(item_name) < 2:
+                        continue
+                    
                     record = {
-                        'date': str(row.get('Date', '')),
+                        'date': str(get_column_value(row, ['Date', 'date'], '')),
                         'type': 'purchase',
-                        'refno': str(row.get('Refno', '')),
-                        'party_name': str(row.get('Party Name', '')),
-                        'item_name': str(row.get('Item Name', '')),
-                        'stamp': str(row.get('Stamp', '')),
-                        'tag_no': str(row.get('Tag.No.', '')),
-                        'gr_wt': float(row.get('Gr.Wt.', 0) or 0),
-                        'net_wt': float(row.get('Net.Wt.', 0) or 0),
-                        'fine_sil': float(row.get('Fine Sil.', 0) or 0),
-                        'labor': float(row.get('Lbr. Wt/Rs', 0) or 0),
-                        'dia_wt': float(row.get('Dia.Wt.', 0) or 0),
-                        'stn_wt': float(row.get('Stn.Wt.', 0) or 0),
-                        'total_pc': int(row.get('Total Pc', 0) or 0)
+                        'refno': str(get_column_value(row, ['Refno', 'refno', 'Ref No', 'ref no'], '')),
+                        'party_name': str(get_column_value(row, ['Party Name', 'party name', 'Party', 'party'], '')),
+                        'item_name': item_name,
+                        'stamp': str(get_column_value(row, ['Stamp', 'stamp'], '')),
+                        'tag_no': str(get_column_value(row, ['Tag.No.', 'Tag No', 'tag no', 'TagNo'], '')),
+                        'gr_wt': float(get_column_value(row, ['Gr.Wt.', 'Gr Wt', 'Gross Wt', 'gross wt', 'Gr.Wt', 'GrWt'], 0) or 0),
+                        'net_wt': float(get_column_value(row, ['Net.Wt.', 'Net Wt', 'Net.Wt', 'NetWt', 'net wt'], 0) or 0),
+                        'fine_sil': float(get_column_value(row, ['Fine Sil.', 'Fine Sil', 'Sil.Fine', 'Sil Fine', 'fine sil', 'Silver Fine'], 0) or 0),
+                        'labor': float(get_column_value(row, ['Lbr. Wt/Rs', 'Labor', 'labour', 'Total', 'total'], 0) or 0),
+                        'dia_wt': float(get_column_value(row, ['Dia.Wt.', 'Dia Wt', 'Diamond Wt', 'dia wt'], 0) or 0),
+                        'stn_wt': float(get_column_value(row, ['Stn.Wt.', 'Stn Wt', 'Stone Wt', 'stn wt'], 0) or 0),
+                        'total_pc': int(get_column_value(row, ['Total Pc', 'total pc', 'Pc', 'pc', 'Pieces'], 0) or 0)
                     }
-                    if record['item_name']:  # Only add if item name exists
-                        records.append(record)
+                    records.append(record)
                 except Exception as e:
                     continue
             return records
@@ -123,19 +147,22 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
             records = []
             for _, row in df.iterrows():
                 try:
+                    item_name = str(get_column_value(row, ['Item Name', 'Particular', 'item name', 'particular'], ''))
+                    if not item_name or len(item_name) < 2:
+                        continue
+                    
                     record = {
                         'type': 'sale',
-                        'item_name': str(row.get('Item Name', row.get('Particular', ''))),
-                        'gr_wt': float(row.get('Gr.Wt.', 0) or 0),
-                        'net_wt': float(row.get('Less', 0) or 0),
-                        'fine_sil': float(row.get('Fine Sil.', 0) or 0),
-                        'labor': float(row.get('Fine Total', 0) or 0),
-                        'dia_wt': float(row.get('Dia.Wt.', 0) or 0),
-                        'stn_wt': float(row.get('Stn.Wt.', 0) or 0),
-                        'total_pc': int(row.get('Pc', 0) or 0)
+                        'item_name': item_name,
+                        'gr_wt': float(get_column_value(row, ['Gr.Wt.', 'Gr Wt', 'Gross Wt', 'gross wt', 'Gr.Wt', 'GrWt'], 0) or 0),
+                        'net_wt': float(get_column_value(row, ['Less', 'Net.Wt.', 'Net Wt', 'Net.Wt', 'NetWt', 'net wt'], 0) or 0),
+                        'fine_sil': float(get_column_value(row, ['Fine Sil.', 'Fine Sil', 'Sil.Fine', 'Sil Fine', 'fine sil', 'Silver Fine'], 0) or 0),
+                        'labor': float(get_column_value(row, ['Fine Total', 'Total', 'total', 'Labor', 'labour'], 0) or 0),
+                        'dia_wt': float(get_column_value(row, ['Dia.Wt.', 'Dia Wt', 'Diamond Wt', 'dia wt'], 0) or 0),
+                        'stn_wt': float(get_column_value(row, ['Stn.Wt.', 'Stn Wt', 'Stone Wt', 'stn wt'], 0) or 0),
+                        'total_pc': int(get_column_value(row, ['Pc', 'pc', 'Pieces', 'pieces', 'Total Pc'], 0) or 0)
                     }
-                    if record['item_name']:  # Only add if item name exists
-                        records.append(record)
+                    records.append(record)
                 except Exception as e:
                     continue
             return records
