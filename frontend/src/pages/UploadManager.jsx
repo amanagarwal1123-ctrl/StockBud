@@ -21,6 +21,22 @@ export default function UploadManager() {
   const handleFileUpload = async (fileType, file) => {
     if (!file) return;
 
+    // Confirmation dialog
+    const fileTypeNames = {
+      'opening_stock': 'Opening Stock (PREV_STOCK)',
+      'purchase': 'Purchase Transactions',
+      'sale': 'Sale Transactions',
+      'physical_stock': 'Physical Stock (CURRENT_STOCK)'
+    };
+
+    const confirmed = window.confirm(
+      `Are you sure you want to upload ${fileTypeNames[fileType]}?\n\n` +
+      `File: ${file.name}\n\n` +
+      `This will ${fileType === 'opening_stock' || fileType === 'physical_stock' ? 'replace all existing data' : 'add new transactions'}.`
+    );
+
+    if (!confirmed) return;
+
     setUploading(true);
     const formData = new FormData();
     formData.append('file', file);
