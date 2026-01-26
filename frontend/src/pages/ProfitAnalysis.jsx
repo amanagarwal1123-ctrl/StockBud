@@ -128,7 +128,7 @@ export default function ProfitAnalysis() {
               <TableBody>
                 {profitData?.top_profitable_items?.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       No profit data available
                     </TableCell>
                   </TableRow>
@@ -136,15 +136,18 @@ export default function ProfitAnalysis() {
                   profitData?.top_profitable_items?.slice(0, 15).map((item, idx) => (
                     <TableRow key={idx} className="table-row">
                       <TableCell className="font-medium">{item.item_name}</TableCell>
-                      <TableCell className="text-right font-mono text-primary">
-                        ₹{item.sales.toLocaleString()}
+                      <TableCell className="text-right font-mono">{item.net_wt_sold}</TableCell>
+                      <TableCell className="text-right font-mono">{item.avg_purchase_tunch}%</TableCell>
+                      <TableCell className="text-right font-mono">{item.avg_sale_tunch}%</TableCell>
+                      <TableCell className="text-right font-mono text-accent">
+                        ₹{item.tunch_profit.toLocaleString()}
                       </TableCell>
                       <TableCell className="text-right font-mono text-secondary">
-                        ₹{item.purchases.toLocaleString()}
+                        ₹{item.labor_profit.toLocaleString()}
                       </TableCell>
                       <TableCell className="text-right font-mono">
-                        <Badge className={item.profit > 0 ? 'bg-accent' : 'bg-destructive'}>
-                          ₹{item.profit.toLocaleString()}
+                        <Badge className={item.total_profit > 0 ? 'bg-accent' : 'bg-destructive'}>
+                          ₹{item.total_profit.toLocaleString()}
                         </Badge>
                       </TableCell>
                     </TableRow>
