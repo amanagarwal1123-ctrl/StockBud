@@ -255,72 +255,34 @@ async def save_action(action_type: str, description: str, data_snapshot: dict = 
 
 @api_router.post("/opening-stock/upload")
 async def upload_opening_stock(file: UploadFile = File(...)):
-    """Upload opening stock - SPECIAL: Read from Totals row if exists"""
+    """Upload opening stock - Parse ALL individual entries (sum them, ignore Totals row)"""
     content = await file.read()
     
     try:
-        df = pd.read_excel(BytesIO(content), header=None)
-        
-        # Find header row
-        header_row_idx = None
-        for idx, row in df.iterrows():
-            row_str = ' '.join(str(val).lower() for val in row if pd.notna(val))
-            if 'item name' in row_str and 'net.wt' in row_str:
-                header_row_idx = idx
-                break
-        
-        if header_row_idx is None:
-            df = pd.read_excel(BytesIO(content))
-        else:
-            df = pd.read_excel(BytesIO(content), header=header_row_idx)
-        
-        df = df.fillna('')
-        df.columns = df.columns.str.strip()
-        
-        # Check if there's a "Totals" row - if so, use THAT as single opening stock entry
-        totals_row = df[df['Item Name'].astype(str).str.lower().str.contains('total', na=False)]
-        
-        if not totals_row.empty:
-            # Use totals row as the opening stock
-            total_row = totals_row.iloc[0]
-            total_net_wt = float(pd.to_numeric(total_row.get('Net.Wt.', 0), errors='coerce') or 0) * 1000  # KG to grams
-            
-            await db.opening_stock.delete_many({})
-            
-            # Create single stock entry representing total
-            stock_item = OpeningStock(
-                item_name="TOTAL_OPENING_STOCK",
-                stamp="ALL",
-                net_wt=total_net_wt,
-                gr_wt=float(pd.to_numeric(total_row.get('Gr.Wt.', 0), errors='coerce') or 0) * 1000,
-                fine=float(pd.to_numeric(total_row.get('Sil.Fine', 0), errors='coerce') or 0) * 1000
-            )
-            await db.opening_stock.insert_one(stock_item.model_dump())
-            
-            await save_action('upload_opening_stock', f"Uploaded opening stock total: {total_net_wt/1000:.3f} kg")
-            
-            return {
-                "success": True,
-                "count": 1,
-                "total_net_wt_kg": round(total_net_wt/1000, 3),
-                "message": f"Opening stock uploaded: {total_net_wt/1000:.3f} kg"
-            }
-        
-        # Fallback: Parse individual items (old logic)
+        # Parse individual items using the standard parser
         records = parse_excel_file(content, 'opening_stock')
         
         if not records:
             raise HTTPException(status_code=400, detail="No valid records found in file")
         
+        # Clear existing opening stock
         await db.opening_stock.delete_many({})
+        
+        # Insert all individual items
         stock_items = [OpeningStock(**record).model_dump() for record in records]
         await db.opening_stock.insert_many(stock_items)
         
-        await save_action('upload_opening_stock', f"Uploaded {len(stock_items)} opening stock items")
+        # Calculate totals for response
+        total_net_wt = sum(item['net_wt'] for item in stock_items)
+        total_gr_wt = sum(item['gr_wt'] for item in stock_items)
+        
+        await save_action('upload_opening_stock', f"Uploaded {len(stock_items)} opening stock items, total: {total_net_wt/1000:.3f} kg")
         
         return {
             "success": True,
             "count": len(stock_items),
+            "total_net_wt_kg": round(total_net_wt/1000, 3),
+            "total_gr_wt_kg": round(total_gr_wt/1000, 3),
             "message": f"{len(stock_items)} opening stock records uploaded successfully"
         }
     except Exception as e:
