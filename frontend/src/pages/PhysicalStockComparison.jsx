@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Scale, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react';
+import { Scale, CheckCircle2, AlertTriangle, XCircle, Download } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { exportToCSV } from '@/utils/exportCSV';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -51,6 +53,36 @@ export default function PhysicalStockComparison() {
   }
 
   const summary = comparison.summary;
+
+  const handleExportDiscrepancies = () => {
+    const exportData = comparison.discrepancies.map(item => ({
+      'Item Name': item.item_name,
+      'Stamp': item.stamp || 'Unassigned',
+      'Book Stock (kg)': (item.book_net_wt / 1000).toFixed(3),
+      'Physical Stock (kg)': (item.physical_net_wt / 1000).toFixed(3),
+      'Difference (kg)': item.difference_kg,
+      'Match %': item.match_percentage
+    }));
+    exportToCSV(exportData, 'stock_discrepancies');
+  };
+
+  const handleExportOnlyBook = () => {
+    const exportData = comparison.only_in_book.map(item => ({
+      'Item Name': item.item_name,
+      'Stamp': item.stamp || 'Unassigned',
+      'Book Weight (kg)': item.book_net_wt_kg
+    }));
+    exportToCSV(exportData, 'items_only_in_book');
+  };
+
+  const handleExportOnlyPhysical = () => {
+    const exportData = comparison.only_in_physical.map(item => ({
+      'Item Name': item.item_name,
+      'Stamp': item.stamp || 'Unassigned',
+      'Physical Weight (kg)': item.physical_net_wt_kg
+    }));
+    exportToCSV(exportData, 'items_only_in_physical');
+  };
 
   return (
     <div className="p-6 md:p-8 space-y-6">
