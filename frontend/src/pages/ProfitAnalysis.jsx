@@ -117,9 +117,12 @@ export default function ProfitAnalysis() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Item Name</TableHead>
-                  <TableHead className="text-right font-mono">Sales</TableHead>
-                  <TableHead className="text-right font-mono">Purchases</TableHead>
-                  <TableHead className="text-right font-mono">Profit</TableHead>
+                  <TableHead className="text-right font-mono">Net Wt Sold (kg)</TableHead>
+                  <TableHead className="text-right">Avg Purchase Tunch</TableHead>
+                  <TableHead className="text-right">Avg Sale Tunch</TableHead>
+                  <TableHead className="text-right font-mono">Tunch Profit</TableHead>
+                  <TableHead className="text-right font-mono">Labour Profit</TableHead>
+                  <TableHead className="text-right font-mono">Total Profit</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
