@@ -76,7 +76,7 @@ export default function CurrentStock() {
       )}
 
       {/* Stats */}
-      <div className="grid gap-6 md:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-4">
         <Card className="border-border/40 shadow-sm bg-gradient-to-br from-primary/10 to-transparent">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Items</CardTitle>
@@ -93,12 +93,22 @@ export default function CurrentStock() {
             <div className="text-3xl font-bold font-mono text-accent">{Object.keys(byStamp).length}</div>
           </CardContent>
         </Card>
-        <Card className="border-border/40 shadow-sm bg-gradient-to-br from-secondary/10 to-transparent">
+        <Card className="border-border/40 shadow-sm bg-gradient-to-br from-blue-500/10 to-transparent">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Gross Weight</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold font-mono text-blue-600">
+              {(inventory.reduce((sum, item) => sum + item.gr_wt, 0) / 1000).toFixed(3)} kg
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-border/40 shadow-sm bg-gradient-to-br from-green-500/10 to-transparent">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Net Weight</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold font-mono text-secondary">
+            <div className="text-3xl font-bold font-mono text-green-600">
               {(inventory.reduce((sum, item) => sum + item.net_wt, 0) / 1000).toFixed(3)} kg
             </div>
           </CardContent>
