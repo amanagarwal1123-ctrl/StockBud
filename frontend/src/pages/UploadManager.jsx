@@ -109,8 +109,11 @@ export default function UploadManager() {
           <TabsTrigger value="transactions" data-testid="tab-transactions">
             Transactions
           </TabsTrigger>
-          <TabsTrigger value="physical" data-testid="tab-physical">
+          <TabsTrigger value="opening" data-testid="tab-opening">
             Opening Stock
+          </TabsTrigger>
+          <TabsTrigger value="physical" data-testid="tab-physical">
+            Physical Stock
           </TabsTrigger>
         </TabsList>
 
@@ -129,12 +132,22 @@ export default function UploadManager() {
           </div>
         </TabsContent>
 
-        <TabsContent value="physical" className="space-y-6">
+        <TabsContent value="opening" className="space-y-6">
           <div className="max-w-2xl">
             <FileUploadCard
               type="opening_stock"
-              title="Opening Stock"
-              description="Upload your opening stock/current stock Excel file with Item Name, Stamp, Gr.Wt., Net.Wt., Fine, etc."
+              title="Opening Stock (PREV_STOCK)"
+              description="Upload your opening stock Excel file. Duplicate items will be automatically merged."
+            />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="physical" className="space-y-6">
+          <div className="max-w-2xl">
+            <FileUploadCard
+              type="physical_stock"
+              title="Physical Stock (CURRENT_STOCK)"
+              description="Upload your physical count Excel file to compare with book stock. System will show differences."
             />
           </div>
         </TabsContent>
