@@ -105,7 +105,7 @@ def parse_labor_value(tag_no):
     return 0.0, None
 
 def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
-    """Parse Excel file and return list of rows"""
+    """Parse Excel file and return list of rows. Excel files have weights in KG, multiply by 1000 to store as grams."""
     try:
         df = pd.read_excel(BytesIO(file_content), header=None)
         
@@ -124,6 +124,9 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
         
         df = df.fillna('')
         df.columns = df.columns.str.strip()
+        
+        # IMPORTANT: Excel files have weights in KG, multiply by 1000 to store as grams internally
+        KG_TO_GRAMS = 1000
         
         if file_type == 'purchase':
             records = []
