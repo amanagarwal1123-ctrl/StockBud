@@ -191,11 +191,17 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                         continue
                     
                     trans_type = str(get_column_value(row, ['Type', 'type'], 'S')).strip().upper()
+                    
+                    # Skip Totals row (Type is a number like '8085')
+                    if trans_type.isdigit():
+                        continue
+                    
                     tag_no = str(get_column_value(row, ['Lbr. On Tag.No.', 'Tag.No.', 'Tag No'], ''))
                     labor_val, labor_on = parse_labor_value(tag_no)
                     
+                    # Store type as-is; weights are already positive/negative in Excel
                     record = {
-                        'type': 'sale' if trans_type == 'S' else 'sale_return',
+                        'type': 'sale' if trans_type in ['S', 'SALE'] else 'sale_return',
                         'date': str(get_column_value(row, ['Date', 'date'], '')),
                         'refno': str(get_column_value(row, ['Refno', 'refno', 'Ref No'], '')),
                         'party_name': str(get_column_value(row, ['Party Name', 'party name', 'Party'], '')),
