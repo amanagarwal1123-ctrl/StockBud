@@ -134,6 +134,56 @@ export default function Dashboard() {
         ))}
       </div>
 
+      {/* Sales Summary */}
+      {salesSummary && (
+        <div className="space-y-3">
+          <h2 className="text-2xl font-bold">Total Sales Summary</h2>
+          <div className="grid gap-6 md:grid-cols-3">
+            <Card className="border-border/40 shadow-sm bg-gradient-to-br from-green-500/10 to-transparent">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <Weight className="h-4 w-4 text-green-600" />
+                  Total Net Weight Sold
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold font-mono text-green-600">
+                  {salesSummary.total_net_wt_kg.toLocaleString()} kg
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/40 shadow-sm bg-gradient-to-br from-blue-500/10 to-transparent">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <Package className="h-4 w-4 text-blue-600" />
+                  Total Fine Silver Sold
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold font-mono text-blue-600">
+                  {salesSummary.total_fine_wt_kg.toLocaleString()} kg
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/40 shadow-sm bg-gradient-to-br from-purple-500/10 to-transparent">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-purple-600" />
+                  Total Labour
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold font-mono text-purple-600">
+                  {formatIndianCurrency(salesSummary.total_labor)}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
+
       {/* Quick Actions */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         <Card className="border-border/40 shadow-sm">
