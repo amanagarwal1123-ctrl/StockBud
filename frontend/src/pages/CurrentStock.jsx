@@ -17,6 +17,8 @@ export default function CurrentStock() {
   const [inventory, setInventory] = useState([]);
   const [negativeItems, setNegativeItems] = useState([]);
   const [byStamp, setByStamp] = useState({});
+  const [totalGrWt, setTotalGrWt] = useState(0);
+  const [totalNetWt, setTotalNetWt] = useState(0);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStamp, setSelectedStamp] = useState('all');
