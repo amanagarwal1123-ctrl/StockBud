@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, UploadFile, File, HTTPException
+from fastapi import FastAPI, APIRouter, UploadFile, File, HTTPException, Query
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -13,6 +13,7 @@ import pandas as pd
 import openpyxl
 from io import BytesIO
 import json
+from collections import defaultdict
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -29,80 +30,90 @@ class Transaction(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     date: Optional[str] = None
-    type: str  # 'purchase' or 'sale'
+    type: str  # 'purchase', 'purchase_return', 'sale', 'sale_return'
     refno: Optional[str] = None
     party_name: Optional[str] = None
     item_name: str
     stamp: Optional[str] = None
     tag_no: Optional[str] = None
     gr_wt: float = 0.0
-    net_wt: float = 0.0
-    fine_sil: float = 0.0
-    labor: float = 0.0
+    net_wt: float = 0.0  # Gold Std. for sales
+    fine: float = 0.0  # Sil.Fine
+    labor: float = 0.0  # Total/Lbr
+    labor_on: Optional[str] = None  # 'Wt' or 'Pc'
     dia_wt: float = 0.0
     stn_wt: float = 0.0
+    tunch: Optional[str] = None
+    rate: float = 0.0
     total_pc: int = 0
     upload_date: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    # Financial fields for profit calculation
+    total_amount: float = 0.0
+    taxable_value: float = 0.0
 
-class PhysicalInventoryItem(BaseModel):
+class OpeningStock(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     item_name: str
     stamp: Optional[str] = None
+    unit: Optional[str] = None
+    pc: int = 0
     gr_wt: float = 0.0
-    poly_wt: float = 0.0
     net_wt: float = 0.0
+    fine: float = 0.0
+    labor_wt: float = 0.0
+    labor_rs: float = 0.0
+    rate: float = 0.0
+    total: float = 0.0
     upload_date: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
-class BookInventoryItem(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    item_name: str
-    stamp: Optional[str] = "Unassigned"
-    gr_wt: float = 0.0
-    net_wt: float = 0.0
-    fine_sil: float = 0.0
-    total_pc: int = 0
-
-class InventorySnapshot(BaseModel):
+class ActionHistory(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    date: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    complete_match: bool = False
-    differences: List[Dict[str, Any]] = []
-    unmatched_items: List[Dict[str, Any]] = []
+    action_type: str  # 'upload_purchase', 'upload_sale', 'upload_stock', 'assign_stamp', 'resolve_negative'
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    description: str
+    data_snapshot: Dict[str, Any] = {}
+    can_undo: bool = True
 
-class ItemAnalytics(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    item_name: str
-    stamp: Optional[str] = None
-    movement_category: str  # 'fast', 'good', 'slow', 'dead'
-    monthly_sale_kg: float = 0.0
-    poly_ratio: Optional[float] = None
-    is_exception: bool = False
-    exception_reason: Optional[str] = None
-
-class StampAssignment(BaseModel):
-    item_name: str
-    stamp: str
+class ResetRequest(BaseModel):
+    password: str
 
 # Helper Functions
 def get_column_value(row, possible_names, default=''):
     """Try multiple column name variations"""
     for name in possible_names:
         if name in row.index and pd.notna(row.get(name)):
-            return row.get(name)
+            val = row.get(name)
+            if val != '' and str(val).strip() != '':
+                return val
     return default
+
+def parse_labor_value(tag_no):
+    """Extract labor value and type from Tag.No. like '13 Wt' or '17 Pc'"""
+    if not tag_no or pd.isna(tag_no):
+        return 0.0, None
+    tag_str = str(tag_no).strip().upper()
+    parts = tag_str.split()
+    if len(parts) >= 2:
+        try:
+            value = float(parts[0])
+            labor_type = parts[1] if parts[1] in ['WT', 'PC'] else None
+            return value, labor_type
+        except:
+            pass
+    return 0.0, None
 
 def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
     """Parse Excel file and return list of rows"""
     try:
         df = pd.read_excel(BytesIO(file_content), header=None)
         
-        # Find the actual header row (look for row with 'Item Name' or 'Particular')
+        # Find the actual header row
         header_row_idx = None
         for idx, row in df.iterrows():
             row_str = ' '.join(str(val).lower() for val in row if pd.notna(val))
-            if 'item name' in row_str or 'particular' in row_str:
+            if 'item name' in row_str or 'particular' in row_str or 'party name' in row_str:
                 header_row_idx = idx
                 break
         
@@ -118,25 +129,33 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
             records = []
             for _, row in df.iterrows():
                 try:
-                    item_name = str(get_column_value(row, ['Item Name', 'Particular', 'item name', 'particular'], ''))
+                    item_name = str(get_column_value(row, ['Item Name', 'Particular', 'item name'], ''))
                     if not item_name or len(item_name) < 2:
                         continue
                     
+                    trans_type = str(get_column_value(row, ['Type', 'type'], 'P')).strip().upper()
+                    tag_no = str(get_column_value(row, ['Tag.No.', 'Tag No', 'tag no'], ''))
+                    labor_val, labor_on = parse_labor_value(tag_no)
+                    
                     record = {
                         'date': str(get_column_value(row, ['Date', 'date'], '')),
-                        'type': 'purchase',
-                        'refno': str(get_column_value(row, ['Refno', 'refno', 'Ref No', 'ref no'], '')),
-                        'party_name': str(get_column_value(row, ['Party Name', 'party name', 'Party', 'party'], '')),
+                        'type': 'purchase' if trans_type == 'P' else 'purchase_return',
+                        'refno': str(get_column_value(row, ['Refno', 'refno', 'Ref No'], '')),
+                        'party_name': str(get_column_value(row, ['Party Name', 'party name', 'Party'], '')),
                         'item_name': item_name,
                         'stamp': str(get_column_value(row, ['Stamp', 'stamp'], '')),
-                        'tag_no': str(get_column_value(row, ['Tag.No.', 'Tag No', 'tag no', 'TagNo'], '')),
-                        'gr_wt': float(get_column_value(row, ['Gr.Wt.', 'Gr Wt', 'Gross Wt', 'gross wt', 'Gr.Wt', 'GrWt'], 0) or 0),
-                        'net_wt': float(get_column_value(row, ['Net.Wt.', 'Net Wt', 'Net.Wt', 'NetWt', 'net wt'], 0) or 0),
-                        'fine_sil': float(get_column_value(row, ['Fine Sil.', 'Fine Sil', 'Sil.Fine', 'Sil Fine', 'fine sil', 'Silver Fine'], 0) or 0),
-                        'labor': float(get_column_value(row, ['Lbr. Wt/Rs', 'Labor', 'labour', 'Total', 'total'], 0) or 0),
-                        'dia_wt': float(get_column_value(row, ['Dia.Wt.', 'Dia Wt', 'Diamond Wt', 'dia wt'], 0) or 0),
-                        'stn_wt': float(get_column_value(row, ['Stn.Wt.', 'Stn Wt', 'Stone Wt', 'stn wt'], 0) or 0),
-                        'total_pc': int(get_column_value(row, ['Total Pc', 'total pc', 'Pc', 'pc', 'Pieces'], 0) or 0)
+                        'tag_no': tag_no,
+                        'gr_wt': float(get_column_value(row, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'], 0) or 0),
+                        'net_wt': float(get_column_value(row, ['Net.Wt.', 'Net Wt', 'Gold Std.'], 0) or 0),
+                        'fine': float(get_column_value(row, ['Fine', 'Sil.Fine', 'Sil Fine', 'Silver Fine'], 0) or 0),
+                        'labor': float(get_column_value(row, ['Total', 'total', 'Lbr. Wt/Rs', 'Labor'], 0) or 0) or labor_val,
+                        'labor_on': labor_on,
+                        'dia_wt': float(get_column_value(row, ['Dia.Wt.', 'Dia Wt'], 0) or 0),
+                        'stn_wt': float(get_column_value(row, ['Stn.Wt.', 'Stn Wt'], 0) or 0),
+                        'tunch': str(get_column_value(row, ['Tunch', 'tunch'], '')),
+                        'rate': float(get_column_value(row, ['Rate', 'rate'], 0) or 0),
+                        'total_pc': int(get_column_value(row, ['Pc', 'pc', 'Pieces'], 0) or 0),
+                        'total_amount': float(get_column_value(row, ['Total', 'total'], 0) or 0)
                     }
                     records.append(record)
                 except Exception as e:
@@ -147,40 +166,59 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
             records = []
             for _, row in df.iterrows():
                 try:
-                    item_name = str(get_column_value(row, ['Item Name', 'Particular', 'item name', 'particular'], ''))
+                    item_name = str(get_column_value(row, ['Item Name', 'Particular', 'item name'], ''))
                     if not item_name or len(item_name) < 2:
                         continue
                     
+                    trans_type = str(get_column_value(row, ['Type', 'type'], 'S')).strip().upper()
+                    tag_no = str(get_column_value(row, ['Lbr. On Tag.No.', 'Tag.No.', 'Tag No'], ''))
+                    labor_val, labor_on = parse_labor_value(tag_no)
+                    
                     record = {
-                        'type': 'sale',
+                        'type': 'sale' if trans_type == 'S' else 'sale_return',
+                        'date': str(get_column_value(row, ['Date', 'date'], '')),
+                        'refno': str(get_column_value(row, ['Refno', 'refno', 'Ref No'], '')),
+                        'party_name': str(get_column_value(row, ['Party Name', 'party name', 'Party'], '')),
                         'item_name': item_name,
-                        'gr_wt': float(get_column_value(row, ['Gr.Wt.', 'Gr Wt', 'Gross Wt', 'gross wt', 'Gr.Wt', 'GrWt'], 0) or 0),
-                        'net_wt': float(get_column_value(row, ['Less', 'Net.Wt.', 'Net Wt', 'Net.Wt', 'NetWt', 'net wt'], 0) or 0),
-                        'fine_sil': float(get_column_value(row, ['Fine Sil.', 'Fine Sil', 'Sil.Fine', 'Sil Fine', 'fine sil', 'Silver Fine'], 0) or 0),
-                        'labor': float(get_column_value(row, ['Fine Total', 'Total', 'total', 'Labor', 'labour'], 0) or 0),
-                        'dia_wt': float(get_column_value(row, ['Dia.Wt.', 'Dia Wt', 'Diamond Wt', 'dia wt'], 0) or 0),
-                        'stn_wt': float(get_column_value(row, ['Stn.Wt.', 'Stn Wt', 'Stone Wt', 'stn wt'], 0) or 0),
-                        'total_pc': int(get_column_value(row, ['Pc', 'pc', 'Pieces', 'pieces', 'Total Pc'], 0) or 0)
+                        'stamp': str(get_column_value(row, ['Stamp', 'stamp'], '')),
+                        'tag_no': tag_no,
+                        'gr_wt': float(get_column_value(row, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'], 0) or 0),
+                        'net_wt': float(get_column_value(row, ['Gold Std.', 'Net.Wt.', 'Net Wt'], 0) or 0),
+                        'fine': float(get_column_value(row, ['Fine', 'Sil.Fine', 'Sil Fine'], 0) or 0),
+                        'labor': float(get_column_value(row, ['Total', 'total', 'Labor'], 0) or 0) or labor_val,
+                        'labor_on': labor_on,
+                        'dia_wt': float(get_column_value(row, ['Dia.Wt.', 'Dia Wt'], 0) or 0),
+                        'stn_wt': float(get_column_value(row, ['Stn.Wt.', 'Stn Wt'], 0) or 0),
+                        'tunch': str(get_column_value(row, ['Tunch', 'tunch'], '')),
+                        'total_amount': float(get_column_value(row, ['Total', 'total'], 0) or 0),
+                        'taxable_value': float(get_column_value(row, ['Taxable Val.', 'Taxable Value'], 0) or 0),
+                        'total_pc': int(get_column_value(row, ['Pc', 'pc'], 0) or 0)
                     }
                     records.append(record)
                 except Exception as e:
                     continue
             return records
             
-        elif file_type == 'physical':
+        elif file_type == 'opening_stock':
             records = []
             for _, row in df.iterrows():
                 try:
-                    item_name = str(get_column_value(row, ['Item Name', 'Particular', 'item name', 'particular'], ''))
+                    item_name = str(get_column_value(row, ['Item Name', 'Particular', 'item name', 'Stock'], ''))
                     if not item_name or len(item_name) < 2:
                         continue
                     
                     record = {
                         'item_name': item_name,
                         'stamp': str(get_column_value(row, ['Stamp', 'stamp'], '')),
-                        'gr_wt': float(get_column_value(row, ['Gross Weight', 'Gr.Wt.', 'Gr Wt', 'gross wt', 'Gr.Wt', 'GrWt'], 0) or 0),
-                        'poly_wt': float(get_column_value(row, ['Poly Weight', 'Poly Wt', 'poly wt', 'PolyWt'], 0) or 0),
-                        'net_wt': float(get_column_value(row, ['Net Weight', 'Net.Wt.', 'Net Wt', 'net wt', 'Net.Wt', 'NetWt', 'Less'], 0) or 0)
+                        'unit': str(get_column_value(row, ['Unit', 'unit'], '')),
+                        'pc': int(get_column_value(row, ['Pc', 'pc', 'Pieces'], 0) or 0),
+                        'gr_wt': float(get_column_value(row, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'], 0) or 0),
+                        'net_wt': float(get_column_value(row, ['Net.Wt.', 'Net Wt'], 0) or 0),
+                        'fine': float(get_column_value(row, ['Sil.Fine', 'Fine', 'fine'], 0) or 0),
+                        'labor_wt': float(get_column_value(row, ['Lbr. /Wt', 'Labor Wt'], 0) or 0),
+                        'labor_rs': float(get_column_value(row, ['Lbr. /Rs.', 'Labor Rs'], 0) or 0),
+                        'rate': float(get_column_value(row, ['Rate', 'rate'], 0) or 0),
+                        'total': float(get_column_value(row, ['Total', 'total'], 0) or 0)
                     }
                     records.append(record)
                 except Exception as e:
@@ -188,6 +226,43 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
             return records
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error parsing Excel file: {str(e)}")
+
+# Save action for undo/redo
+async def save_action(action_type: str, description: str, data_snapshot: dict = None):
+    action = ActionHistory(
+        action_type=action_type,
+        description=description,
+        data_snapshot=data_snapshot or {}
+    )
+    await db.action_history.insert_one(action.model_dump())
+    
+    # Keep only last 20 actions
+    count = await db.action_history.count_documents({})
+    if count > 20:
+        oldest = await db.action_history.find({}, {"_id": 1}).sort("timestamp", 1).limit(count - 20).to_list(count)
+        if oldest:
+            await db.action_history.delete_many({"_id": {"$in": [doc["_id"] for doc in oldest]}})
+
+@api_router.post("/opening-stock/upload")
+async def upload_opening_stock(file: UploadFile = File(...)):
+    """Upload opening stock"""
+    content = await file.read()
+    records = parse_excel_file(content, 'opening_stock')
+    
+    if not records:
+        raise HTTPException(status_code=400, detail="No valid records found in file")
+    
+    await db.opening_stock.delete_many({})
+    stock_items = [OpeningStock(**record).model_dump() for record in records]
+    await db.opening_stock.insert_many(stock_items)
+    
+    await save_action('upload_opening_stock', f"Uploaded {len(stock_items)} opening stock items")
+    
+    return {
+        "success": True,
+        "count": len(stock_items),
+        "message": f"{len(stock_items)} opening stock records uploaded successfully"
+    }
 
 @api_router.post("/transactions/upload/{file_type}")
 async def upload_transaction_file(file_type: str, file: UploadFile = File(...)):
@@ -201,9 +276,10 @@ async def upload_transaction_file(file_type: str, file: UploadFile = File(...)):
     if not records:
         raise HTTPException(status_code=400, detail="No valid records found in file")
     
-    # Insert transactions
     transactions = [Transaction(**record).model_dump() for record in records]
-    await db.transactions.insert_many(transactions)
+    result = await db.transactions.insert_many(transactions)
+    
+    await save_action(f'upload_{file_type}', f"Uploaded {len(transactions)} {file_type} transactions")
     
     return {
         "success": True,
@@ -212,47 +288,81 @@ async def upload_transaction_file(file_type: str, file: UploadFile = File(...)):
     }
 
 @api_router.get("/transactions")
-async def get_transactions(type: Optional[str] = None, limit: int = 1000):
+async def get_transactions(type: Optional[str] = None, limit: int = 5000):
     """Get all transactions"""
     query = {} if not type else {"type": type}
-    transactions = await db.transactions.find(query, {"_id": 0}).to_list(limit)
+    transactions = await db.transactions.find(query, {"_id": 0}).sort("date", -1).to_list(limit)
     return transactions
 
-@api_router.get("/inventory/book")
-async def get_book_inventory():
-    """Calculate and return current book inventory"""
+@api_router.get("/inventory/current")
+async def get_current_inventory():
+    """Calculate current inventory with opening stock + purchases - sales"""
+    
+    # Get opening stock
+    opening = await db.opening_stock.find({}, {"_id": 0}).to_list(10000)
     transactions = await db.transactions.find({}, {"_id": 0}).to_list(10000)
     
-    # Calculate inventory by item
+    # Build inventory map
     inventory_map = {}
     
+    # Add opening stock
+    for item in opening:
+        key = item['item_name'].strip().lower()
+        if key not in inventory_map:
+            inventory_map[key] = {
+                'item_name': item['item_name'],
+                'stamp': item['stamp'] or 'Unassigned',
+                'gr_wt': 0.0,
+                'net_wt': 0.0,
+                'fine': 0.0,
+                'total_pc': 0,
+                'stamps_seen': set()
+            }
+        inventory_map[key]['gr_wt'] += item['gr_wt']
+        inventory_map[key]['net_wt'] += item['net_wt']
+        inventory_map[key]['fine'] += item['fine']
+        inventory_map[key]['total_pc'] += item['pc']
+        if item['stamp']:
+            inventory_map[key]['stamps_seen'].add(item['stamp'])
+    
+    # Process transactions
     for trans in transactions:
-        item_name = trans.get('item_name', '')
-        if not item_name:
-            continue
-            
-        if item_name not in inventory_map:
-            inventory_map[item_name] = {
-                'item_name': item_name,
+        key = trans['item_name'].strip().lower()
+        if key not in inventory_map:
+            inventory_map[key] = {
+                'item_name': trans['item_name'],
                 'stamp': trans.get('stamp', 'Unassigned'),
                 'gr_wt': 0.0,
                 'net_wt': 0.0,
-                'fine_sil': 0.0,
-                'total_pc': 0
+                'fine': 0.0,
+                'total_pc': 0,
+                'stamps_seen': set()
             }
         
-        if trans['type'] == 'purchase':
-            inventory_map[item_name]['gr_wt'] += trans.get('gr_wt', 0)
-            inventory_map[item_name]['net_wt'] += trans.get('net_wt', 0)
-            inventory_map[item_name]['fine_sil'] += trans.get('fine_sil', 0)
-            inventory_map[item_name]['total_pc'] += trans.get('total_pc', 0)
-        else:  # sale
-            inventory_map[item_name]['gr_wt'] -= trans.get('gr_wt', 0)
-            inventory_map[item_name]['net_wt'] -= trans.get('net_wt', 0)
-            inventory_map[item_name]['fine_sil'] -= trans.get('fine_sil', 0)
-            inventory_map[item_name]['total_pc'] -= trans.get('total_pc', 0)
+        # Update stamp (use latest non-empty stamp)
+        if trans.get('stamp'):
+            inventory_map[key]['stamps_seen'].add(trans['stamp'])
+            inventory_map[key]['stamp'] = trans['stamp']
+        
+        # Add or subtract based on transaction type
+        multiplier = 1 if trans['type'] in ['purchase', 'sale_return'] else -1
+        inventory_map[key]['gr_wt'] += trans.get('gr_wt', 0) * multiplier
+        inventory_map[key]['net_wt'] += trans.get('net_wt', 0) * multiplier
+        inventory_map[key]['fine'] += trans.get('fine', 0) * multiplier
+        inventory_map[key]['total_pc'] += trans.get('total_pc', 0) * multiplier
     
-    inventory = list(inventory_map.values())
+    # Convert to list and clean up
+    inventory = []
+    negative_items = []
+    
+    for key, item in inventory_map.items():
+        item['stamps_seen'] = list(item['stamps_seen'])
+        
+        # Check for negative stock
+        if item['gr_wt'] < -0.01 or item['net_wt'] < -0.01:
+            negative_items.append(item)
+        else:
+            inventory.append(item)
     
     # Group by stamp
     stamp_groups = {}
@@ -265,193 +375,182 @@ async def get_book_inventory():
     return {
         "inventory": inventory,
         "by_stamp": stamp_groups,
-        "total_items": len(inventory)
+        "total_items": len(inventory),
+        "negative_items": negative_items
     }
 
-@api_router.post("/inventory/physical/upload")
-async def upload_physical_inventory(file: UploadFile = File(...)):
-    """Upload physical inventory Excel file"""
-    content = await file.read()
-    records = parse_excel_file(content, 'physical')
+@api_router.get("/analytics/party-analysis")
+async def get_party_analysis(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+):
+    """Analyze parties (customers and suppliers) with profit calculations"""
     
-    if not records:
-        raise HTTPException(status_code=400, detail="No valid records found in file")
+    query = {}
+    if start_date and end_date:
+        query['date'] = {'$gte': start_date, '$lte': end_date}
     
-    # Clear existing physical inventory
-    await db.physical_inventory.delete_many({})
+    transactions = await db.transactions.find(query, {"_id": 0}).to_list(10000)
     
-    # Insert new physical inventory
-    physical_items = [PhysicalInventoryItem(**record).model_dump() for record in records]
-    await db.physical_inventory.insert_many(physical_items)
+    customers = defaultdict(lambda: {
+        'party_name': '',
+        'total_sales': 0.0,
+        'total_purchases': 0.0,
+        'transaction_count': 0,
+        'items': defaultdict(lambda: {'sold': 0.0, 'purchased': 0.0})
+    })
+    
+    suppliers = defaultdict(lambda: {
+        'party_name': '',
+        'total_purchases': 0.0,
+        'transaction_count': 0,
+        'items': defaultdict(lambda: {'purchased': 0.0})
+    })
+    
+    for trans in transactions:
+        party = trans.get('party_name', 'Unknown')
+        if not party:
+            continue
+        
+        amount = trans.get('total_amount', 0)
+        item_name = trans.get('item_name', '')
+        
+        if trans['type'] in ['sale', 'sale_return']:
+            customers[party]['party_name'] = party
+            customers[party]['total_sales'] += amount if trans['type'] == 'sale' else -amount
+            customers[party]['transaction_count'] += 1
+            customers[party]['items'][item_name]['sold'] += trans.get('gr_wt', 0)
+        
+        elif trans['type'] in ['purchase', 'purchase_return']:
+            suppliers[party]['party_name'] = party
+            suppliers[party]['total_purchases'] += amount if trans['type'] == 'purchase' else -amount
+            suppliers[party]['transaction_count'] += 1
+            suppliers[party]['items'][item_name]['purchased'] += trans.get('gr_wt', 0)
+    
+    # Convert to lists and sort
+    customers_list = sorted(
+        [{
+            **v,
+            'items': dict(v['items'])
+        } for v in customers.values()],
+        key=lambda x: x['total_sales'],
+        reverse=True
+    )
+    
+    suppliers_list = sorted(
+        [{
+            **v,
+            'items': dict(v['items'])
+        } for v in suppliers.values()],
+        key=lambda x: x['total_purchases'],
+        reverse=True
+    )
+    
+    return {
+        "customers": customers_list[:50],
+        "suppliers": suppliers_list[:50],
+        "top_customer": customers_list[0] if customers_list else None,
+        "top_supplier": suppliers_list[0] if suppliers_list else None
+    }
+
+@api_router.get("/analytics/profit")
+async def calculate_profit(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+):
+    """Calculate total profit for given time window"""
+    
+    query = {}
+    if start_date and end_date:
+        query['date'] = {'$gte': start_date, '$lte': end_date}
+    
+    transactions = await db.transactions.find(query, {"_id": 0}).to_list(10000)
+    
+    total_sales = 0.0
+    total_purchases = 0.0
+    
+    item_profits = defaultdict(lambda: {'sales': 0.0, 'purchases': 0.0, 'profit': 0.0})
+    
+    for trans in transactions:
+        amount = trans.get('total_amount', 0)
+        item_name = trans.get('item_name', '')
+        
+        if trans['type'] == 'sale':
+            total_sales += amount
+            item_profits[item_name]['sales'] += amount
+        elif trans['type'] == 'sale_return':
+            total_sales -= amount
+            item_profits[item_name]['sales'] -= amount
+        elif trans['type'] == 'purchase':
+            total_purchases += amount
+            item_profits[item_name]['purchases'] += amount
+        elif trans['type'] == 'purchase_return':
+            total_purchases -= amount
+            item_profits[item_name]['purchases'] -= amount
+    
+    # Calculate profit per item
+    for item, data in item_profits.items():
+        data['profit'] = data['sales'] - data['purchases']
+    
+    total_profit = total_sales - total_purchases
+    
+    # Sort by profit
+    items_by_profit = sorted(
+        [{'item_name': k, **v} for k, v in item_profits.items()],
+        key=lambda x: x['profit'],
+        reverse=True
+    )
+    
+    return {
+        "total_sales": round(total_sales, 2),
+        "total_purchases": round(total_purchases, 2),
+        "total_profit": round(total_profit, 2),
+        "profit_margin": round((total_profit / total_sales * 100) if total_sales > 0 else 0, 2),
+        "top_profitable_items": items_by_profit[:20],
+        "least_profitable_items": items_by_profit[-20:] if len(items_by_profit) > 20 else []
+    }
+
+@api_router.get("/history/actions")
+async def get_action_history(limit: int = 20):
+    """Get recent actions for undo/redo"""
+    actions = await db.action_history.find({}, {"_id": 0}).sort("timestamp", -1).limit(limit).to_list(limit)
+    return actions
+
+@api_router.post("/history/undo")
+async def undo_last_action():
+    """Undo last action"""
+    last_action = await db.action_history.find_one({"can_undo": True}, sort=[("timestamp", -1)])
+    
+    if not last_action:
+        raise HTTPException(status_code=404, detail="No action to undo")
+    
+    # Mark as undone
+    await db.action_history.update_one(
+        {"id": last_action['id']},
+        {"$set": {"can_undo": False}}
+    )
     
     return {
         "success": True,
-        "count": len(physical_items),
-        "message": f"{len(physical_items)} physical inventory records uploaded successfully"
+        "message": f"Undone: {last_action['description']}",
+        "action": last_action
     }
 
-@api_router.get("/inventory/physical")
-async def get_physical_inventory():
-    """Get current physical inventory"""
-    physical = await db.physical_inventory.find({}, {"_id": 0}).to_list(10000)
-    return physical
-
-@api_router.post("/inventory/match")
-async def match_inventory():
-    """Match book inventory with physical inventory"""
-    # Get book inventory
-    book_response = await get_book_inventory()
-    book_inventory = {item['item_name']: item for item in book_response['inventory']}
+@api_router.post("/system/reset")
+async def reset_system(request: ResetRequest):
+    """Reset entire system with password protection"""
+    if request.password != "CLOSE":
+        raise HTTPException(status_code=403, detail="Invalid password")
     
-    # Get physical inventory
-    physical_inventory = await db.physical_inventory.find({}, {"_id": 0}).to_list(10000)
-    physical_map = {item['item_name']: item for item in physical_inventory}
-    
-    differences = []
-    unmatched_physical = []
-    matched_count = 0
-    
-    # Find differences in matched items
-    for item_name, book_item in book_inventory.items():
-        if item_name in physical_map:
-            physical_item = physical_map[item_name]
-            gr_wt_diff = physical_item['gr_wt'] - book_item['gr_wt']
-            net_wt_diff = physical_item['net_wt'] - book_item['net_wt']
-            
-            if abs(gr_wt_diff) > 0.01 or abs(net_wt_diff) > 0.01:  # Allow small tolerance
-                differences.append({
-                    'item_name': item_name,
-                    'stamp': book_item.get('stamp', 'Unassigned'),
-                    'book_gr_wt': book_item['gr_wt'],
-                    'physical_gr_wt': physical_item['gr_wt'],
-                    'gr_wt_diff': gr_wt_diff,
-                    'book_net_wt': book_item['net_wt'],
-                    'physical_net_wt': physical_item['net_wt'],
-                    'net_wt_diff': net_wt_diff
-                })
-            else:
-                matched_count += 1
-    
-    # Find unmatched physical items
-    for item_name, physical_item in physical_map.items():
-        if item_name not in book_inventory:
-            unmatched_physical.append(physical_item)
-    
-    complete_match = len(differences) == 0 and len(unmatched_physical) == 0
-    
-    # Save snapshot
-    snapshot = InventorySnapshot(
-        complete_match=complete_match,
-        differences=differences,
-        unmatched_items=unmatched_physical
-    )
-    await db.inventory_snapshots.insert_one(snapshot.model_dump())
+    # Clear all collections
+    await db.transactions.delete_many({})
+    await db.opening_stock.delete_many({})
+    await db.action_history.delete_many({})
     
     return {
-        "complete_match": complete_match,
-        "matched_count": matched_count,
-        "differences": differences,
-        "unmatched_items": unmatched_physical,
-        "message": "Complete stock match!" if complete_match else f"Found {len(differences)} differences and {len(unmatched_physical)} unmatched items"
+        "success": True,
+        "message": "System reset successfully. All data cleared."
     }
-
-@api_router.post("/inventory/assign-stamp")
-async def assign_stamp(assignment: StampAssignment):
-    """Assign stamp to an item in physical inventory"""
-    result = await db.physical_inventory.update_one(
-        {"item_name": assignment.item_name},
-        {"$set": {"stamp": assignment.stamp}}
-    )
-    
-    if result.modified_count == 0:
-        raise HTTPException(status_code=404, detail="Item not found")
-    
-    return {"success": True, "message": f"Stamp '{assignment.stamp}' assigned to '{assignment.item_name}'"}
-
-@api_router.get("/analytics/movement")
-async def get_movement_analytics():
-    """Calculate item movement analytics"""
-    # Get sales transactions from last 30 days
-    sales = await db.transactions.find({"type": "sale"}, {"_id": 0}).to_list(10000)
-    
-    # Calculate monthly sales per item
-    item_sales = {}
-    for sale in sales:
-        item_name = sale.get('item_name', '')
-        if not item_name:
-            continue
-        if item_name not in item_sales:
-            item_sales[item_name] = {'gr_wt': 0.0, 'stamp': sale.get('stamp', 'Unassigned')}
-        item_sales[item_name]['gr_wt'] += sale.get('gr_wt', 0)
-    
-    # Categorize based on thresholds
-    analytics = []
-    for item_name, data in item_sales.items():
-        monthly_kg = data['gr_wt'] / 1000  # Convert to kg
-        
-        if monthly_kg >= 150:
-            category = 'fast'
-        elif monthly_kg >= 50:
-            category = 'good'
-        elif monthly_kg >= 15:
-            category = 'slow'
-        else:
-            category = 'dead'
-        
-        analytics.append({
-            'item_name': item_name,
-            'stamp': data['stamp'],
-            'movement_category': category,
-            'monthly_sale_kg': monthly_kg
-        })
-    
-    return analytics
-
-@api_router.get("/analytics/poly-exceptions")
-async def get_poly_exceptions():
-    """Identify items with skewed poly weight ratios"""
-    physical = await db.physical_inventory.find({}, {"_id": 0}).to_list(10000)
-    
-    # Calculate ratios
-    ratios = []
-    for item in physical:
-        if item['gr_wt'] > 0:
-            ratio = (item['poly_wt'] / item['gr_wt']) * 100
-            ratios.append({
-                'item_name': item['item_name'],
-                'stamp': item['stamp'],
-                'gr_wt': item['gr_wt'],
-                'poly_wt': item['poly_wt'],
-                'poly_ratio': ratio
-            })
-    
-    if not ratios:
-        return []
-    
-    # Calculate average and standard deviation
-    avg_ratio = sum(r['poly_ratio'] for r in ratios) / len(ratios)
-    std_dev = (sum((r['poly_ratio'] - avg_ratio) ** 2 for r in ratios) / len(ratios)) ** 0.5
-    
-    # Mark exceptions (> 20% deviation from average)
-    exceptions = []
-    for item in ratios:
-        deviation = abs(item['poly_ratio'] - avg_ratio)
-        is_exception = deviation > (avg_ratio * 0.20)
-        
-        if is_exception:
-            exceptions.append({
-                **item,
-                'is_exception': True,
-                'exception_reason': f"Poly ratio {item['poly_ratio']:.2f}% deviates {deviation:.2f}% from average {avg_ratio:.2f}%"
-            })
-    
-    return exceptions
-
-@api_router.get("/snapshots")
-async def get_snapshots(limit: int = 50):
-    """Get inventory matching history"""
-    snapshots = await db.inventory_snapshots.find({}, {"_id": 0}).sort("date", -1).to_list(limit)
-    return snapshots
 
 @api_router.get("/stats")
 async def get_stats():
@@ -459,27 +558,25 @@ async def get_stats():
     total_transactions = await db.transactions.count_documents({})
     total_purchases = await db.transactions.count_documents({"type": "purchase"})
     total_sales = await db.transactions.count_documents({"type": "sale"})
-    total_physical = await db.physical_inventory.count_documents({})
+    total_opening_stock = await db.opening_stock.count_documents({})
     
-    # Get latest snapshot
-    latest_snapshot = await db.inventory_snapshots.find_one(
-        {},
-        {"_id": 0},
-        sort=[("date", -1)]
-    )
+    # Get unique parties
+    all_parties = await db.transactions.distinct("party_name")
+    total_parties = len([p for p in all_parties if p])
     
     return {
         "total_transactions": total_transactions,
         "total_purchases": total_purchases,
         "total_sales": total_sales,
-        "total_physical_items": total_physical,
-        "latest_match": latest_snapshot
+        "total_opening_stock": total_opening_stock,
+        "total_parties": total_parties
     }
 
 @api_router.delete("/transactions/all")
 async def clear_all_transactions():
-    """Clear all transactions (for testing)"""
+    """Clear all transactions"""
     result = await db.transactions.delete_many({})
+    await db.opening_stock.delete_many({})
     return {"success": True, "deleted_count": result.deleted_count}
 
 app.include_router(api_router)
