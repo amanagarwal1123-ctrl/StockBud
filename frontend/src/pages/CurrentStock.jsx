@@ -48,6 +48,14 @@ export default function CurrentStock() {
     return matchesSearch && matchesStamp;
   });
 
+  // Calculate totals for filtered items
+  const filteredTotals = {
+    gr_wt: filteredInventory.reduce((sum, item) => sum + item.gr_wt, 0),
+    net_wt: filteredInventory.reduce((sum, item) => sum + item.net_wt, 0),
+    fine: filteredInventory.reduce((sum, item) => sum + item.fine, 0),
+    total_pc: filteredInventory.reduce((sum, item) => sum + item.total_pc, 0),
+  };
+
   const stamps = ['all', ...Object.keys(byStamp).sort()];
 
   if (loading) {
