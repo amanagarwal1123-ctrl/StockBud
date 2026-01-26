@@ -78,6 +78,16 @@ export default function CurrentStock() {
     exportToCSV(exportData, filename);
   };
 
+  const handleExportNegativeItems = () => {
+    const exportData = negativeItems.map(item => ({
+      'Item Name': item.item_name,
+      'Stamp': item.stamp || 'Unassigned',
+      'Net Weight (kg)': (item.net_wt / 1000).toFixed(3),
+      'Gross Weight (kg)': (item.gr_wt / 1000).toFixed(3)
+    }));
+    exportToCSV(exportData, 'negative_stock_items');
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -268,13 +278,21 @@ export default function CurrentStock() {
       {negativeItems.length > 0 && (
         <Card className="border-destructive/50 shadow-sm">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-destructive">
-              <AlertTriangle className="h-5 w-5" />
-              Negative Stock Items
-            </CardTitle>
-            <CardDescription>
-              These items need to be merged or corrected due to naming inconsistencies
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-destructive">
+                  <AlertTriangle className="h-5 w-5" />
+                  Negative Stock Items
+                </CardTitle>
+                <CardDescription>
+                  These items need to be merged or corrected due to naming inconsistencies
+                </CardDescription>
+              </div>
+              <Button onClick={handleExportNegativeItems} variant="outline" size="sm">
+                <Download className="h-4 w-4 mr-2" />
+                Export CSV
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
