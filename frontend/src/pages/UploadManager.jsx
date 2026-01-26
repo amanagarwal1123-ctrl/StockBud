@@ -29,6 +29,8 @@ export default function UploadManager() {
       let endpoint;
       if (fileType === 'opening_stock') {
         endpoint = `${API}/opening-stock/upload`;
+      } else if (fileType === 'physical_stock') {
+        endpoint = `${API}/physical-stock/upload`;
       } else {
         endpoint = `${API}/transactions/upload/${fileType}`;
       }
