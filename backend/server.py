@@ -148,19 +148,25 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                         continue
                     
                     trans_type = str(get_column_value(row, ['Type', 'type'], 'P')).strip().upper()
+                    
+                    # Skip Totals row (Type is a number like '333')
+                    if trans_type.isdigit():
+                        continue
+                    
                     tag_no = str(get_column_value(row, ['Tag.No.', 'Tag No', 'tag no'], ''))
                     labor_val, labor_on = parse_labor_value(tag_no)
                     
+                    # Store type as-is; weights are already positive/negative in Excel
                     record = {
                         'date': str(get_column_value(row, ['Date', 'date'], '')),
-                        'type': 'purchase' if trans_type == 'P' else 'purchase_return',
+                        'type': 'purchase' if trans_type in ['P', 'PURCHASE'] else 'purchase_return',
                         'refno': str(get_column_value(row, ['Refno', 'refno', 'Ref No'], '')),
                         'party_name': str(get_column_value(row, ['Party Name', 'party name', 'Party'], '')),
                         'item_name': item_name,
                         'stamp': str(get_column_value(row, ['Stamp', 'stamp'], '')),
                         'tag_no': tag_no,
                         'gr_wt': float(get_column_value(row, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'], 0) or 0) * KG_TO_GRAMS,
-                        'net_wt': float(get_column_value(row, ['Net.Wt.', 'Net Wt', 'Gold Std.'], 0) or 0) * KG_TO_GRAMS,
+                        'net_wt': float(get_column_value(row, ['Net.Wt.', 'Net Wt'], 0) or 0) * KG_TO_GRAMS,
                         'fine': float(get_column_value(row, ['Fine', 'Sil.Fine', 'Sil Fine', 'Silver Fine'], 0) or 0) * KG_TO_GRAMS,
                         'labor': float(get_column_value(row, ['Total', 'total', 'Lbr. Wt/Rs', 'Labor'], 0) or 0) or labor_val,
                         'labor_on': labor_on,
