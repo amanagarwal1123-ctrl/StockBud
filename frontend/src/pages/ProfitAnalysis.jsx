@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { TrendingUp, DollarSign, ShoppingCart, Package, Calendar } from 'lucide-react';
+import { TrendingUp, DollarSign, ShoppingCart, Package, Calendar, Download } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -8,6 +8,7 @@ import { formatIndianCurrency } from '@/utils/formatCurrency';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { exportToCSV } from '@/utils/exportCSV';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -78,6 +79,21 @@ export default function ProfitAnalysis() {
     setEndDate(endStr);
     fetchProfit(startStr, endStr);
     fetchSalesSummary(startStr, endStr);
+  };
+
+  const handleExportProfit = () => {
+    const exportData = (profitData?.top_profitable_items || []).map((item, idx) => ({
+      'Rank': idx + 1,
+      'Item Name': item.item_name,
+      'Net Weight Sold (kg)': item.net_wt_sold_kg,
+      'Avg Purchase Tunch (%)': item.avg_purchase_tunch,
+      'Avg Sale Tunch (%)': item.avg_sale_tunch,
+      'Silver Profit (kg)': item.silver_profit_kg,
+      'Labour Profit (₹)': item.labor_profit_inr
+    }));
+    
+    const dateStr = startDate && endDate ? `_${startDate}_to_${endDate}` : '';
+    exportToCSV(exportData, `profit_analysis${dateStr}`);
   };
 
   if (loading) {
@@ -244,8 +260,16 @@ export default function ProfitAnalysis() {
       {/* Top Profitable Items */}
       <Card className="border-border/40 shadow-sm">
         <CardHeader>
-          <CardTitle>Most Profitable Items</CardTitle>
-          <CardDescription>Items generating the highest profit margin</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Most Profitable Items</CardTitle>
+              <CardDescription>Items generating the highest profit margin</CardDescription>
+            </div>
+            <Button onClick={handleExportProfit} variant="outline" size="sm">
+              <Download className="h-4 w-4 mr-2" />
+              Export CSV
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
