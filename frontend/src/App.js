@@ -9,6 +9,7 @@ import ProfitAnalysis from './pages/ProfitAnalysis';
 import History from './pages/History';
 import ItemDetail from './pages/ItemDetail';
 import StampManagement from './pages/StampManagement';
+import PhysicalStockComparison from './pages/PhysicalStockComparison';
 import Layout from './components/Layout';
 import { Toaster } from '@/components/ui/sonner';
 
