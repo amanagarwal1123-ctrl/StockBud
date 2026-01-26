@@ -210,10 +210,12 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                     if not item_name or len(item_name) < 2:
                         continue
                     
-                    # IMPORTANT: Only process rows where Stamp is NULL/empty (these are totals, not breakdowns)
-                    stamp_val = get_column_value(row, ['Stamp', 'stamp'], None)
-                    if stamp_val and str(stamp_val).strip() and not pd.isna(stamp_val):
-                        continue  # Skip rows with stamp - these are breakdowns
+                    # Skip the "Totals" row - user clarified we should sum individual entries
+                    if 'total' in item_name.lower():
+                        continue
+                    
+                    # Handle "Gold Std." as Net Weight in stock files
+                    net_wt_value = get_column_value(row, ['Gold Std.', 'Net.Wt.', 'Net Wt'], 0)
                     
                     record = {
                         'item_name': item_name,
@@ -221,7 +223,7 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                         'unit': str(get_column_value(row, ['Unit', 'unit'], '')),
                         'pc': int(get_column_value(row, ['Pc', 'pc', 'Pieces'], 0) or 0),
                         'gr_wt': float(get_column_value(row, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'], 0) or 0) * KG_TO_GRAMS,
-                        'net_wt': float(get_column_value(row, ['Net.Wt.', 'Net Wt'], 0) or 0) * KG_TO_GRAMS,
+                        'net_wt': float(net_wt_value or 0) * KG_TO_GRAMS,
                         'fine': float(get_column_value(row, ['Sil.Fine', 'Fine', 'fine'], 0) or 0) * KG_TO_GRAMS,
                         'labor_wt': float(get_column_value(row, ['Lbr. /Wt', 'Labor Wt'], 0) or 0),
                         'labor_rs': float(get_column_value(row, ['Lbr. /Rs.', 'Labor Rs'], 0) or 0),
