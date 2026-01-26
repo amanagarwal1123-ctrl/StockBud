@@ -21,26 +21,30 @@ code {
 
 @layer base {
     :root {
-        --background: 218 100% 98%;
-        --foreground: 222 47% 11%;
+        --background: 220 18% 97%;
+        --foreground: 220 9% 15%;
         --card: 0 0% 100%;
-        --card-foreground: 222 47% 11%;
+        --card-foreground: 220 9% 15%;
         --popover: 0 0% 100%;
-        --popover-foreground: 222 47% 11%;
-        --primary: 158 64% 24%;
-        --primary-foreground: 0 0% 98%;
-        --secondary: 32 95% 44%;
-        --secondary-foreground: 0 0% 98%;
-        --muted: 210 40% 96%;
-        --muted-foreground: 215 16% 47%;
-        --accent: 210 40% 96%;
-        --accent-foreground: 222 47% 11%;
-        --destructive: 0 72% 35%;
-        --destructive-foreground: 0 0% 98%;
-        --border: 214 32% 91%;
-        --input: 214 32% 91%;
-        --ring: 158 64% 24%;
+        --popover-foreground: 220 9% 15%;
+        --primary: 217 89% 61%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 4 90% 58%;
+        --secondary-foreground: 0 0% 100%;
+        --accent: 142 76% 36%;
+        --accent-foreground: 0 0% 100%;
+        --muted: 220 18% 95%;
+        --muted-foreground: 220 9% 46%;
+        --destructive: 4 90% 58%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 220 18% 88%;
+        --input: 220 18% 88%;
+        --ring: 217 89% 61%;
         --radius: 0.75rem;
+        --google-blue: 217 89% 61%;
+        --google-red: 4 90% 58%;
+        --google-yellow: 45 100% 51%;
+        --google-green: 142 76% 36%;
     }
     .dark {
         --background: 0 0% 4%;
