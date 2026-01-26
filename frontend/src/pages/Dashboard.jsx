@@ -1,18 +1,21 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Package, TrendingUp, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Package, TrendingUp, AlertTriangle, CheckCircle2, Weight } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { formatIndianCurrency } from '@/utils/formatCurrency';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
+  const [salesSummary, setSalesSummary] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchStats();
+    fetchSalesSummary();
   }, []);
 
   const fetchStats = async () => {
@@ -23,6 +26,15 @@ export default function Dashboard() {
       console.error('Error fetching stats:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchSalesSummary = async () => {
+    try {
+      const response = await axios.get(`${API}/analytics/sales-summary`);
+      setSalesSummary(response.data);
+    } catch (error) {
+      console.error('Error fetching sales summary:', error);
     }
   };
 
