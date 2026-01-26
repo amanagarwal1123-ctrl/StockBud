@@ -4,6 +4,7 @@ import { TrendingUp, DollarSign, ShoppingCart, Package } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { formatIndianCurrency } from '@/utils/formatCurrency';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -72,7 +73,7 @@ export default function ProfitAnalysis() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold font-mono text-blue-600">
-              ₹{profitData?.labor_profit_inr?.toLocaleString() || 0}
+              {formatIndianCurrency(profitData?.labor_profit_inr || 0)}
             </div>
             <p className="text-xs text-muted-foreground mt-1">Labour margin difference</p>
           </CardContent>
@@ -87,7 +88,7 @@ export default function ProfitAnalysis() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold font-mono text-accent">
-              ₹{profitData?.total_sales_value?.toLocaleString() || 0}
+              {formatIndianCurrency(profitData?.total_sales_value || 0)}
             </div>
           </CardContent>
         </Card>
@@ -144,7 +145,7 @@ export default function ProfitAnalysis() {
                         {item.silver_profit_kg} kg
                       </TableCell>
                       <TableCell className="text-right font-mono text-blue-600 font-semibold">
-                        ₹{item.labor_profit_inr.toLocaleString()}
+                        {formatIndianCurrency(item.labor_profit_inr)}
                       </TableCell>
                     </TableRow>
                   ))
