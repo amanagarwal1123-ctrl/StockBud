@@ -3,9 +3,9 @@ import '@/App.css';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import UploadManager from './pages/UploadManager';
-import BookInventory from './pages/BookInventory';
-import InventoryMatching from './pages/InventoryMatching';
-import Analytics from './pages/Analytics';
+import CurrentStock from './pages/CurrentStock';
+import PartyAnalytics from './pages/PartyAnalytics';
+import ProfitAnalysis from './pages/ProfitAnalysis';
 import History from './pages/History';
 import Layout from './components/Layout';
 import { Toaster } from '@/components/ui/sonner';
@@ -18,14 +18,14 @@ function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/upload" element={<UploadManager />} />
-            <Route path="/book-inventory" element={<BookInventory />} />
-            <Route path="/matching" element={<InventoryMatching />} />
-            <Route path="/analytics" element={<Analytics />} />
+            <Route path="/current-stock" element={<CurrentStock />} />
+            <Route path="/party-analytics" element={<PartyAnalytics />} />
+            <Route path="/profit" element={<ProfitAnalysis />} />
             <Route path="/history" element={<History />} />
           </Routes>
         </Layout>
       </BrowserRouter>
-      <Toaster />
+      <Toaster richColors position="top-right" />
     </div>
   );
 }
