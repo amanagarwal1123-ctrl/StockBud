@@ -47,9 +47,13 @@ export default function Layout({ children }) {
       <aside className="hidden w-64 border-r border-border/40 bg-card lg:block">
         <div className="flex h-full flex-col">
           <div className="flex h-16 items-center border-b border-border/40 px-6">
-            <h1 className="text-2xl font-bold tracking-tight" data-testid="app-title">
-              JewelVault
-            </h1>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 text-2xl font-bold tracking-tight">
+                <span className="text-primary">Stock</span>
+                <span className="text-secondary">Bud</span>
+              </div>
+              <div className="h-2 w-2 rounded-full bg-accent animate-pulse"></div>
+            </div>
           </div>
           <div className="flex-1 overflow-auto p-4">
             <NavLinks />
