@@ -9,7 +9,7 @@ import pandas as pd
 from io import BytesIO
 
 class JewelryInventoryTester:
-    def __init__(self, base_url="https://inventory-sync-63.preview.emergentagent.com"):
+    def __init__(self, base_url="https://stock-tracker-722.preview.emergentagent.com"):
         self.base_url = base_url
         self.api_url = f"{base_url}/api"
         self.tests_run = 0
