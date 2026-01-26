@@ -492,7 +492,7 @@ async def calculate_profit(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ):
-    """Calculate profit using silver trading formula: tunch difference and labour difference"""
+    """Calculate profit: Silver profit (in kg) and Labour profit (in INR)"""
     
     query = {}
     if start_date and end_date:
@@ -500,7 +500,7 @@ async def calculate_profit(
     
     transactions = await db.transactions.find(query, {"_id": 0}).to_list(10000)
     
-    # Group transactions by item for tunch-based profit calculation
+    # Group transactions by item for profit calculation
     item_transactions = defaultdict(lambda: {'purchases': [], 'sales': []})
     
     for trans in transactions:
@@ -521,9 +521,9 @@ async def calculate_profit(
         elif trans['type'] in ['sale', 'sale_return']:
             item_transactions[item_name]['sales'].append(trans_data)
     
-    # Calculate profits
-    total_tunch_profit = 0.0
-    total_labor_profit = 0.0
+    # Calculate profits per user's formula
+    total_silver_profit_kg = 0.0  # Silver profit in KG
+    total_labor_profit_inr = 0.0  # Labour profit in INR
     item_profits = []
     
     for item_name, data in item_transactions.items():
@@ -533,40 +533,58 @@ async def calculate_profit(
         if not purchases or not sales:
             continue
         
-        # Calculate average purchase and sale tunch/labor
+        # Calculate total and average values
         total_purchase_wt = sum(p['net_wt'] for p in purchases)
         total_sale_wt = sum(s['net_wt'] for s in sales)
         
         if total_purchase_wt == 0 or total_sale_wt == 0:
             continue
         
+        # Average tunch weighted by net weight
         avg_purchase_tunch = sum(p['tunch'] * p['net_wt'] for p in purchases) / total_purchase_wt if total_purchase_wt > 0 else 0
         avg_sale_tunch = sum(s['tunch'] * s['net_wt'] for s in sales) / total_sale_wt if total_sale_wt > 0 else 0
         
-        avg_purchase_labor = sum(p['labor'] * p['net_wt'] for p in purchases) / total_purchase_wt if total_purchase_wt > 0 else 0
-        avg_sale_labor = sum(s['labor'] * s['net_wt'] for s in sales) / total_sale_wt if total_sale_wt > 0 else 0
+        # Average labour per kg (labor is already per kg or total, need to normalize)
+        # Assuming labor is total labor cost, so labor per kg = total labor / net weight
+        avg_purchase_labor_per_kg = sum(p['labor'] for p in purchases) / total_purchase_wt if total_purchase_wt > 0 else 0
+        avg_sale_labor_per_kg = sum(s['labor'] for s in sales) / total_sale_wt if total_sale_wt > 0 else 0
         
-        # Silver trading profit formula
-        # Tunch profit = (Sale Tunch% - Purchase Tunch%) * Net Weight / 100
-        sold_wt = min(total_sale_wt, total_purchase_wt)  # Can't profit on unsold stock
-        tunch_profit = (avg_sale_tunch - avg_purchase_tunch) * sold_wt / 100
+        # USER'S FORMULA:
+        # 1. Silver Profit (kg) = (sale tunch - purchase tunch) * sale net weight / 100
+        silver_profit_grams = (avg_sale_tunch - avg_purchase_tunch) * total_sale_wt / 100
+        silver_profit_kg = silver_profit_grams / 1000  # Convert to kg
         
-        # Labour profit = (Sale Labour - Purchase Labour) per gram * weight
-        labor_profit = (avg_sale_labor - avg_purchase_labor) * sold_wt
+        # 2. Labour Profit (INR) = (sale labour per kg - purchase labour per kg) * sale net weight
+        labor_profit_inr = (avg_sale_labor_per_kg - avg_purchase_labor_per_kg) * total_sale_wt
         
-        item_profit = tunch_profit + labor_profit
-        
-        total_tunch_profit += tunch_profit
-        total_labor_profit += labor_profit
+        total_silver_profit_kg += silver_profit_kg
+        total_labor_profit_inr += labor_profit_inr
         
         item_profits.append({
             'item_name': item_name,
-            'tunch_profit': round(tunch_profit, 2),
-            'labor_profit': round(labor_profit, 2),
-            'total_profit': round(item_profit, 2),
+            'silver_profit_kg': round(silver_profit_kg, 3),
+            'labor_profit_inr': round(labor_profit_inr, 2),
             'avg_purchase_tunch': round(avg_purchase_tunch, 2),
             'avg_sale_tunch': round(avg_sale_tunch, 2),
-            'net_wt_sold': round(sold_wt, 3)
+            'net_wt_sold_kg': round(total_sale_wt / 1000, 3)
+        })
+    
+    # Sort by silver profit
+    item_profits.sort(key=lambda x: x['silver_profit_kg'], reverse=True)
+    
+    # Calculate total sales/purchases value
+    total_sales_value = sum(t['total_amount'] for t in transactions if t['type'] == 'sale')
+    total_purchase_value = sum(t['total_amount'] for t in transactions if t['type'] == 'purchase')
+    
+    return {
+        "silver_profit_kg": round(total_silver_profit_kg, 3),
+        "labor_profit_inr": round(total_labor_profit_inr, 2),
+        "total_sales_value": round(total_sales_value, 2),
+        "total_purchase_value": round(total_purchase_value, 2),
+        "top_profitable_items": item_profits[:20],
+        "least_profitable_items": item_profits[-20:] if len(item_profits) > 20 else [],
+        "total_items_analyzed": len(item_profits)
+    }
         })
     
     # Sort by profit
