@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { TrendingUp, DollarSign, ShoppingCart, Package } from 'lucide-react';
+import { TrendingUp, DollarSign, ShoppingCart, Package, Calendar } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatIndianCurrency } from '@/utils/formatCurrency';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -13,15 +16,21 @@ export default function ProfitAnalysis() {
   const [profitData, setProfitData] = useState(null);
   const [salesSummary, setSalesSummary] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   useEffect(() => {
     fetchProfit();
     fetchSalesSummary();
   }, []);
 
-  const fetchProfit = async () => {
+  const fetchProfit = async (start = '', end = '') => {
     try {
-      const response = await axios.get(`${API}/analytics/profit`);
+      let url = `${API}/analytics/profit`;
+      if (start && end) {
+        url += `?start_date=${start}&end_date=${end}`;
+      }
+      const response = await axios.get(url);
       setProfitData(response.data);
     } catch (error) {
       console.error('Error fetching profit:', error);
@@ -30,13 +39,45 @@ export default function ProfitAnalysis() {
     }
   };
 
-  const fetchSalesSummary = async () => {
+  const fetchSalesSummary = async (start = '', end = '') => {
     try {
-      const response = await axios.get(`${API}/analytics/sales-summary`);
+      let url = `${API}/analytics/sales-summary`;
+      if (start && end) {
+        url += `?start_date=${start}&end_date=${end}`;
+      }
+      const response = await axios.get(url);
       setSalesSummary(response.data);
     } catch (error) {
       console.error('Error fetching sales summary:', error);
     }
+  };
+
+  const handleApplyDateRange = () => {
+    if (startDate && endDate) {
+      fetchProfit(startDate, endDate);
+      fetchSalesSummary(startDate, endDate);
+    }
+  };
+
+  const handleClearDates = () => {
+    setStartDate('');
+    setEndDate('');
+    fetchProfit();
+    fetchSalesSummary();
+  };
+
+  const setQuickRange = (days) => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - days);
+    
+    const startStr = start.toISOString().split('T')[0];
+    const endStr = end.toISOString().split('T')[0];
+    
+    setStartDate(startStr);
+    setEndDate(endStr);
+    fetchProfit(startStr, endStr);
+    fetchSalesSummary(startStr, endStr);
   };
 
   if (loading) {
