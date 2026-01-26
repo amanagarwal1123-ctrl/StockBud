@@ -129,9 +129,9 @@ export default function UploadManager() {
         <TabsContent value="physical" className="space-y-6">
           <div className="max-w-2xl">
             <FileUploadCard
-              type="physical"
-              title="Physical Inventory"
-              description="Upload your physical stock count Excel file with Item Name, Stamp, Gross Weight, Poly Weight, and Net Weight"
+              type="opening_stock"
+              title="Opening Stock"
+              description="Upload your opening stock/current stock Excel file with Item Name, Stamp, Gr.Wt., Net.Wt., Fine, etc."
             />
           </div>
         </TabsContent>
