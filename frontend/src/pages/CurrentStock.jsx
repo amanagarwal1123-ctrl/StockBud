@@ -179,8 +179,8 @@ export default function CurrentStock() {
                           {item.stamp || 'Unassigned'}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right font-mono">{(item.gr_wt / 1000).toFixed(3)}</TableCell>
-                      <TableCell className="text-right font-mono">{(item.net_wt / 1000).toFixed(3)}</TableCell>
+                      <TableCell className="text-right font-mono font-semibold text-primary">{(item.net_wt / 1000).toFixed(3)}</TableCell>
+                      <TableCell className="text-right font-mono text-muted-foreground">{(item.gr_wt / 1000).toFixed(3)}</TableCell>
                       <TableCell className="text-right font-mono">{(item.fine / 1000).toFixed(3)}</TableCell>
                       <TableCell className="text-right font-mono">{item.total_pc}</TableCell>
                     </TableRow>
