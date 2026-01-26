@@ -61,6 +61,23 @@ export default function CurrentStock() {
 
   const stamps = ['all', ...Object.keys(byStamp).sort()];
 
+  const handleExportCSV = () => {
+    const exportData = filteredInventory.map(item => ({
+      'Item Name': item.item_name,
+      'Stamp': item.stamp || 'Unassigned',
+      'Net Weight (kg)': (item.net_wt / 1000).toFixed(3),
+      'Gross Weight (kg)': (item.gr_wt / 1000).toFixed(3),
+      'Fine (kg)': (item.fine / 1000).toFixed(3),
+      'Labour': item.labor || 0
+    }));
+    
+    const filename = selectedStamp === 'all' 
+      ? 'current_stock_all' 
+      : `current_stock_${selectedStamp}`;
+    
+    exportToCSV(exportData, filename);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -159,13 +176,21 @@ export default function CurrentStock() {
       {/* Inventory Table */}
       <Card className="border-border/40 shadow-sm">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Package className="h-5 w-5 text-primary" />
-            Stock Items
-          </CardTitle>
-          <CardDescription>
-            Showing {filteredInventory.length} of {inventory.length} items
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-primary" />
+                Stock Items
+              </CardTitle>
+              <CardDescription>
+                Showing {filteredInventory.length} of {inventory.length} items
+              </CardDescription>
+            </div>
+            <Button onClick={handleExportCSV} variant="outline" size="sm">
+              <Download className="h-4 w-4 mr-2" />
+              Export CSV
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
