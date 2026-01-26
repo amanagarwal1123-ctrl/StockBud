@@ -255,7 +255,7 @@ async def save_action(action_type: str, description: str, data_snapshot: dict = 
 
 @api_router.post("/opening-stock/upload")
 async def upload_opening_stock(file: UploadFile = File(...)):
-    """Upload opening stock - Parse ALL individual entries (sum them, ignore Totals row)"""
+    """Upload opening stock - Parse and MERGE items by name (sum weights regardless of stamp)"""
     content = await file.read()
     
     try:
@@ -265,25 +265,57 @@ async def upload_opening_stock(file: UploadFile = File(...)):
         if not records:
             raise HTTPException(status_code=400, detail="No valid records found in file")
         
+        # MERGE items by name - sum all weights for same item
+        merged_items = {}
+        for record in records:
+            key = record['item_name'].strip().lower()
+            if key not in merged_items:
+                merged_items[key] = {
+                    'item_name': record['item_name'],
+                    'stamp': record.get('stamp', ''),
+                    'unit': record.get('unit', ''),
+                    'pc': 0,
+                    'gr_wt': 0.0,
+                    'net_wt': 0.0,
+                    'fine': 0.0,
+                    'labor_wt': record.get('labor_wt', 0.0),
+                    'labor_rs': record.get('labor_rs', 0.0),
+                    'rate': record.get('rate', 0.0),
+                    'total': 0.0
+                }
+            
+            # Sum weights (including negative values)
+            merged_items[key]['gr_wt'] += record.get('gr_wt', 0)
+            merged_items[key]['net_wt'] += record.get('net_wt', 0)
+            merged_items[key]['fine'] += record.get('fine', 0)
+            merged_items[key]['pc'] += record.get('pc', 0)
+            merged_items[key]['total'] += record.get('total', 0)
+            
+            # Keep stamp if this entry has one
+            if record.get('stamp') and not merged_items[key]['stamp']:
+                merged_items[key]['stamp'] = record['stamp']
+        
         # Clear existing opening stock
         await db.opening_stock.delete_many({})
         
-        # Insert all individual items
-        stock_items = [OpeningStock(**record).model_dump() for record in records]
+        # Insert merged items
+        stock_items = [OpeningStock(**item).model_dump() for item in merged_items.values()]
         await db.opening_stock.insert_many(stock_items)
         
         # Calculate totals for response
         total_net_wt = sum(item['net_wt'] for item in stock_items)
         total_gr_wt = sum(item['gr_wt'] for item in stock_items)
         
-        await save_action('upload_opening_stock', f"Uploaded {len(stock_items)} opening stock items, total: {total_net_wt/1000:.3f} kg")
+        await save_action('upload_opening_stock', f"Uploaded {len(stock_items)} merged opening stock items, total: {total_net_wt/1000:.3f} kg")
         
         return {
             "success": True,
             "count": len(stock_items),
+            "original_rows": len(records),
+            "merged_items": len(stock_items),
             "total_net_wt_kg": round(total_net_wt/1000, 3),
             "total_gr_wt_kg": round(total_gr_wt/1000, 3),
-            "message": f"{len(stock_items)} opening stock records uploaded successfully"
+            "message": f"Merged {len(records)} rows into {len(stock_items)} items. Total: {total_net_wt/1000:.3f} kg"
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error processing file: {str(e)}")
