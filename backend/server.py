@@ -383,13 +383,15 @@ async def get_current_inventory():
     for key, item in inventory_map.items():
         item['stamps_seen'] = list(item['stamps_seen']) if isinstance(item['stamps_seen'], set) else item['stamps_seen']
         
-        # Check for negative stock
+        # Always include in total calculation (even negative items)
+        total_gr_wt += item['gr_wt']
+        total_net_wt += item['net_wt']
+        
+        # Separate negative stock items for display
         if item['gr_wt'] < -0.01 or item['net_wt'] < -0.01:
             negative_items.append(item)
         else:
             inventory.append(item)
-            total_gr_wt += item['gr_wt']
-            total_net_wt += item['net_wt']
     
     # Group by stamp
     stamp_groups = {}
