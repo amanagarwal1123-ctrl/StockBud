@@ -156,6 +156,16 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                     tag_no = str(get_column_value(row, ['Tag.No.', 'Tag No', 'tag no'], ''))
                     labor_val, labor_on = parse_labor_value(tag_no)
                     
+                    # Read labour from Wt/Rs column
+                    wt_rs_value = get_column_value(row, ['Wt/Rs', 'Wt Rs'], '')
+                    if wt_rs_value:
+                        labor_val = float(wt_rs_value) if str(wt_rs_value).replace('.', '').isdigit() else labor_val
+                    
+                    # Calculate purchase tunch = tunch + wstg
+                    tunch_val = float(get_column_value(row, ['Tunch', 'tunch'], 0) or 0)
+                    wstg_val = float(get_column_value(row, ['Wstg', 'wstg'], 0) or 0)
+                    purchase_tunch = tunch_val + wstg_val
+                    
                     # Store type as-is; weights are already positive/negative in Excel
                     record = {
                         'date': str(get_column_value(row, ['Date', 'date'], '')),
@@ -168,11 +178,11 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                         'gr_wt': float(get_column_value(row, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'], 0) or 0) * KG_TO_GRAMS,
                         'net_wt': float(get_column_value(row, ['Net.Wt.', 'Net Wt'], 0) or 0) * KG_TO_GRAMS,
                         'fine': float(get_column_value(row, ['Fine', 'Sil.Fine', 'Sil Fine', 'Silver Fine'], 0) or 0) * KG_TO_GRAMS,
-                        'labor': float(get_column_value(row, ['Total', 'total', 'Lbr. Wt/Rs', 'Labor'], 0) or 0) or labor_val,
+                        'labor': labor_val,
                         'labor_on': labor_on,
                         'dia_wt': float(get_column_value(row, ['Dia.Wt.', 'Dia Wt'], 0) or 0) * KG_TO_GRAMS,
                         'stn_wt': float(get_column_value(row, ['Stn.Wt.', 'Stn Wt'], 0) or 0) * KG_TO_GRAMS,
-                        'tunch': str(get_column_value(row, ['Tunch', 'tunch'], '')),
+                        'tunch': str(purchase_tunch),
                         'rate': float(get_column_value(row, ['Rate', 'rate'], 0) or 0),
                         'total_pc': int(get_column_value(row, ['Pc', 'pc', 'Pieces'], 0) or 0),
                         'total_amount': float(get_column_value(row, ['Total', 'total'], 0) or 0)
@@ -199,6 +209,14 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                     tag_no = str(get_column_value(row, ['Lbr. On Tag.No.', 'Tag.No.', 'Tag No'], ''))
                     labor_val, labor_on = parse_labor_value(tag_no)
                     
+                    # Read labour from On column (might have values like "100", "1200", etc.)
+                    on_value = get_column_value(row, ['On', 'on'], '')
+                    if on_value and str(on_value).replace('.', '').isdigit():
+                        labor_val = float(on_value)
+                    
+                    # Sale tunch is just the tunch column (no wstg)
+                    sale_tunch = float(get_column_value(row, ['Tunch', 'tunch'], 0) or 0)
+                    
                     # Store type as-is; weights are already positive/negative in Excel
                     record = {
                         'type': 'sale' if trans_type in ['S', 'SALE'] else 'sale_return',
@@ -211,11 +229,11 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                         'gr_wt': float(get_column_value(row, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'], 0) or 0) * KG_TO_GRAMS,
                         'net_wt': float(get_column_value(row, ['Gold Std.', 'Net.Wt.', 'Net Wt'], 0) or 0) * KG_TO_GRAMS,
                         'fine': float(get_column_value(row, ['Fine', 'Sil.Fine', 'Sil Fine'], 0) or 0) * KG_TO_GRAMS,
-                        'labor': float(get_column_value(row, ['Total', 'total', 'Labor'], 0) or 0) or labor_val,
+                        'labor': labor_val,
                         'labor_on': labor_on,
                         'dia_wt': float(get_column_value(row, ['Dia.Wt.', 'Dia Wt'], 0) or 0) * KG_TO_GRAMS,
                         'stn_wt': float(get_column_value(row, ['Stn.Wt.', 'Stn Wt'], 0) or 0) * KG_TO_GRAMS,
-                        'tunch': str(get_column_value(row, ['Tunch', 'tunch'], '')),
+                        'tunch': str(sale_tunch),
                         'total_amount': float(get_column_value(row, ['Total', 'total'], 0) or 0),
                         'taxable_value': float(get_column_value(row, ['Taxable Val.', 'Taxable Value'], 0) or 0),
                         'total_pc': int(get_column_value(row, ['Pc', 'pc'], 0) or 0)
