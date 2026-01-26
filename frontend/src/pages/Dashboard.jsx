@@ -85,8 +85,19 @@ export default function Dashboard() {
               ? 'border-accent/30 bg-accent/10'
               : 'border-secondary/30 bg-secondary/10'
           }`}
-        >\n          {stats.latest_match.complete_match ? (
-            <CheckCircle2 className=\"h-5 w-5 text-accent\" />\n          ) : (\n            <AlertTriangle className=\"h-5 w-5 text-secondary\" />\n          )}\n          <AlertDescription className=\"ml-2\">\n            {stats.latest_match.complete_match\n              ? '🎉 Complete stock match achieved!'\n              : `Last match found ${stats.latest_match.differences?.length || 0} differences and ${stats.latest_match.unmatched_items?.length || 0} unmatched items`}\n          </AlertDescription>\n        </Alert>\n      )}
+        >
+          {stats.latest_match.complete_match ? (
+            <CheckCircle2 className="h-5 w-5 text-accent" />
+          ) : (
+            <AlertTriangle className="h-5 w-5 text-secondary" />
+          )}
+          <AlertDescription className="ml-2">
+            {stats.latest_match.complete_match
+              ? '🎉 Complete stock match achieved!'
+              : `Last match found ${stats.latest_match.differences?.length || 0} differences and ${stats.latest_match.unmatched_items?.length || 0} unmatched items`}
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Stats Grid */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
