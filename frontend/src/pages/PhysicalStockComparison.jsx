@@ -270,7 +270,10 @@ export default function PhysicalStockComparison() {
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle>Only in Book Stock</CardTitle>
-                  <CardDescription>Items present in book but missing from physical count</CardDescription>
+                  <CardDescription>
+                    Items present in calculated book stock but missing from physical count. 
+                    This is normal if you're doing partial physical verification.
+                  </CardDescription>
                 </div>
                 <Button onClick={handleExportOnlyBook} variant="outline" size="sm">
                   <Download className="h-4 w-4 mr-2" />
