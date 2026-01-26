@@ -164,16 +164,23 @@ export default function CurrentStock() {
                   </TableRow>
                 ) : (
                   filteredInventory.map((item, idx) => (
-                    <TableRow key={idx} className="table-row">
-                      <TableCell className="font-medium">{item.item_name}</TableCell>
+                    <TableRow 
+                      key={idx} 
+                      className="table-row cursor-pointer hover:bg-primary/5" 
+                      onClick={() => navigate(`/item/${encodeURIComponent(item.item_name)}`)}
+                      data-testid={`item-row-${idx}`}
+                    >
+                      <TableCell className="font-medium text-primary hover:underline">
+                        {item.item_name}
+                      </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="font-mono text-xs">
                           {item.stamp || 'Unassigned'}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right font-mono">{item.gr_wt.toFixed(2)}</TableCell>
-                      <TableCell className="text-right font-mono">{item.net_wt.toFixed(2)}</TableCell>
-                      <TableCell className="text-right font-mono">{item.fine.toFixed(2)}</TableCell>
+                      <TableCell className="text-right font-mono">{(item.gr_wt / 1000).toFixed(3)}</TableCell>
+                      <TableCell className="text-right font-mono">{(item.net_wt / 1000).toFixed(3)}</TableCell>
+                      <TableCell className="text-right font-mono">{(item.fine / 1000).toFixed(3)}</TableCell>
                       <TableCell className="text-right font-mono">{item.total_pc}</TableCell>
                     </TableRow>
                   ))
