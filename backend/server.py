@@ -280,8 +280,8 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                         'gr_wt': float(get_column_value(row, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'], 0) or 0) * KG_TO_GRAMS,
                         'net_wt': float(net_wt_value or 0) * KG_TO_GRAMS,
                         'fine': float(get_column_value(row, ['Sil.Fine', 'Fine', 'fine'], 0) or 0) * KG_TO_GRAMS,
-                        'labor_wt': labor_wt,
-                        'labor_rs': labor_rs,
+                        'labor_wt': 0.0,
+                        'labor_rs': 0.0,
                         'rate': float(get_column_value(row, ['Rate', 'rate'], 0) or 0),
                         'total': total_labor
                     }
