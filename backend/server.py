@@ -738,14 +738,18 @@ async def get_party_analysis(
     }
 
 @api_router.get("/analytics/sales-summary")
-async def get_sales_summary():
+async def get_sales_summary(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+):
     """Get total sales summary with net weight, fine weight, and labour (including returns)"""
     
+    query = {"type": {"$in": ["sale", "sale_return"]}}
+    if start_date and end_date:
+        query['date'] = {'$gte': start_date, '$lte': end_date}
+    
     # Get ALL sale transactions (S and SR - SR have negative values already)
-    sales_transactions = await db.transactions.find(
-        {"type": {"$in": ["sale", "sale_return"]}}, 
-        {"_id": 0}
-    ).to_list(10000)
+    sales_transactions = await db.transactions.find(query, {"_id": 0}).to_list(10000)
     
     # Sum including negative values (SR rows are already negative)
     total_net_wt = sum(t.get('net_wt', 0) for t in sales_transactions)
