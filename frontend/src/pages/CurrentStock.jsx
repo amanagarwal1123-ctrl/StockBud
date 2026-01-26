@@ -185,27 +185,50 @@ export default function CurrentStock() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredInventory.map((item, idx) => (
-                    <TableRow 
-                      key={idx} 
-                      className="table-row cursor-pointer hover:bg-primary/5" 
-                      onClick={() => navigate(`/item/${encodeURIComponent(item.item_name)}`)}
-                      data-testid={`item-row-${idx}`}
-                    >
-                      <TableCell className="font-medium text-primary hover:underline">
-                        {item.item_name}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="font-mono text-xs">
-                          {item.stamp || 'Unassigned'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right font-mono font-semibold text-primary">{(item.net_wt / 1000).toFixed(3)}</TableCell>
-                      <TableCell className="text-right font-mono text-muted-foreground">{(item.gr_wt / 1000).toFixed(3)}</TableCell>
-                      <TableCell className="text-right font-mono">{(item.fine / 1000).toFixed(3)}</TableCell>
-                      <TableCell className="text-right font-mono">{item.total_pc}</TableCell>
-                    </TableRow>
-                  ))
+                  <>
+                    {filteredInventory.map((item, idx) => (
+                      <TableRow 
+                        key={idx} 
+                        className="table-row cursor-pointer hover:bg-primary/5" 
+                        onClick={() => navigate(`/item/${encodeURIComponent(item.item_name)}`)}
+                        data-testid={`item-row-${idx}`}
+                      >
+                        <TableCell className="font-medium text-primary hover:underline">
+                          {item.item_name}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="font-mono text-xs">
+                            {item.stamp || 'Unassigned'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-semibold text-primary">{(item.net_wt / 1000).toFixed(3)}</TableCell>
+                        <TableCell className="text-right font-mono text-muted-foreground">{(item.gr_wt / 1000).toFixed(3)}</TableCell>
+                        <TableCell className="text-right font-mono">{(item.fine / 1000).toFixed(3)}</TableCell>
+                        <TableCell className="text-right font-mono">{item.total_pc}</TableCell>
+                      </TableRow>
+                    ))}
+                    
+                    {/* Totals Row */}
+                    {selectedStamp !== 'all' && filteredInventory.length > 0 && (
+                      <TableRow className="bg-primary/5 border-t-2 border-primary/20 font-bold">
+                        <TableCell colSpan={2} className="font-bold text-primary">
+                          TOTAL ({selectedStamp})
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-bold text-primary text-lg">
+                          {(filteredTotals.net_wt / 1000).toFixed(3)} kg
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-bold text-muted-foreground">
+                          {(filteredTotals.gr_wt / 1000).toFixed(3)} kg
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-bold">
+                          {(filteredTotals.fine / 1000).toFixed(3)} kg
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-bold">
+                          {filteredTotals.total_pc}
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </>
                 )}
               </TableBody>
             </Table>
