@@ -103,7 +103,7 @@ export default function CurrentStock() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold font-mono text-blue-600">
-              {(inventory.reduce((sum, item) => sum + item.gr_wt, 0) / 1000).toFixed(3)} kg
+              {(totalGrWt / 1000).toFixed(3)} kg
             </div>
           </CardContent>
         </Card>
@@ -113,7 +113,7 @@ export default function CurrentStock() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold font-mono text-green-600">
-              {(inventory.reduce((sum, item) => sum + item.net_wt, 0) / 1000).toFixed(3)} kg
+              {(totalNetWt / 1000).toFixed(3)} kg
             </div>
           </CardContent>
         </Card>
