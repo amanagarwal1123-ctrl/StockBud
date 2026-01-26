@@ -67,6 +67,17 @@ class OpeningStock(BaseModel):
     total: float = 0.0
     upload_date: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
+class PhysicalStock(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    item_name: str
+    stamp: Optional[str] = None
+    pc: int = 0
+    gr_wt: float = 0.0
+    net_wt: float = 0.0
+    fine: float = 0.0
+    upload_date: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
 class ActionHistory(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
