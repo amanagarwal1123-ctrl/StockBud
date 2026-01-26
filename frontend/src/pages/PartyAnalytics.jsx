@@ -70,9 +70,21 @@ export default function PartyAnalytics() {
                 <p className="text-2xl font-bold">{analytics.top_customer.party_name}</p>
                 <div className="mt-4 space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Total Sales:</span>
+                    <span className="text-muted-foreground">Net Silver Weight:</span>
                     <span className="font-mono font-semibold text-primary">
-                      ₹{analytics.top_customer.total_sales.toLocaleString()}
+                      {(analytics.top_customer.total_net_wt / 1000).toFixed(3)} kg
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Fine Silver Weight:</span>
+                    <span className="font-mono font-semibold text-accent">
+                      {(analytics.top_customer.total_fine_wt / 1000).toFixed(3)} kg
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Sales Value:</span>
+                    <span className="font-mono">
+                      ₹{analytics.top_customer.total_sales_value.toLocaleString()}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
