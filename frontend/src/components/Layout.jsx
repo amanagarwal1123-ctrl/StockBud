@@ -39,7 +39,26 @@ export default function Layout({ children }) {
   ];
 
   const handleUndo = async () => {
+    // First, get the last action to show user what will be undone
     try {
+      const historyResponse = await axios.get(`${API}/history/actions?limit=1`);
+      const lastAction = historyResponse.data[0];
+      
+      if (!lastAction) {
+        toast.error('No action to undo');
+        return;
+      }
+
+      // Ask for confirmation
+      const confirmed = window.confirm(
+        `Are you sure you want to undo this action?\n\n` +
+        `Action: ${lastAction.description}\n` +
+        `Time: ${new Date(lastAction.timestamp).toLocaleString()}\n\n` +
+        `Note: This will mark the action as undone but won't restore the data.`
+      );
+
+      if (!confirmed) return;
+
       const response = await axios.post(`${API}/history/undo`);
       toast.success(response.data.message);
       window.location.reload();
