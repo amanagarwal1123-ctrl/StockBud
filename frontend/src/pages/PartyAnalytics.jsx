@@ -85,7 +85,7 @@ export default function PartyAnalytics() {
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Sales Value:</span>
                     <span className="font-mono">
-                      ₹{analytics.top_customer.total_sales_value.toLocaleString()}
+                      {formatIndianCurrency(analytics.top_customer.total_sales_value)}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
@@ -128,7 +128,7 @@ export default function PartyAnalytics() {
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Purchase Value:</span>
                     <span className="font-mono">
-                      ₹{analytics.top_supplier.total_purchases_value.toLocaleString()}
+                      {formatIndianCurrency(analytics.top_supplier.total_purchases_value)}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
@@ -197,7 +197,7 @@ export default function PartyAnalytics() {
                             {(customer.total_fine_wt / 1000).toFixed(3)}
                           </TableCell>
                           <TableCell className="text-right font-mono">
-                            ₹{customer.total_sales_value.toLocaleString()}
+                            {formatIndianCurrency(customer.total_sales_value)}
                           </TableCell>
                           <TableCell className="text-right font-mono">
                             {customer.transaction_count}
@@ -254,7 +254,7 @@ export default function PartyAnalytics() {
                             {(supplier.total_fine_wt / 1000).toFixed(3)}
                           </TableCell>
                           <TableCell className="text-right font-mono">
-                            ₹{supplier.total_purchases_value.toLocaleString()}
+                            {formatIndianCurrency(supplier.total_purchases_value)}
                           </TableCell>
                           <TableCell className="text-right font-mono">
                             {supplier.transaction_count}
