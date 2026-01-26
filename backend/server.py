@@ -453,6 +453,153 @@ async def get_current_inventory():
         "negative_items": negative_items
     }
 
+@api_router.post("/physical-stock/upload")
+async def upload_physical_stock(file: UploadFile = File(...)):
+    """Upload physical stock file and merge items by name"""
+    content = await file.read()
+    
+    try:
+        # Parse using opening_stock parser (same format)
+        records = parse_excel_file(content, 'opening_stock')
+        
+        if not records:
+            raise HTTPException(status_code=400, detail="No valid records found in file")
+        
+        # MERGE items by name
+        merged_items = {}
+        for record in records:
+            key = record['item_name'].strip().lower()
+            if key not in merged_items:
+                merged_items[key] = {
+                    'item_name': record['item_name'],
+                    'stamp': record.get('stamp', ''),
+                    'pc': 0,
+                    'gr_wt': 0.0,
+                    'net_wt': 0.0,
+                    'fine': 0.0
+                }
+            
+            # Sum weights
+            merged_items[key]['gr_wt'] += record.get('gr_wt', 0)
+            merged_items[key]['net_wt'] += record.get('net_wt', 0)
+            merged_items[key]['fine'] += record.get('fine', 0)
+            merged_items[key]['pc'] += record.get('pc', 0)
+            
+            # Keep stamp if this entry has one
+            if record.get('stamp') and not merged_items[key]['stamp']:
+                merged_items[key]['stamp'] = record['stamp']
+        
+        # Clear existing physical stock
+        await db.physical_stock.delete_many({})
+        
+        # Insert merged items
+        stock_items = [PhysicalStock(**item).model_dump() for item in merged_items.values()]
+        await db.physical_stock.insert_many(stock_items)
+        
+        # Calculate totals
+        total_net_wt = sum(item['net_wt'] for item in stock_items)
+        total_gr_wt = sum(item['gr_wt'] for item in stock_items)
+        
+        return {
+            "success": True,
+            "count": len(stock_items),
+            "original_rows": len(records),
+            "merged_items": len(stock_items),
+            "total_net_wt_kg": round(total_net_wt/1000, 3),
+            "total_gr_wt_kg": round(total_gr_wt/1000, 3),
+            "message": f"Physical stock uploaded: {len(stock_items)} items, {total_net_wt/1000:.3f} kg"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error processing file: {str(e)}")
+
+@api_router.get("/physical-stock/compare")
+async def compare_physical_with_book():
+    """Compare physical stock with book stock and show differences"""
+    
+    # Get book stock (current inventory)
+    book_response = await get_current_inventory()
+    book_items = {item['item_name'].strip().lower(): item for item in book_response['inventory']}
+    book_items.update({item['item_name'].strip().lower(): item for item in book_response['negative_items']})
+    
+    # Get physical stock
+    physical = await db.physical_stock.find({}, {"_id": 0}).to_list(10000)
+    physical_items = {item['item_name'].strip().lower(): item for item in physical}
+    
+    # Compare
+    matches = []
+    discrepancies = []
+    only_in_book = []
+    only_in_physical = []
+    
+    # Check items in both
+    for key in book_items.keys():
+        if key in physical_items:
+            book_item = book_items[key]
+            phys_item = physical_items[key]
+            
+            book_net = book_item['net_wt']
+            phys_net = phys_item['net_wt']
+            diff = phys_net - book_net
+            
+            comparison = {
+                'item_name': book_item['item_name'],
+                'stamp': book_item.get('stamp', ''),
+                'book_net_wt': book_net,
+                'physical_net_wt': phys_net,
+                'difference': diff,
+                'difference_kg': round(diff/1000, 3),
+                'match_percentage': round((min(book_net, phys_net) / max(book_net, phys_net) * 100) if max(book_net, phys_net) > 0 else 100, 2)
+            }
+            
+            # Consider it a match if difference is less than 0.01 kg (10 grams)
+            if abs(diff) < 10:
+                matches.append(comparison)
+            else:
+                discrepancies.append(comparison)
+    
+    # Items only in book stock
+    for key in book_items.keys():
+        if key not in physical_items:
+            only_in_book.append({
+                'item_name': book_items[key]['item_name'],
+                'stamp': book_items[key].get('stamp', ''),
+                'book_net_wt': book_items[key]['net_wt'],
+                'book_net_wt_kg': round(book_items[key]['net_wt']/1000, 3)
+            })
+    
+    # Items only in physical stock
+    for key in physical_items.keys():
+        if key not in book_items:
+            only_in_physical.append({
+                'item_name': physical_items[key]['item_name'],
+                'stamp': physical_items[key].get('stamp', ''),
+                'physical_net_wt': physical_items[key]['net_wt'],
+                'physical_net_wt_kg': round(physical_items[key]['net_wt']/1000, 3)
+            })
+    
+    # Sort discrepancies by absolute difference
+    discrepancies.sort(key=lambda x: abs(x['difference']), reverse=True)
+    
+    # Calculate totals
+    total_book = sum(item['net_wt'] for item in book_items.values())
+    total_physical = sum(item['net_wt'] for item in physical_items.values())
+    
+    return {
+        "summary": {
+            "total_book_kg": round(total_book/1000, 3),
+            "total_physical_kg": round(total_physical/1000, 3),
+            "total_difference_kg": round((total_physical - total_book)/1000, 3),
+            "match_count": len(matches),
+            "discrepancy_count": len(discrepancies),
+            "only_in_book_count": len(only_in_book),
+            "only_in_physical_count": len(only_in_physical)
+        },
+        "matches": matches[:50],
+        "discrepancies": discrepancies[:50],
+        "only_in_book": only_in_book[:50],
+        "only_in_physical": only_in_physical[:50]
+    }
+
 @api_router.get("/analytics/party-analysis")
 async def get_party_analysis(
     start_date: Optional[str] = None,
