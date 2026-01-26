@@ -494,7 +494,7 @@ async def get_party_analysis(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ):
-    """Analyze parties (customers and suppliers) with profit calculations"""
+    """Analyze parties (customers and suppliers) with silver weight comparisons"""
     
     query = {}
     if start_date and end_date:
@@ -504,17 +504,20 @@ async def get_party_analysis(
     
     customers = defaultdict(lambda: {
         'party_name': '',
-        'total_sales': 0.0,
-        'total_purchases': 0.0,
-        'transaction_count': 0,
-        'items': defaultdict(lambda: {'sold': 0.0, 'purchased': 0.0})
+        'total_sales_value': 0.0,
+        'total_net_wt': 0.0,
+        'total_fine_wt': 0.0,
+        'total_gr_wt': 0.0,
+        'transaction_count': 0
     })
     
     suppliers = defaultdict(lambda: {
         'party_name': '',
-        'total_purchases': 0.0,
-        'transaction_count': 0,
-        'items': defaultdict(lambda: {'purchased': 0.0})
+        'total_purchases_value': 0.0,
+        'total_net_wt': 0.0,
+        'total_fine_wt': 0.0,
+        'total_gr_wt': 0.0,
+        'transaction_count': 0
     })
     
     for trans in transactions:
@@ -523,36 +526,38 @@ async def get_party_analysis(
             continue
         
         amount = trans.get('total_amount', 0)
-        item_name = trans.get('item_name', '')
+        net_wt = trans.get('net_wt', 0)
+        fine_wt = trans.get('fine', 0)
+        gr_wt = trans.get('gr_wt', 0)
         
         if trans['type'] in ['sale', 'sale_return']:
+            multiplier = 1 if trans['type'] == 'sale' else -1
             customers[party]['party_name'] = party
-            customers[party]['total_sales'] += amount if trans['type'] == 'sale' else -amount
+            customers[party]['total_sales_value'] += amount * multiplier
+            customers[party]['total_net_wt'] += net_wt * multiplier
+            customers[party]['total_fine_wt'] += fine_wt * multiplier
+            customers[party]['total_gr_wt'] += gr_wt * multiplier
             customers[party]['transaction_count'] += 1
-            customers[party]['items'][item_name]['sold'] += trans.get('gr_wt', 0)
         
         elif trans['type'] in ['purchase', 'purchase_return']:
+            multiplier = 1 if trans['type'] == 'purchase' else -1
             suppliers[party]['party_name'] = party
-            suppliers[party]['total_purchases'] += amount if trans['type'] == 'purchase' else -amount
+            suppliers[party]['total_purchases_value'] += amount * multiplier
+            suppliers[party]['total_net_wt'] += net_wt * multiplier
+            suppliers[party]['total_fine_wt'] += fine_wt * multiplier
+            suppliers[party]['total_gr_wt'] += gr_wt * multiplier
             suppliers[party]['transaction_count'] += 1
-            suppliers[party]['items'][item_name]['purchased'] += trans.get('gr_wt', 0)
     
-    # Convert to lists and sort
+    # Convert to lists and sort by net weight
     customers_list = sorted(
-        [{
-            **v,
-            'items': dict(v['items'])
-        } for v in customers.values()],
-        key=lambda x: x['total_sales'],
+        [v for v in customers.values()],
+        key=lambda x: x['total_net_wt'],
         reverse=True
     )
     
     suppliers_list = sorted(
-        [{
-            **v,
-            'items': dict(v['items'])
-        } for v in suppliers.values()],
-        key=lambda x: x['total_purchases'],
+        [v for v in suppliers.values()],
+        key=lambda x: x['total_net_wt'],
         reverse=True
     )
     
