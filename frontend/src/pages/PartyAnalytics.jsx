@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Users, TrendingUp, Award, Package } from 'lucide-react';
+import { Users, TrendingUp, Award, Package, Calendar } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatIndianCurrency } from '@/utils/formatCurrency';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -13,20 +16,48 @@ const API = `${BACKEND_URL}/api`;
 export default function PartyAnalytics() {
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   useEffect(() => {
     fetchAnalytics();
   }, []);
 
-  const fetchAnalytics = async () => {
+  const fetchAnalytics = async (start = '', end = '') => {
     try {
-      const response = await axios.get(`${API}/analytics/party-analysis`);
+      let url = `${API}/analytics/party-analysis`;
+      if (start && end) {
+        url += `?start_date=${start}&end_date=${end}`;
+      }
+      const response = await axios.get(url);
       setAnalytics(response.data);
     } catch (error) {
       console.error('Error fetching party analytics:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleApplyDateRange = () => {
+    if (startDate && endDate) {
+      fetchAnalytics(startDate, endDate);
+    }
+  };
+
+  const handleClearDates = () => {
+    setStartDate('');
+    setEndDate('');
+    fetchAnalytics();
+  };
+
+  const setQuickRange = (days) => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - days);
+    
+    setStartDate(start.toISOString().split('T')[0]);
+    setEndDate(end.toISOString().split('T')[0]);
+    fetchAnalytics(start.toISOString().split('T')[0], end.toISOString().split('T')[0]);
   };
 
   if (loading) {
