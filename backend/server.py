@@ -427,12 +427,14 @@ async def get_current_inventory():
                 'net_wt': 0.0,
                 'fine': 0.0,
                 'total_pc': 0,
+                'labor': 0.0,
                 'stamps_seen': set()
             }
         inventory_map[key]['gr_wt'] += item.get('gr_wt', 0)
         inventory_map[key]['net_wt'] += item.get('net_wt', 0)
         inventory_map[key]['fine'] += item.get('fine', 0)
         inventory_map[key]['total_pc'] += item.get('pc', 0)
+        inventory_map[key]['labor'] += item.get('total', 0)
         if item.get('stamp'):
             inventory_map[key]['stamps_seen'].add(item['stamp'])
     
@@ -447,6 +449,7 @@ async def get_current_inventory():
                 'net_wt': 0.0,
                 'fine': 0.0,
                 'total_pc': 0,
+                'labor': 0.0,
                 'stamps_seen': set()
             }
         
@@ -463,6 +466,7 @@ async def get_current_inventory():
         inventory_map[key]['net_wt'] += trans.get('net_wt', 0) * multiplier
         inventory_map[key]['fine'] += trans.get('fine', 0) * multiplier
         inventory_map[key]['total_pc'] += trans.get('total_pc', 0) * multiplier
+        inventory_map[key]['labor'] += trans.get('labor', 0) * multiplier
     
     # Convert to list and separate negative items
     inventory = []
