@@ -53,7 +53,7 @@ export default function CurrentStock() {
     gr_wt: filteredInventory.reduce((sum, item) => sum + item.gr_wt, 0),
     net_wt: filteredInventory.reduce((sum, item) => sum + item.net_wt, 0),
     fine: filteredInventory.reduce((sum, item) => sum + item.fine, 0),
-    total_pc: filteredInventory.reduce((sum, item) => sum + item.total_pc, 0),
+    labor: filteredInventory.reduce((sum, item) => sum + (item.labor || 0), 0),
   };
 
   const stamps = ['all', ...Object.keys(byStamp).sort()];
@@ -174,7 +174,7 @@ export default function CurrentStock() {
                   <TableHead className="text-right font-mono">Net Wt (kg)</TableHead>
                   <TableHead className="text-right font-mono text-muted-foreground">Gross Wt (kg)</TableHead>
                   <TableHead className="text-right font-mono">Fine</TableHead>
-                  <TableHead className="text-right font-mono">Pieces</TableHead>
+                  <TableHead className="text-right font-mono">Labour</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -204,7 +204,7 @@ export default function CurrentStock() {
                         <TableCell className="text-right font-mono font-semibold text-primary">{(item.net_wt / 1000).toFixed(3)}</TableCell>
                         <TableCell className="text-right font-mono text-muted-foreground">{(item.gr_wt / 1000).toFixed(3)}</TableCell>
                         <TableCell className="text-right font-mono">{(item.fine / 1000).toFixed(3)}</TableCell>
-                        <TableCell className="text-right font-mono">{item.total_pc}</TableCell>
+                        <TableCell className="text-right font-mono">₹{(item.labor || 0).toLocaleString()}</TableCell>
                       </TableRow>
                     ))}
                     
@@ -223,8 +223,8 @@ export default function CurrentStock() {
                         <TableCell className="text-right font-mono font-bold">
                           {(filteredTotals.fine / 1000).toFixed(3)} kg
                         </TableCell>
-                        <TableCell className="text-right font-mono font-bold">
-                          {filteredTotals.total_pc}
+                        <TableCell className="text-right font-mono font-bold text-green-600">
+                          ₹{filteredTotals.labor.toLocaleString()}
                         </TableCell>
                       </TableRow>
                     )}
