@@ -92,7 +92,10 @@ export default function Layout({ children }) {
             </div>
           </SheetContent>
         </Sheet>
-        <h1 className="text-xl font-bold tracking-tight">JewelVault</h1>
+        <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
+          <span className="text-primary">Stock</span>
+          <span className="text-secondary">Bud</span>
+        </h1>
       </div>
 
       {/* Main Content */}
