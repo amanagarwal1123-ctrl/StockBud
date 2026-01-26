@@ -78,7 +78,13 @@ export default function Layout({ children }) {
           <SheetContent side="left" className="w-64 p-0">
             <div className="flex h-full flex-col">
               <div className="flex h-16 items-center px-6">
-                <h1 className="text-2xl font-bold tracking-tight">JewelVault</h1>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 text-2xl font-bold tracking-tight">
+                    <span className="text-primary">Stock</span>
+                    <span className="text-secondary">Bud</span>
+                  </div>
+                  <div className="h-2 w-2 rounded-full bg-accent animate-pulse"></div>
+                </div>
               </div>
               <div className="flex-1 overflow-auto p-4">
                 <NavLinks mobile />
