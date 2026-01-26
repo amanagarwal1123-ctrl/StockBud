@@ -164,7 +164,7 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                     # Calculate purchase tunch = tunch + wstg
                     tunch_val = float(get_column_value(row, ['Tunch', 'tunch'], 0) or 0)
                     wstg_val = float(get_column_value(row, ['Wstg', 'wstg'], 0) or 0)
-                    purchase_tunch = tunch_val + wstg_val
+                    purchase_tunch = tunch_val + wstg_val if not pd.isna(tunch_val) and not pd.isna(wstg_val) else (tunch_val if not pd.isna(tunch_val) else 0)
                     
                     # Store type as-is; weights are already positive/negative in Excel
                     record = {
