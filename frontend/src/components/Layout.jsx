@@ -1,21 +1,66 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Upload, Package, GitCompare, TrendingUp, History, Menu } from 'lucide-react';
+import { LayoutDashboard, Upload, Package, Users, TrendingUp, History, RotateCcw, Power } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import axios from 'axios';
+import { toast } from 'sonner';
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const API = `${BACKEND_URL}/api`;
 
 export default function Layout({ children }) {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [resetPassword, setResetPassword] = useState('');
 
   const navigation = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
     { name: 'Upload Files', href: '/upload', icon: Upload },
-    { name: 'Book Inventory', href: '/book-inventory', icon: Package },
-    { name: 'Matching', href: '/matching', icon: GitCompare },
-    { name: 'Analytics', href: '/analytics', icon: TrendingUp },
+    { name: 'Current Stock', href: '/current-stock', icon: Package },
+    { name: 'Party Analytics', href: '/party-analytics', icon: Users },
+    { name: 'Profit Analysis', href: '/profit', icon: TrendingUp },
     { name: 'History', href: '/history', icon: History },
   ];
+
+  const handleUndo = async () => {
+    try {
+      const response = await axios.post(`${API}/history/undo`);
+      toast.success(response.data.message);
+      window.location.reload();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'No action to undo');
+    }
+  };
+
+  const handleReset = async () => {
+    if (!resetPassword) {
+      toast.error('Please enter password');
+      return;
+    }
+    
+    try {
+      await axios.post(`${API}/system/reset`, { password: resetPassword });
+      toast.success('System reset successfully!');
+      setResetPassword('');
+      window.location.reload();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Reset failed');
+    }
+  };
 
   const NavLinks = ({ mobile = false }) => (
     <nav className="space-y-1">
@@ -30,7 +75,7 @@ export default function Layout({ children }) {
             className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
               isActive
                 ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                : 'text-foreground hover:bg-muted hover:text-foreground'
             }`}
           >
             <item.icon className="h-5 w-5" />
@@ -58,10 +103,60 @@ export default function Layout({ children }) {
           <div className="flex-1 overflow-auto p-4">
             <NavLinks />
           </div>
-          <div className="border-t border-border/40 p-4">
-            <div className="rounded-lg bg-muted/50 p-4 text-xs text-muted-foreground">
-              <p className="font-medium">Inventory Management</p>
-              <p className="mt-1">Powered by StockBud</p>
+          <div className="border-t border-border/40 p-4 space-y-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="w-full justify-start text-xs"
+              onClick={handleUndo}
+              data-testid="undo-button"
+            >
+              <RotateCcw className="h-3.5 w-3.5 mr-2" />
+              Undo Last Action
+            </Button>
+            
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button 
+                  variant="destructive" 
+                  size="sm" 
+                  className="w-full justify-start text-xs"
+                  data-testid="reset-button"
+                >
+                  <Power className="h-3.5 w-3.5 mr-2" />
+                  Reset System
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Reset System</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will delete all data. Enter password to confirm.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <div className="py-4">
+                  <Label htmlFor="reset-password">Password</Label>
+                  <Input
+                    id="reset-password"
+                    type="password"
+                    placeholder="Enter CLOSE to reset"
+                    value={resetPassword}
+                    onChange={(e) => setResetPassword(e.target.value)}
+                    data-testid="reset-password-input"
+                  />
+                </div>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleReset} className="bg-destructive text-destructive-foreground">
+                    Reset System
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            
+            <div className="mt-3 rounded-lg bg-gradient-to-r from-primary/10 via-secondary/10 to-accent/10 p-3 text-xs">
+              <p className="font-medium text-foreground">StockBud v2.0</p>
+              <p className="text-muted-foreground mt-1">Intelligent Inventory</p>
             </div>
           </div>
         </div>
@@ -72,7 +167,7 @@ export default function Layout({ children }) {
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
           <SheetTrigger asChild>
             <Button variant="outline" size="icon" data-testid="mobile-menu-button">
-              <Menu className="h-5 w-5" />
+              <LayoutDashboard className="h-5 w-5" />
             </Button>
           </SheetTrigger>
           <SheetContent side="left" className="w-64 p-0">
