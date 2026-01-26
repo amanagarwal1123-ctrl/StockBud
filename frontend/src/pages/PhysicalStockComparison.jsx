@@ -168,8 +168,16 @@ export default function PhysicalStockComparison() {
         <TabsContent value="discrepancies">
           <Card className="border-border/40 shadow-sm">
             <CardHeader>
-              <CardTitle>Items with Discrepancies</CardTitle>
-              <CardDescription>Items where physical count differs from book stock</CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Items with Discrepancies</CardTitle>
+                  <CardDescription>Items where physical count differs from book stock</CardDescription>
+                </div>
+                <Button onClick={handleExportDiscrepancies} variant="outline" size="sm">
+                  <Download className="h-4 w-4 mr-2" />
+                  Export CSV
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <Table>
@@ -259,8 +267,16 @@ export default function PhysicalStockComparison() {
         <TabsContent value="only-book">
           <Card className="border-border/40 shadow-sm">
             <CardHeader>
-              <CardTitle>Only in Book Stock</CardTitle>
-              <CardDescription>Items present in book but missing from physical count</CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Only in Book Stock</CardTitle>
+                  <CardDescription>Items present in book but missing from physical count</CardDescription>
+                </div>
+                <Button onClick={handleExportOnlyBook} variant="outline" size="sm">
+                  <Download className="h-4 w-4 mr-2" />
+                  Export CSV
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <Table>
@@ -301,8 +317,16 @@ export default function PhysicalStockComparison() {
         <TabsContent value="only-physical">
           <Card className="border-border/40 shadow-sm">
             <CardHeader>
-              <CardTitle>Only in Physical Stock</CardTitle>
-              <CardDescription>Items found in physical count but not in book stock</CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Only in Physical Stock</CardTitle>
+                  <CardDescription>Items found in physical count but not in book stock</CardDescription>
+                </div>
+                <Button onClick={handleExportOnlyPhysical} variant="outline" size="sm">
+                  <Download className="h-4 w-4 mr-2" />
+                  Export CSV
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <Table>
