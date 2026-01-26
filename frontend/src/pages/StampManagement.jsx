@@ -1,0 +1,228 @@
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import { Tag, Search, Save } from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { toast } from 'sonner';
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const API = `${BACKEND_URL}/api`;
+
+export default function StampManagement() {
+  const navigate = useNavigate();
+  const [inventory, setInventory] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [stampChanges, setStampChanges] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchInventory();
+  }, []);
+
+  const fetchInventory = async () => {
+    try {
+      const response = await axios.get(`${API}/inventory/current`);
+      // Get all items including transactions-only items
+      const allItems = response.data.inventory;
+      
+      // Also get items from transactions that might not be in inventory
+      const transResponse = await axios.get(`${API}/transactions?limit=10000`);
+      const uniqueItems = new Map();
+      
+      transResponse.data.forEach(trans => {
+        if (!uniqueItems.has(trans.item_name)) {
+          uniqueItems.set(trans.item_name, {
+            item_name: trans.item_name,
+            stamp: trans.stamp || 'Unassigned'
+          });
+        }
+      });
+      
+      allItems.forEach(item => {
+        uniqueItems.set(item.item_name, {
+          item_name: item.item_name,
+          stamp: item.stamp || 'Unassigned'
+        });
+      });
+      
+      setInventory(Array.from(uniqueItems.values()));
+    } catch (error) {
+      console.error('Error fetching inventory:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStampChange = (itemName, newStamp) => {
+    setStampChanges({
+      ...stampChanges,
+      [itemName]: newStamp
+    });
+  };
+
+  const saveStampChanges = async () => {
+    if (Object.keys(stampChanges).length === 0) {
+      toast.error('No changes to save');
+      return;
+    }
+
+    setSaving(true);
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const [itemName, stamp] of Object.entries(stampChanges)) {
+      try {
+        await axios.post(`${API}/item/${encodeURIComponent(itemName)}/assign-stamp?stamp=${encodeURIComponent(stamp)}`);
+        successCount++;
+      } catch (error) {
+        errorCount++;
+      }
+    }
+
+    setSaving(false);
+    
+    if (successCount > 0) {
+      toast.success(`${successCount} stamp(s) assigned successfully!`);
+      setStampChanges({});
+      fetchInventory();
+    }
+    
+    if (errorCount > 0) {
+      toast.error(`${errorCount} stamp(s) failed to assign`);
+    }
+  };
+
+  const filteredInventory = inventory.filter(item =>
+    item.item_name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-muted-foreground">Loading items...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 md:p-8 space-y-6" data-testid="stamp-management-page">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
+            Stamp Management
+          </h1>
+          <p className="text-lg text-muted-foreground mt-2">
+            Assign or change stamps for items in bulk
+          </p>
+        </div>
+        <Button 
+          onClick={saveStampChanges} 
+          disabled={saving || Object.keys(stampChanges).length === 0}
+          size="lg"
+          className="shadow-md"
+          data-testid="save-stamps-button"
+        >
+          <Save className="mr-2 h-5 w-5" />
+          Save {Object.keys(stampChanges).length > 0 && `(${Object.keys(stampChanges).length})`}
+        </Button>
+      </div>
+
+      {Object.keys(stampChanges).length > 0 && (
+        <Card className="border-accent/50 bg-accent/10">
+          <CardContent className="py-3">
+            <p className="text-sm font-medium">
+              {Object.keys(stampChanges).length} unsaved changes - Click Save to apply
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search items..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="pl-10"
+          data-testid="search-input"
+        />
+      </div>
+
+      {/* Items Table */}
+      <Card className="border-border/40 shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Tag className="h-5 w-5 text-primary" />
+            Items ({filteredInventory.length})
+          </CardTitle>
+          <CardDescription>
+            Click on any item to view details, or modify stamps here
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Item Name</TableHead>
+                  <TableHead>Current Stamp</TableHead>
+                  <TableHead>New Stamp</TableHead>
+                  <TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredInventory.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                      No items found
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredInventory.map((item, idx) => (
+                    <TableRow key={idx} className="table-row">
+                      <TableCell 
+                        className="font-medium text-primary hover:underline cursor-pointer"
+                        onClick={() => navigate(`/item/${encodeURIComponent(item.item_name)}`)}
+                      >
+                        {item.item_name}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="font-mono text-xs">
+                          {item.stamp}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          placeholder="Enter new stamp"
+                          value={stampChanges[item.item_name] || ''}
+                          onChange={(e) => handleStampChange(item.item_name, e.target.value)}
+                          className="max-w-xs"
+                          data-testid={`stamp-input-${idx}`}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => navigate(`/item/${encodeURIComponent(item.item_name)}`)}
+                        >
+                          View Details
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
