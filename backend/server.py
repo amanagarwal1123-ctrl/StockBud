@@ -210,6 +210,11 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                     if not item_name or len(item_name) < 2:
                         continue
                     
+                    # IMPORTANT: Only process rows where Stamp is NULL/empty (these are totals, not breakdowns)
+                    stamp_val = get_column_value(row, ['Stamp', 'stamp'], None)
+                    if stamp_val and str(stamp_val).strip() and not pd.isna(stamp_val):
+                        continue  # Skip rows with stamp - these are breakdowns
+                    
                     record = {
                         'item_name': item_name,
                         'stamp': str(get_column_value(row, ['Stamp', 'stamp'], '')),
