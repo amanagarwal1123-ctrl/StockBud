@@ -203,7 +203,7 @@ export default function PartyAnalytics() {
           <Card className="border-border/40 shadow-sm">
             <CardHeader>
               <CardTitle>Top Suppliers by Purchases</CardTitle>
-              <CardDescription>Ranked by total purchase value</CardDescription>
+              <CardDescription>Ranked by net silver weight purchased</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
@@ -212,14 +212,16 @@ export default function PartyAnalytics() {
                     <TableRow>
                       <TableHead>Rank</TableHead>
                       <TableHead>Supplier Name</TableHead>
-                      <TableHead className="text-right font-mono">Total Purchases</TableHead>
-                      <TableHead className="text-right">Transactions</TableHead>
+                      <TableHead className="text-right font-mono">Net Wt (kg)</TableHead>
+                      <TableHead className="text-right font-mono">Fine Wt (kg)</TableHead>
+                      <TableHead className="text-right font-mono">Purchase Value</TableHead>
+                      <TableHead className="text-right">Count</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {topSuppliers.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                           No supplier data available
                         </TableCell>
                       </TableRow>
@@ -232,8 +234,14 @@ export default function PartyAnalytics() {
                             </Badge>
                           </TableCell>
                           <TableCell className="font-medium">{supplier.party_name}</TableCell>
+                          <TableCell className="text-right font-mono text-primary font-semibold">
+                            {(supplier.total_net_wt / 1000).toFixed(3)}
+                          </TableCell>
                           <TableCell className="text-right font-mono text-accent font-semibold">
-                            ₹{supplier.total_purchases.toLocaleString()}
+                            {(supplier.total_fine_wt / 1000).toFixed(3)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            ₹{supplier.total_purchases_value.toLocaleString()}
                           </TableCell>
                           <TableCell className="text-right font-mono">
                             {supplier.transaction_count}
