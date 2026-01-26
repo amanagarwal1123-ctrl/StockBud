@@ -72,7 +72,7 @@ export default function Dashboard() {
           Dashboard
         </h1>
         <p className="text-lg text-muted-foreground mt-2">
-          Overview of your jewelry inventory management
+          StockBud - Intelligent inventory management for your jewelry business
         </p>
       </div>
 
@@ -82,22 +82,11 @@ export default function Dashboard() {
           data-testid="latest-match-alert"
           className={`${
             stats.latest_match.complete_match
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-              : 'border-amber-200 bg-amber-50 text-amber-800'
+              ? 'border-accent/30 bg-accent/10'
+              : 'border-secondary/30 bg-secondary/10'
           }`}
-        >
-          {stats.latest_match.complete_match ? (
-            <CheckCircle2 className="h-5 w-5" />
-          ) : (
-            <AlertTriangle className="h-5 w-5" />
-          )}
-          <AlertDescription className="ml-2">
-            {stats.latest_match.complete_match
-              ? '🎉 Complete stock match achieved!'
-              : `Last match found ${stats.latest_match.differences?.length || 0} differences and ${stats.latest_match.unmatched_items?.length || 0} unmatched items`}
-          </AlertDescription>
-        </Alert>
-      )}
+        >\n          {stats.latest_match.complete_match ? (
+            <CheckCircle2 className=\"h-5 w-5 text-accent\" />\n          ) : (\n            <AlertTriangle className=\"h-5 w-5 text-secondary\" />\n          )}\n          <AlertDescription className=\"ml-2\">\n            {stats.latest_match.complete_match\n              ? '🎉 Complete stock match achieved!'\n              : `Last match found ${stats.latest_match.differences?.length || 0} differences and ${stats.latest_match.unmatched_items?.length || 0} unmatched items`}\n          </AlertDescription>\n        </Alert>\n      )}
 
       {/* Stats Grid */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
