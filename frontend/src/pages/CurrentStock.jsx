@@ -211,8 +211,8 @@ export default function CurrentStock() {
                   <TableRow>
                     <TableHead>Item Name</TableHead>
                     <TableHead>Stamp</TableHead>
-                    <TableHead className="text-right font-mono">Gross Wt (g)</TableHead>
-                    <TableHead className="text-right font-mono">Net Wt (g)</TableHead>
+                    <TableHead className="text-right font-mono">Net Wt (kg)</TableHead>
+                    <TableHead className="text-right font-mono text-muted-foreground">Gross Wt (kg)</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
