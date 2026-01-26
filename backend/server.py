@@ -458,7 +458,7 @@ async def calculate_profit(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ):
-    """Calculate total profit for given time window"""
+    """Calculate profit using silver trading formula: tunch difference and labour difference"""
     
     query = {}
     if start_date and end_date:
@@ -466,48 +466,94 @@ async def calculate_profit(
     
     transactions = await db.transactions.find(query, {"_id": 0}).to_list(10000)
     
-    total_sales = 0.0
-    total_purchases = 0.0
-    
-    item_profits = defaultdict(lambda: {'sales': 0.0, 'purchases': 0.0, 'profit': 0.0})
+    # Group transactions by item for tunch-based profit calculation
+    item_transactions = defaultdict(lambda: {'purchases': [], 'sales': []})
     
     for trans in transactions:
-        amount = trans.get('total_amount', 0)
         item_name = trans.get('item_name', '')
+        if not item_name:
+            continue
         
-        if trans['type'] == 'sale':
-            total_sales += amount
-            item_profits[item_name]['sales'] += amount
-        elif trans['type'] == 'sale_return':
-            total_sales -= amount
-            item_profits[item_name]['sales'] -= amount
-        elif trans['type'] == 'purchase':
-            total_purchases += amount
-            item_profits[item_name]['purchases'] += amount
-        elif trans['type'] == 'purchase_return':
-            total_purchases -= amount
-            item_profits[item_name]['purchases'] -= amount
+        trans_data = {
+            'date': trans.get('date'),
+            'net_wt': trans.get('net_wt', 0),
+            'tunch': float(trans.get('tunch', 0) or 0),
+            'labor': trans.get('labor', 0),
+            'total_amount': trans.get('total_amount', 0)
+        }
+        
+        if trans['type'] in ['purchase', 'purchase_return']:
+            item_transactions[item_name]['purchases'].append(trans_data)
+        elif trans['type'] in ['sale', 'sale_return']:
+            item_transactions[item_name]['sales'].append(trans_data)
     
-    # Calculate profit per item
-    for item, data in item_profits.items():
-        data['profit'] = data['sales'] - data['purchases']
+    # Calculate profits
+    total_tunch_profit = 0.0
+    total_labor_profit = 0.0
+    item_profits = []
     
-    total_profit = total_sales - total_purchases
+    for item_name, data in item_transactions.items():
+        purchases = data['purchases']
+        sales = data['sales']
+        
+        if not purchases or not sales:
+            continue
+        
+        # Calculate average purchase and sale tunch/labor
+        total_purchase_wt = sum(p['net_wt'] for p in purchases)
+        total_sale_wt = sum(s['net_wt'] for s in sales)
+        
+        if total_purchase_wt == 0 or total_sale_wt == 0:
+            continue
+        
+        avg_purchase_tunch = sum(p['tunch'] * p['net_wt'] for p in purchases) / total_purchase_wt if total_purchase_wt > 0 else 0
+        avg_sale_tunch = sum(s['tunch'] * s['net_wt'] for s in sales) / total_sale_wt if total_sale_wt > 0 else 0
+        
+        avg_purchase_labor = sum(p['labor'] * p['net_wt'] for p in purchases) / total_purchase_wt if total_purchase_wt > 0 else 0
+        avg_sale_labor = sum(s['labor'] * s['net_wt'] for s in sales) / total_sale_wt if total_sale_wt > 0 else 0
+        
+        # Silver trading profit formula
+        # Tunch profit = (Sale Tunch% - Purchase Tunch%) * Net Weight / 100
+        sold_wt = min(total_sale_wt, total_purchase_wt)  # Can't profit on unsold stock
+        tunch_profit = (avg_sale_tunch - avg_purchase_tunch) * sold_wt / 100
+        
+        # Labour profit = (Sale Labour - Purchase Labour) per gram * weight
+        labor_profit = (avg_sale_labor - avg_purchase_labor) * sold_wt
+        
+        item_profit = tunch_profit + labor_profit
+        
+        total_tunch_profit += tunch_profit
+        total_labor_profit += labor_profit
+        
+        item_profits.append({
+            'item_name': item_name,
+            'tunch_profit': round(tunch_profit, 2),
+            'labor_profit': round(labor_profit, 2),
+            'total_profit': round(item_profit, 2),
+            'avg_purchase_tunch': round(avg_purchase_tunch, 2),
+            'avg_sale_tunch': round(avg_sale_tunch, 2),
+            'net_wt_sold': round(sold_wt, 3)
+        })
     
     # Sort by profit
-    items_by_profit = sorted(
-        [{'item_name': k, **v} for k, v in item_profits.items()],
-        key=lambda x: x['profit'],
-        reverse=True
-    )
+    item_profits.sort(key=lambda x: x['total_profit'], reverse=True)
+    
+    total_profit = total_tunch_profit + total_labor_profit
+    
+    # Calculate total sales/purchases value
+    total_sales_value = sum(t['total_amount'] for t in transactions if t['type'] == 'sale')
+    total_purchase_value = sum(t['total_amount'] for t in transactions if t['type'] == 'purchase')
     
     return {
-        "total_sales": round(total_sales, 2),
-        "total_purchases": round(total_purchases, 2),
         "total_profit": round(total_profit, 2),
-        "profit_margin": round((total_profit / total_sales * 100) if total_sales > 0 else 0, 2),
-        "top_profitable_items": items_by_profit[:20],
-        "least_profitable_items": items_by_profit[-20:] if len(items_by_profit) > 20 else []
+        "tunch_profit": round(total_tunch_profit, 2),
+        "labor_profit": round(total_labor_profit, 2),
+        "total_sales_value": round(total_sales_value, 2),
+        "total_purchase_value": round(total_purchase_value, 2),
+        "profit_margin": round((total_profit / total_sales_value * 100) if total_sales_value > 0 else 0, 2),
+        "top_profitable_items": item_profits[:20],
+        "least_profitable_items": item_profits[-20:] if len(item_profits) > 20 else [],
+        "total_items_analyzed": len(item_profits)
     }
 
 @api_router.get("/history/actions")
