@@ -772,17 +772,16 @@ async def calculate_profit(
         total_purchase_wt = sum(p['net_wt'] for p in purchases)
         total_sale_wt = sum(s['net_wt'] for s in sales)
         
-        if total_purchase_wt == 0 or total_sale_wt == 0:
+        if abs(total_purchase_wt) < 0.001 or abs(total_sale_wt) < 0.001:
             continue
         
-        # Average tunch weighted by net weight
-        avg_purchase_tunch = sum(p['tunch'] * p['net_wt'] for p in purchases) / total_purchase_wt if total_purchase_wt > 0 else 0
-        avg_sale_tunch = sum(s['tunch'] * s['net_wt'] for s in sales) / total_sale_wt if total_sale_wt > 0 else 0
+        # Average tunch weighted by ABSOLUTE net weight (to handle negative returns correctly)
+        avg_purchase_tunch = sum(p['tunch'] * abs(p['net_wt']) for p in purchases) / sum(abs(p['net_wt']) for p in purchases) if purchases else 0
+        avg_sale_tunch = sum(s['tunch'] * abs(s['net_wt']) for s in sales) / sum(abs(s['net_wt']) for s in sales) if sales else 0
         
-        # Average labour per kg (labor is already per kg or total, need to normalize)
-        # Assuming labor is total labor cost, so labor per kg = total labor / net weight
-        avg_purchase_labor_per_kg = sum(p['labor'] for p in purchases) / total_purchase_wt if total_purchase_wt > 0 else 0
-        avg_sale_labor_per_kg = sum(s['labor'] for s in sales) / total_sale_wt if total_sale_wt > 0 else 0
+        # Labour per kg = Total labour / Net weight (using absolute values for average)
+        avg_purchase_labor_per_kg = sum(abs(p['labor']) for p in purchases) / sum(abs(p['net_wt']) for p in purchases) if purchases else 0
+        avg_sale_labor_per_kg = sum(abs(s['labor']) for s in sales) / sum(abs(s['net_wt']) for s in sales) if sales else 0
         
         # USER'S FORMULA:
         # 1. Silver Profit (kg) = (sale tunch - purchase tunch) * sale net weight / 100
