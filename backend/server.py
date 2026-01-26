@@ -422,12 +422,12 @@ async def get_current_inventory():
             inventory_map[key]['stamps_seen'].add(trans['stamp'])
             inventory_map[key]['stamp'] = trans['stamp']
         
-        # Purchase/sale_return increases stock, sale/purchase_return decreases
-        multiplier = 1 if trans['type'] in ['purchase', 'sale_return'] else -1
-        inventory_map[key]['gr_wt'] += trans.get('gr_wt', 0) * multiplier
-        inventory_map[key]['net_wt'] += trans.get('net_wt', 0) * multiplier
-        inventory_map[key]['fine'] += trans.get('fine', 0) * multiplier
-        inventory_map[key]['total_pc'] += trans.get('total_pc', 0) * multiplier
+        # Weights in Excel are already positive for P/S and negative for PR/SR
+        # Just add them as-is (no multiplier needed)
+        inventory_map[key]['gr_wt'] += trans.get('gr_wt', 0)
+        inventory_map[key]['net_wt'] += trans.get('net_wt', 0)
+        inventory_map[key]['fine'] += trans.get('fine', 0)
+        inventory_map[key]['total_pc'] += trans.get('total_pc', 0)
     
     # Convert to list and separate negative items
     inventory = []
