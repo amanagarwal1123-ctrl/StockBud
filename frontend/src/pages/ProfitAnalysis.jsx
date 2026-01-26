@@ -42,7 +42,7 @@ export default function ProfitAnalysis() {
           Profit Analysis
         </h1>
         <p className="text-lg text-muted-foreground mt-2">
-          Complete profitability insights and margin analysis
+          Silver trading profit based on tunch difference and labour margins
         </p>
       </div>
 
@@ -51,27 +51,13 @@ export default function ProfitAnalysis() {
         <Card className="border-border/40 shadow-sm bg-gradient-to-br from-primary/10 to-transparent">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <ShoppingCart className="h-4 w-4 text-primary" />
-              Total Sales
+              <TrendingUp className="h-4 w-4 text-primary" />
+              Total Profit
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold font-mono text-primary">
-              ₹{profitData?.total_sales?.toLocaleString() || 0}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/40 shadow-sm bg-gradient-to-br from-secondary/10 to-transparent">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <Package className="h-4 w-4 text-secondary" />
-              Total Purchases
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold font-mono text-secondary">
-              ₹{profitData?.total_purchases?.toLocaleString() || 0}
+              ₹{profitData?.total_profit?.toLocaleString() || 0}
             </div>
           </CardContent>
         </Card>
@@ -79,13 +65,27 @@ export default function ProfitAnalysis() {
         <Card className="border-border/40 shadow-sm bg-gradient-to-br from-accent/10 to-transparent">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-accent" />
-              Total Profit
+              <Package className="h-4 w-4 text-accent" />
+              Tunch Profit
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold font-mono text-accent">
-              ₹{profitData?.total_profit?.toLocaleString() || 0}
+              ₹{profitData?.tunch_profit?.toLocaleString() || 0}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/40 shadow-sm bg-gradient-to-br from-secondary/10 to-transparent">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <DollarSign className="h-4 w-4 text-secondary" />
+              Labour Profit
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold font-mono text-secondary">
+              ₹{profitData?.labor_profit?.toLocaleString() || 0}
             </div>
           </CardContent>
         </Card>
@@ -93,13 +93,13 @@ export default function ProfitAnalysis() {
         <Card className="border-border/40 shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <TrendingUp className="h-4 w-4" />
-              Profit Margin
+              <ShoppingCart className="h-4 w-4" />
+              Items Analyzed
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold font-mono">
-              {profitData?.profit_margin || 0}%
+              {profitData?.total_items_analyzed || 0}
             </div>
           </CardContent>
         </Card>
