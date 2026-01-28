@@ -240,17 +240,30 @@ export default function PhysicalStockComparison() {
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-muted-foreground mb-2">Book Stock (Calculated)</p>
-                  <div className="space-y-1">
+                  <div className="space-y-1 text-xs bg-muted/30 p-3 rounded">
                     <p className="font-mono">
-                      <span className="text-muted-foreground">Gross:</span>{' '}
-                      <span className="font-bold text-lg">{(stampComparison.bookGross / 1000).toFixed(3)} kg</span>
+                      <span className="text-muted-foreground">Opening:</span>{' '}
+                      <span className="font-semibold">Gross: {(stampComparison.openingGross / 1000).toFixed(3)} kg, Net: {(stampComparison.openingNet / 1000).toFixed(3)} kg</span>
                     </p>
-                    <p className="font-mono text-sm">
-                      <span className="text-muted-foreground">Net:</span>{' '}
-                      {(stampComparison.bookNet / 1000).toFixed(3)} kg
+                    <p className="font-mono text-green-600">
+                      <span className="text-muted-foreground">+ Purchase:</span>{' '}
+                      <span className="font-semibold">Gross: {(stampComparison.purchaseGross / 1000).toFixed(3)} kg, Net: {(stampComparison.purchaseNet / 1000).toFixed(3)} kg</span>
                     </p>
-                    <p className="text-sm text-muted-foreground">
-                      {stampComparison.itemCount} items
+                    <p className="font-mono text-red-600">
+                      <span className="text-muted-foreground">- Sale:</span>{' '}
+                      <span className="font-semibold">Gross: {(stampComparison.saleGross / 1000).toFixed(3)} kg, Net: {(stampComparison.saleNet / 1000).toFixed(3)} kg</span>
+                    </p>
+                    <div className="border-t pt-1 mt-1">
+                      <p className="font-mono">
+                        <span className="text-muted-foreground">= Current:</span>{' '}
+                        <span className="font-bold text-lg text-blue-600">Gross: {(stampComparison.bookGross / 1000).toFixed(3)} kg</span>
+                      </p>
+                      <p className="font-mono text-sm">
+                        <span className="text-muted-foreground ml-11">Net: {(stampComparison.bookNet / 1000).toFixed(3)} kg</span>
+                      </p>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      {stampComparison.itemCount} items (includes mapped items)
                     </p>
                   </div>
                 </div>
