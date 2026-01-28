@@ -394,8 +394,13 @@ async def upload_opening_stock(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=f"Error processing file: {str(e)}")
 
 @api_router.post("/transactions/upload/{file_type}")
-async def upload_transaction_file(file_type: str, file: UploadFile = File(...)):
-    """Upload purchase or sale Excel file"""
+async def upload_transaction_file(
+    file_type: str, 
+    file: UploadFile = File(...),
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+):
+    """Upload purchase or sale Excel file - REPLACES transactions in specified date range"""
     if file_type not in ['purchase', 'sale']:
         raise HTTPException(status_code=400, detail="file_type must be 'purchase' or 'sale'")
     
@@ -405,15 +410,31 @@ async def upload_transaction_file(file_type: str, file: UploadFile = File(...)):
     if not records:
         raise HTTPException(status_code=400, detail="No valid records found in file")
     
+    # If date range provided, DELETE existing transactions in that range
+    deleted_count = 0
+    if start_date and end_date:
+        delete_query = {
+            "type": {"$in": [file_type, f"{file_type}_return"]},
+            "date": {"$gte": start_date, "$lte": end_date}
+        }
+        delete_result = await db.transactions.delete_many(delete_query)
+        deleted_count = delete_result.deleted_count
+    
+    # Insert new transactions
     transactions = [Transaction(**record).model_dump() for record in records]
     result = await db.transactions.insert_many(transactions)
     
-    await save_action(f'upload_{file_type}', f"Uploaded {len(transactions)} {file_type} transactions")
+    message = f"Uploaded {len(transactions)} {file_type} records"
+    if deleted_count > 0:
+        message += f" (replaced {deleted_count} existing records from {start_date} to {end_date})"
+    
+    await save_action(f'upload_{file_type}', message)
     
     return {
         "success": True,
         "count": len(transactions),
-        "message": f"{len(transactions)} {file_type} records uploaded successfully"
+        "replaced_count": deleted_count,
+        "message": message
     }
 
 @api_router.get("/transactions")
@@ -530,8 +551,11 @@ async def get_current_inventory():
     }
 
 @api_router.post("/physical-stock/upload")
-async def upload_physical_stock(file: UploadFile = File(...)):
-    """Upload physical stock file and merge items by name"""
+async def upload_physical_stock(
+    file: UploadFile = File(...),
+    verification_date: Optional[str] = None
+):
+    """Upload physical stock file with verification date"""
     content = await file.read()
     
     try:
@@ -552,7 +576,8 @@ async def upload_physical_stock(file: UploadFile = File(...)):
                     'pc': 0,
                     'gr_wt': 0.0,
                     'net_wt': 0.0,
-                    'fine': 0.0
+                    'fine': 0.0,
+                    'verification_date': verification_date or datetime.now(timezone.utc).isoformat()
                 }
             
             # Sum weights
@@ -583,7 +608,8 @@ async def upload_physical_stock(file: UploadFile = File(...)):
             "merged_items": len(stock_items),
             "total_net_wt_kg": round(total_net_wt/1000, 3),
             "total_gr_wt_kg": round(total_gr_wt/1000, 3),
-            "message": f"Physical stock uploaded: {len(stock_items)} items, {total_net_wt/1000:.3f} kg"
+            "verification_date": verification_date,
+            "message": f"Physical stock uploaded: {len(stock_items)} items, {total_net_wt/1000:.3f} kg" + (f" (verified on {verification_date})" if verification_date else "")
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error processing file: {str(e)}")
