@@ -47,6 +47,13 @@ export default function Layout({ children }) {
     { name: 'History', href: '/history', icon: History },
   ];
 
+  // Admin-only navigation items
+  const adminNavigation = isAdmin ? [
+    { name: 'User Management', href: '/users', icon: User }
+  ] : [];
+
+  const allNavigation = [...navigation, ...adminNavigation];
+
   const handleUndo = async () => {
     // Fetch recent uploads
     try {
@@ -92,7 +99,7 @@ export default function Layout({ children }) {
 
   const NavLinks = ({ mobile = false }) => (
     <nav className="space-y-1">
-      {navigation.map((item) => {
+      {allNavigation.map((item) => {
         const isActive = location.pathname === item.href;
         return (
           <Link
