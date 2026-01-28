@@ -19,6 +19,9 @@ export default function PartyAnalytics() {
   const [loading, setLoading] = useState(true);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [customerPage, setCustomerPage] = useState(1);
+  const [supplierPage, setSupplierPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   useEffect(() => {
     fetchAnalytics();
@@ -69,8 +72,20 @@ export default function PartyAnalytics() {
     );
   }
 
-  const topCustomers = analytics?.customers?.slice(0, 10) || [];
-  const topSuppliers = analytics?.suppliers?.slice(0, 10) || [];
+  const topCustomers = analytics?.customers || [];
+  const topSuppliers = analytics?.suppliers || [];
+
+  // Pagination for customers
+  const customerStartIdx = (customerPage - 1) * itemsPerPage;
+  const customerEndIdx = customerStartIdx + itemsPerPage;
+  const paginatedCustomers = topCustomers.slice(customerStartIdx, customerEndIdx);
+  const totalCustomerPages = Math.ceil(topCustomers.length / itemsPerPage);
+
+  // Pagination for suppliers
+  const supplierStartIdx = (supplierPage - 1) * itemsPerPage;
+  const supplierEndIdx = supplierStartIdx + itemsPerPage;
+  const paginatedSuppliers = topSuppliers.slice(supplierStartIdx, supplierEndIdx);
+  const totalSupplierPages = Math.ceil(topSuppliers.length / itemsPerPage);
 
   const handleExportCustomers = () => {
     const exportData = (analytics?.customers || []).map((customer, idx) => ({
