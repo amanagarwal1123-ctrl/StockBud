@@ -133,6 +133,20 @@ export default function Layout({ children }) {
             <NavLinks />
           </div>
           <div className="border-t border-border/40 p-4 space-y-2">
+            {/* User Info */}
+            {user && (
+              <div className="mb-3 p-3 bg-muted/50 rounded-lg">
+                <div className="flex items-center gap-2 mb-1">
+                  <User className="h-4 w-4 text-muted-foreground" />
+                  <p className="text-sm font-medium">{user.full_name}</p>
+                </div>
+                <p className="text-xs text-muted-foreground">{user.username}</p>
+                <Badge variant="outline" className="mt-2 text-xs">
+                  {user.role.toUpperCase()}
+                </Badge>
+              </div>
+            )}
+
             <Button 
               variant="outline" 
               size="sm" 
