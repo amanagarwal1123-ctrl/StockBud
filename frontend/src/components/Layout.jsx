@@ -1,8 +1,10 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Upload, Package, Users, TrendingUp, History, RotateCcw, Power, Tag, Scale, Link2, GitBranch, Receipt } from 'lucide-react';
+import { LayoutDashboard, Upload, Package, Users, TrendingUp, History, RotateCcw, Power, Tag, Scale, Link2, GitBranch, Receipt, LogOut, User } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Badge } from '@/components/ui/badge';
+import { useAuth } from '../context/AuthContext';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,6 +31,8 @@ export default function Layout({ children }) {
   const [resetPassword, setResetPassword] = useState('');
   const [showUndoDialog, setShowUndoDialog] = useState(false);
   const [recentUploads, setRecentUploads] = useState([]);
+  
+  const { user, logout, isAdmin, isManager } = useAuth();
 
   const navigation = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
