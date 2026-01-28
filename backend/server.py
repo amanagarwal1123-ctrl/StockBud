@@ -460,9 +460,16 @@ async def get_transactions(type: Optional[str] = None, limit: int = 5000):
 async def get_current_inventory():
     """Calculate current inventory: Opening Stock + Purchases - Sales"""
     
+    # Items to always exclude from inventory
+    EXCLUDED_ITEMS = ["SILVER ORNAMENTS"]
+    
     # Get opening stock and transactions
     opening = await db.opening_stock.find({}, {"_id": 0}).to_list(10000)
     transactions = await db.transactions.find({}, {"_id": 0}).to_list(10000)
+    
+    # Filter out excluded items
+    opening = [item for item in opening if item['item_name'] not in EXCLUDED_ITEMS]
+    transactions = [t for t in transactions if t['item_name'] not in EXCLUDED_ITEMS]
     
     # Build inventory map starting with opening stock
     inventory_map = {}
@@ -998,12 +1005,18 @@ async def get_sales_summary(
 ):
     """Get total sales summary with net weight, fine weight, and labour (including returns)"""
     
+    # Items to exclude
+    EXCLUDED_ITEMS = ["SILVER ORNAMENTS"]
+    
     query = {"type": {"$in": ["sale", "sale_return"]}}
     if start_date and end_date:
         query['date'] = {'$gte': start_date, '$lte': end_date}
     
     # Get ALL sale transactions (S and SR - SR have negative values already)
     sales_transactions = await db.transactions.find(query, {"_id": 0}).to_list(10000)
+    
+    # Filter out excluded items
+    sales_transactions = [t for t in sales_transactions if t['item_name'] not in EXCLUDED_ITEMS]
     
     # Sum including negative values (SR rows are already negative)
     total_net_wt = sum(t.get('net_wt', 0) for t in sales_transactions)
@@ -1026,11 +1039,17 @@ async def calculate_profit(
 ):
     """Calculate profit: Silver profit (in kg) and Labour profit (in INR)"""
     
+    # Items to exclude from profit calculation
+    EXCLUDED_ITEMS = ["SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"]
+    
     query = {}
     if start_date and end_date:
         query['date'] = {'$gte': start_date, '$lte': end_date}
     
     transactions = await db.transactions.find(query, {"_id": 0}).to_list(10000)
+    
+    # Filter out excluded items
+    transactions = [t for t in transactions if t['item_name'] not in EXCLUDED_ITEMS]
     
     # Fetch ALL purchase ledger items upfront (for items sold from opening stock)
     all_ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(10000)
