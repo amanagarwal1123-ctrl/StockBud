@@ -133,6 +133,7 @@ class User(BaseModel):
 
 class LoginRequest(BaseModel):
     username: str
+    password: str
 
 
 # Authentication Helper Functions
