@@ -96,39 +96,98 @@ export default function UploadManager() {
     }
   };
 
-  const FileUploadCard = ({ type, title, description }) => (
-    <Card className="border-border/40 shadow-sm">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-xl">
-          <FileSpreadsheet className="h-5 w-5 text-primary" />
-          {title}
-        </CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <label
-          htmlFor={`${type}-upload`}
-          className="upload-zone flex flex-col items-center justify-center gap-3 cursor-pointer border-2 border-dashed border-muted-foreground/25 rounded-xl p-12 hover:border-primary/50 transition-all bg-muted/5"
-          data-testid={`upload-zone-${type}`}
-        >
-          {uploadedFiles[type] ? (
-            <>
-              <CheckCircle2 className="h-12 w-12 text-emerald-600" />
-              <div className="text-center">
-                <p className="font-medium text-sm">{uploadedFiles[type]}</p>
-                <p className="text-xs text-muted-foreground mt-1">Click to upload another file</p>
+  const FileUploadCard = ({ type, title, description }) => {
+    const needsDateRange = type === 'purchase' || type === 'sale';
+    const needsDate = type === 'physical_stock';
+
+    return (
+      <Card className="border-border/40 shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-xl">
+            <FileSpreadsheet className="h-5 w-5 text-primary" />
+            {title}
+          </CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Date Range Selector for Transactions */}
+          {needsDateRange && (
+            <div className="grid grid-cols-2 gap-3 pb-3 border-b">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                  From Date *
+                </label>
+                <Input
+                  type="date"
+                  value={dateRanges[type]?.start || ''}
+                  onChange={(e) => setDateRanges(prev => ({
+                    ...prev,
+                    [type]: { ...prev[type], start: e.target.value }
+                  }))}
+                  className="text-sm"
+                  required
+                />
               </div>
-            </>
-          ) : (
-            <>
-              <Upload className="h-12 w-12 text-muted-foreground" />
-              <div className="text-center">
-                <p className="font-medium text-sm">Click to upload or drag and drop</p>
-                <p className="text-xs text-muted-foreground mt-1">Excel files (.xlsx, .xls)</p>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                  To Date *
+                </label>
+                <Input
+                  type="date"
+                  value={dateRanges[type]?.end || ''}
+                  onChange={(e) => setDateRanges(prev => ({
+                    ...prev,
+                    [type]: { ...prev[type], end: e.target.value }
+                  }))}
+                  className="text-sm"
+                  required
+                />
               </div>
-            </>
+            </div>
           )}
-          <input
+
+          {/* Single Date for Physical Stock */}
+          {needsDate && (
+            <div className="pb-3 border-b">
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                Verification Date *
+              </label>
+              <Input
+                type="date"
+                value={dateRanges.physical_stock?.date || ''}
+                onChange={(e) => setDateRanges(prev => ({
+                  ...prev,
+                  physical_stock: { date: e.target.value }
+                }))}
+                className="text-sm"
+                required
+              />
+            </div>
+          )}
+
+          <label
+            htmlFor={`${type}-upload`}
+            className="upload-zone flex flex-col items-center justify-center gap-3 cursor-pointer border-2 border-dashed border-muted-foreground/25 rounded-xl p-12 hover:border-primary/50 transition-all bg-muted/5"
+            data-testid={`upload-zone-${type}`}
+          >
+            {uploadedFiles[type] ? (
+              <>
+                <CheckCircle2 className="h-12 w-12 text-emerald-600" />
+                <div className="text-center">
+                  <p className="font-medium text-sm">{uploadedFiles[type]}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Click to upload another file</p>
+                </div>
+              </>
+            ) : (
+              <>
+                <Upload className="h-12 w-12 text-muted-foreground" />
+                <div className="text-center">
+                  <p className="font-medium text-sm">Click to upload or drag and drop</p>
+                  <p className="text-xs text-muted-foreground mt-1">Excel files (.xlsx, .xls)</p>
+                </div>
+              </>
+            )}
+            <input
             id={`${type}-upload`}
             type="file"
             accept=".xlsx,.xls"
