@@ -828,17 +828,13 @@ async def upload_purchase_ledger(file: UploadFile = File(...)):
             "message": f"Purchase ledger created with {len(ledger_items)} items"
         }
     except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error: {str(e)}")
 
 @api_router.get("/purchase-ledger/all")
 async def get_purchase_ledger():
     """Get all purchase rate ledger items"""
     ledger = await db.purchase_ledger.find({}, {"_id": 0}).sort("item_name", 1).to_list(10000)
     return ledger
-
-
-        raise HTTPException(status_code=400, detail=f"Error: {str(e)}")
-
-
 
 @api_router.get("/mappings/unmapped")
 async def get_unmapped_items():
