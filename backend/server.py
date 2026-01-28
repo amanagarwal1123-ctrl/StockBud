@@ -618,20 +618,6 @@ async def initialize_admin():
         "warning": "Please change password after first login!"
     }
 
-
-        
-        return {
-            "success": True,
-            "count": len(stock_items),
-            "original_rows": len(records),
-            "merged_items": len(stock_items),
-            "total_net_wt_kg": round(total_net_wt/1000, 3),
-            "total_gr_wt_kg": round(total_gr_wt/1000, 3),
-            "message": f"Merged {len(records)} rows into {len(stock_items)} items. Total: {total_net_wt/1000:.3f} kg"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error processing file: {str(e)}")
-
 @api_router.post("/transactions/upload/{file_type}")
 async def upload_transaction_file(
     file_type: str, 
