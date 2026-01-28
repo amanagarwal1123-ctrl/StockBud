@@ -137,8 +137,55 @@ export default function Layout({ children }) {
               data-testid="undo-button"
             >
               <RotateCcw className="h-3.5 w-3.5 mr-2" />
-              Undo Last Action
+              Undo Upload
             </Button>
+
+            {/* Undo Dialog */}
+            <AlertDialog open={showUndoDialog} onOpenChange={setShowUndoDialog}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Undo File Upload</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Select which upload to undo. This will delete all transactions from that file.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <div className="py-4 space-y-2 max-h-80 overflow-y-auto">
+                  {recentUploads.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">No recent uploads found</p>
+                  ) : (
+                    recentUploads.map((upload, idx) => (
+                      <div
+                        key={idx}
+                        className="border rounded-lg p-3 hover:bg-muted/50 cursor-pointer transition-colors"
+                        onClick={() => undoUpload(upload.data_snapshot?.batch_id, upload.description)}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <p className="font-medium text-sm">{upload.description}</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {new Date(upload.timestamp).toLocaleString()}
+                            </p>
+                            {upload.data_snapshot?.file_name && (
+                              <p className="text-xs text-muted-foreground">
+                                File: {upload.data_snapshot.file_name}
+                              </p>
+                            )}
+                          </div>
+                          {upload.can_undo ? (
+                            <Badge variant="outline" className="text-green-600">Active</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-muted-foreground">Undone</Badge>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
             
             <AlertDialog>
               <AlertDialogTrigger asChild>
