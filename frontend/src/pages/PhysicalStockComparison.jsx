@@ -121,20 +121,7 @@ export default function PhysicalStockComparison() {
     );
   }
 
-  if (!comparison || !comparison.summary) {
-    return (
-      <div className="p-6 md:p-8">
-        <Alert>
-          <AlertTriangle className="h-5 w-5" />
-          <AlertDescription>
-            No physical stock data found. Please upload your physical stock file first.
-          </AlertDescription>
-        </Alert>
-      </div>
-    );
-  }
-
-  const summary = comparison.summary;
+  const summary = comparison?.summary;
 
   const handleExportDiscrepancies = () => {
     const exportData = comparison.discrepancies.map(item => ({
@@ -177,55 +164,7 @@ export default function PhysicalStockComparison() {
         </p>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid gap-6 md:grid-cols-4">
-        <Card className="border-border/40 shadow-sm bg-gradient-to-br from-blue-500/10 to-transparent">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Book Stock</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold font-mono text-blue-600">
-              {summary.total_book_kg.toLocaleString()} kg
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/40 shadow-sm bg-gradient-to-br from-green-500/10 to-transparent">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Physical Stock</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold font-mono text-green-600">
-              {summary.total_physical_kg.toLocaleString()} kg
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/40 shadow-sm bg-gradient-to-br from-orange-500/10 to-transparent">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Difference</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className={`text-3xl font-bold font-mono ${summary.total_difference_kg >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {summary.total_difference_kg >= 0 ? '+' : ''}{summary.total_difference_kg.toLocaleString()} kg
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/40 shadow-sm">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Accuracy</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold font-mono text-primary">
-              {summary.match_count}/{summary.match_count + summary.discrepancy_count}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">Items matched</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Quick Stamp Verification */}
+      {/* Quick Stamp Verification - ALWAYS AVAILABLE */}
       <Card className="border-primary/20 shadow-sm bg-gradient-to-br from-primary/5 to-transparent">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
