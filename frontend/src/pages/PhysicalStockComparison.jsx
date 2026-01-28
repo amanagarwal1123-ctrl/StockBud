@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Scale, CheckCircle2, AlertTriangle, XCircle, Download } from 'lucide-react';
+import { Scale, CheckCircle2, AlertTriangle, XCircle, Download, Weight } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { exportToCSV } from '@/utils/exportCSV';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -200,6 +203,115 @@ export default function PhysicalStockComparison() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Quick Stamp Verification */}
+      <Card className="border-primary/20 shadow-sm bg-gradient-to-br from-primary/5 to-transparent">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Weight className="h-5 w-5 text-primary" />
+            Quick Stamp Verification
+          </CardTitle>
+          <CardDescription>
+            For busy times - Enter total gross weight for one stamp to verify
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid md:grid-cols-3 gap-4 items-end">
+            <div>
+              <Label className="text-sm font-medium mb-2">Select Stamp</Label>
+              <Select value={selectedStamp} onValueChange={setSelectedStamp}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose stamp..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.keys(stampWeights).sort().map(stamp => (
+                    <SelectItem key={stamp} value={stamp}>
+                      {stamp} ({stampWeights[stamp]?.itemCount || 0} items)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className="text-sm font-medium mb-2">Physical Gross Weight (kg)</Label>
+              <Input
+                type="number"
+                step="0.001"
+                placeholder="Enter gross weight"
+                value={stampGrossWeight}
+                onChange={(e) => setStampGrossWeight(e.target.value)}
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <Button onClick={handleStampMatch} disabled={!selectedStamp || !stampGrossWeight}>
+                Match
+              </Button>
+              <Button onClick={clearStampMatch} variant="outline">
+                Clear
+              </Button>
+            </div>
+          </div>
+
+          {/* Stamp Comparison Result */}
+          {stampComparison && (
+            <div className="mt-6 p-4 rounded-lg border-2 border-primary/20 bg-muted/30">
+              <h3 className="font-semibold text-lg mb-3">{stampComparison.stamp} Verification Result</h3>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-muted-foreground mb-2">Book Stock (Calculated)</p>
+                  <div className="space-y-1">
+                    <p className="font-mono">
+                      <span className="text-muted-foreground">Gross:</span>{' '}
+                      <span className="font-bold text-lg">{(stampComparison.bookGross / 1000).toFixed(3)} kg</span>
+                    </p>
+                    <p className="font-mono text-sm">
+                      <span className="text-muted-foreground">Net:</span>{' '}
+                      {(stampComparison.bookNet / 1000).toFixed(3)} kg
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {stampComparison.itemCount} items
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-sm text-muted-foreground mb-2">Physical Count</p>
+                  <div className="space-y-1">
+                    <p className="font-mono">
+                      <span className="text-muted-foreground">Gross:</span>{' '}
+                      <span className="font-bold text-lg">{(stampComparison.physicalGross / 1000).toFixed(3)} kg</span>
+                    </p>
+                    <p className={`font-mono text-lg font-semibold ${stampComparison.difference >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {stampComparison.difference >= 0 ? '+' : ''}{(stampComparison.difference / 1000).toFixed(3)} kg
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 pt-4 border-t">
+                {stampComparison.isMatch ? (
+                  <Alert className="border-green-500/50 bg-green-500/10">
+                    <CheckCircle2 className="h-5 w-5 text-green-600" />
+                    <AlertDescription className="ml-2">
+                      <strong>✓ MATCH!</strong> Physical weight matches book stock (within 100g tolerance)
+                    </AlertDescription>
+                  </Alert>
+                ) : (
+                  <Alert className="border-orange-500/50 bg-orange-500/10">
+                    <AlertTriangle className="h-5 w-5 text-orange-600" />
+                    <AlertDescription className="ml-2">
+                      <strong>Discrepancy Found:</strong> Difference of {Math.abs(stampComparison.difference / 1000).toFixed(3)} kg detected. 
+                      {stampComparison.difference > 0 ? ' Physical count is higher than book stock.' : ' Physical count is lower than book stock.'}
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Tabs for different categories */}
       <Tabs defaultValue="discrepancies" className="space-y-6">
