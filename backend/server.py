@@ -671,6 +671,42 @@ async def compare_physical_with_book():
     matches = []
     discrepancies = []
     only_in_book = []
+
+@api_router.get("/history/recent-uploads")
+async def get_recent_uploads():
+    """Get last 5 file uploads for undo selection"""
+    actions = await db.action_history.find(
+        {"action_type": {"$in": ["upload_purchase", "upload_sale"]}},
+        {"_id": 0}
+    ).sort("timestamp", -1).limit(5).to_list(5)
+    
+    return actions
+
+@api_router.post("/history/undo-upload")
+async def undo_upload(batch_id: str):
+    """Undo a specific file upload by batch_id"""
+    
+    # Find the action
+    action = await db.action_history.find_one({"data_snapshot.batch_id": batch_id})
+    if not action:
+        raise HTTPException(status_code=404, detail="Upload not found")
+    
+    # Delete all transactions with this batch_id
+    delete_result = await db.transactions.delete_many({"batch_id": batch_id})
+    
+    # Mark action as undone
+    await db.action_history.update_one(
+        {"data_snapshot.batch_id": batch_id},
+        {"$set": {"can_undo": False}}
+    )
+    
+    return {
+        "success": True,
+        "message": f"Undone: {action.get('description', 'Upload')}",
+        "deleted_count": delete_result.deleted_count
+    }
+
+
     only_in_physical = []
     
     # Check items in both
