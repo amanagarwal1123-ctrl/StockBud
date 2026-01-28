@@ -123,8 +123,6 @@ export default function PhysicalStockComparison() {
     );
   }
 
-  const summary = comparison?.summary;
-
   const handleExportDiscrepancies = () => {
     const exportData = comparison.discrepancies.map(item => ({
       'Item Name': item.item_name,
