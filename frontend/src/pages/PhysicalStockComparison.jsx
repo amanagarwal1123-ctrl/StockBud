@@ -290,6 +290,16 @@ export default function PhysicalStockComparison() {
         </CardContent>
       </Card>
 
+      {/* Info message if no physical stock data */}
+      {!summary && (
+        <Alert className="border-blue-500/50 bg-blue-500/10">
+          <AlertTriangle className="h-5 w-5 text-blue-600" />
+          <AlertDescription className="ml-2">
+            <strong>Item-wise Comparison:</strong> Upload a physical stock file (via Upload Files → Physical Stock) to see detailed item-by-item comparison. Or use Quick Stamp Verification above for fast checks.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Summary Cards - Only show if comparison data exists */}
       {summary && (
         <>
