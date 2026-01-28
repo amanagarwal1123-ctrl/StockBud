@@ -488,6 +488,14 @@ async def get_current_inventory():
     opening = await db.opening_stock.find({}, {"_id": 0}).to_list(10000)
     transactions = await db.transactions.find({}, {"_id": 0}).to_list(10000)
     
+    # Get all item mappings
+    mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
+    mapping_dict = {m['transaction_name']: m['master_name'] for m in mappings}
+    
+    # Get master items for stamp lookup
+    master_items = await db.master_items.find({}, {"_id": 0}).to_list(10000)
+    master_stamp_dict = {m['item_name']: m['stamp'] for m in master_items}
+    
     # Filter out excluded items
     opening = [item for item in opening if item['item_name'] not in EXCLUDED_ITEMS]
     transactions = [t for t in transactions if t['item_name'] not in EXCLUDED_ITEMS]
@@ -502,7 +510,7 @@ async def get_current_inventory():
             inventory_map[key] = {
                 'item_name': item['item_name'],
                 'stamp': item.get('stamp', '') or 'Unassigned',
-                'stamp_locked': bool(item.get('stamp')),  # Lock stamp if it exists in opening stock
+                'stamp_locked': bool(item.get('stamp')),  # Lock stamp from STOCK 2026
                 'gr_wt': 0.0,
                 'net_wt': 0.0,
                 'fine': 0.0,
@@ -521,12 +529,23 @@ async def get_current_inventory():
     
     # Process all transactions
     for trans in transactions:
-        key = trans['item_name'].strip().lower()
+        trans_name = trans['item_name'].strip()
+        
+        # Check if this transaction name has a mapping
+        master_name = mapping_dict.get(trans_name, trans_name)
+        
+        # Use master name for grouping
+        key = master_name.strip().lower()
+        
         if key not in inventory_map:
+            # New item not in opening stock
+            # Get stamp from master_items if it exists there
+            item_stamp = master_stamp_dict.get(master_name, trans.get('stamp', 'Unassigned'))
+            
             inventory_map[key] = {
-                'item_name': trans['item_name'],
-                'stamp': trans.get('stamp', 'Unassigned'),
-                'stamp_locked': False,
+                'item_name': master_name,
+                'stamp': item_stamp,
+                'stamp_locked': master_name in master_stamp_dict,
                 'gr_wt': 0.0,
                 'net_wt': 0.0,
                 'fine': 0.0,
@@ -535,12 +554,11 @@ async def get_current_inventory():
                 'stamps_seen': set()
             }
         
-        # Only update stamp if it's not locked (i.e., not set in opening stock)
+        # Track stamps seen but don't override if locked
         if trans.get('stamp') and not inventory_map[key].get('stamp_locked', False):
             inventory_map[key]['stamps_seen'].add(trans['stamp'])
             inventory_map[key]['stamp'] = trans['stamp']
         elif trans.get('stamp'):
-            # Just track that we've seen this stamp, but don't override
             inventory_map[key]['stamps_seen'].add(trans['stamp'])
         
         # Weights in Excel already include negatives for returns
