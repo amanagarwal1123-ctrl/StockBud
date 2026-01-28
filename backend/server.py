@@ -618,6 +618,144 @@ async def initialize_admin():
 
 @api_router.post("/transactions/upload/{file_type}")
 async def upload_transaction_file(
+
+
+# ==================== EXECUTIVE ENDPOINTS ====================
+
+@api_router.post("/executive/stock-entry")
+async def save_executive_stock_entry(
+    stamp: str,
+    entries: List[Dict],
+    entered_by: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Save stock entry from executive (for manager approval)"""
+    
+    if current_user['role'] not in ['executive', 'manager', 'admin']:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Check if stamp is already approved
+    approval = await db.stamp_approvals.find_one({"stamp": stamp, "is_approved": True})
+    if approval:
+        raise HTTPException(status_code=400, detail=f"{stamp} is already approved. Cannot modify.")
+    
+    # Save stock entry
+    entry_record = {
+        'stamp': stamp,
+        'entries': entries,
+        'entered_by': entered_by,
+        'entry_date': datetime.now(timezone.utc).isoformat(),
+        'status': 'pending',
+        'approved_by': None,
+        'approved_at': None
+    }
+    
+    # Update or insert
+    await db.stock_entries.update_one(
+        {'stamp': stamp, 'entered_by': entered_by, 'status': 'pending'},
+        {'$set': entry_record},
+        upsert=True
+    )
+    
+    # Create notification for manager
+    await db.notifications.insert_one({
+        'type': 'stock_entry',
+        'message': f'{entered_by} submitted stock for {stamp}',
+        'severity': 'info',
+        'for_role': 'manager',
+        'stamp': stamp,
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        'read': False
+    })
+    
+    # Save to history
+    await save_action('stock_entry', f'{entered_by} entered stock for {stamp}', {'stamp': stamp, 'items': len(entries)})
+    
+    return {'success': True, 'message': f'Stock entry saved for {stamp}'}
+
+# ==================== MANAGER ENDPOINTS ====================
+
+@api_router.get("/manager/pending-approvals")
+async def get_pending_approvals(current_user: dict = Depends(get_current_user)):
+    """Get all pending stock entries for manager approval"""
+    
+    if current_user['role'] not in ['manager', 'admin']:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    entries = await db.stock_entries.find({'status': 'pending'}, {"_id": 0}).to_list(100)
+    return entries
+
+@api_router.post("/manager/approve-stamp")
+async def approve_stamp(
+    stamp: str,
+    approve: bool,
+    current_user: dict = Depends(get_current_user)
+):
+    """Approve or reject a stamp's stock entry"""
+    
+    if current_user['role'] not in ['manager', 'admin']:
+        raise HTTPException(status_code=403, detail="Only managers can approve")
+    
+    # Update stock entry status
+    await db.stock_entries.update_many(
+        {'stamp': stamp, 'status': 'pending'},
+        {'$set': {
+            'status': 'approved' if approve else 'rejected',
+            'approved_by': current_user['username'],
+            'approved_at': datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    # If approved, lock the stamp
+    if approve:
+        await db.stamp_approvals.update_one(
+            {'stamp': stamp},
+            {'$set': {
+                'stamp': stamp,
+                'is_approved': True,
+                'approved_by': current_user['username'],
+                'approved_at': datetime.now(timezone.utc).isoformat()
+            }},
+            upsert=True
+        )
+    
+    # Create notification
+    await db.notifications.insert_one({
+        'type': 'stamp_approval',
+        'message': f'{current_user["username"]} {"approved" if approve else "rejected"} {stamp}',
+        'severity': 'success' if approve else 'warning',
+        'for_role': 'admin',
+        'stamp': stamp,
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        'read': False
+    })
+    
+    # Save to history
+    await save_action('stamp_approval', f'{stamp} {"approved" if approve else "rejected"} by {current_user["username"]}', {'stamp': stamp})
+    
+    return {'success': True, 'message': f'{stamp} {"approved" if approve else "rejected"}'}
+
+@api_router.get("/notifications/my")
+async def get_my_notifications(current_user: dict = Depends(get_current_user)):
+    """Get notifications for current user's role"""
+    
+    notifications = await db.notifications.find(
+        {'for_role': {'$in': [current_user['role'], 'all']}},
+        {"_id": 0}
+    ).sort('created_at', -1).limit(50).to_list(50)
+    
+    return notifications
+
+@api_router.post("/notifications/{notification_id}/read")
+async def mark_notification_read(notification_id: str):
+    """Mark notification as read"""
+    await db.notifications.update_one(
+        {'id': notification_id},
+        {'$set': {'read': True}}
+    )
+    return {'success': True}
+
+
     file_type: str, 
     file: UploadFile = File(...),
     start_date: Optional[str] = None,
