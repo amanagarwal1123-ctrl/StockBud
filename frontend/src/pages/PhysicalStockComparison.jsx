@@ -86,6 +86,26 @@ export default function PhysicalStockComparison() {
     }
   };
 
+  const saveStampVerification = async () => {
+    if (!stampComparison) return;
+
+    try {
+      await axios.post(`${API}/stamp-verification/save`, {
+        stamp: stampComparison.stamp,
+        physical_gross_wt: stampComparison.physicalGross,
+        book_gross_wt: stampComparison.bookGross,
+        difference: stampComparison.difference,
+        is_match: stampComparison.isMatch,
+        verification_date: new Date().toISOString().split('T')[0]
+      });
+
+      toast.success(`${stampComparison.stamp} verification saved!`);
+      clearStampMatch();
+    } catch (error) {
+      toast.error('Failed to save verification');
+    }
+  };
+
   const clearStampMatch = () => {
     setSelectedStamp('');
     setStampGrossWeight('');
@@ -299,16 +319,26 @@ export default function PhysicalStockComparison() {
                 {stampComparison.isMatch ? (
                   <Alert className="border-green-500/50 bg-green-500/10">
                     <CheckCircle2 className="h-5 w-5 text-green-600" />
-                    <AlertDescription className="ml-2">
-                      <strong>✓ MATCH!</strong> Physical weight matches book stock (within 100g tolerance)
+                    <AlertDescription className="ml-2 flex items-center justify-between">
+                      <span>
+                        <strong>✓ MATCH!</strong> Physical weight matches book stock (within 100g tolerance)
+                      </span>
+                      <Button onClick={saveStampVerification} size="sm" className="ml-4">
+                        Save Verification
+                      </Button>
                     </AlertDescription>
                   </Alert>
                 ) : (
                   <Alert className="border-orange-500/50 bg-orange-500/10">
                     <AlertTriangle className="h-5 w-5 text-orange-600" />
-                    <AlertDescription className="ml-2">
-                      <strong>Discrepancy Found:</strong> Difference of {Math.abs(stampComparison.difference / 1000).toFixed(3)} kg detected. 
-                      {stampComparison.difference > 0 ? ' Physical count is higher than book stock.' : ' Physical count is lower than book stock.'}
+                    <AlertDescription className="ml-2 flex items-center justify-between">
+                      <span>
+                        <strong>Discrepancy Found:</strong> Difference of {Math.abs(stampComparison.difference / 1000).toFixed(3)} kg detected. 
+                        {stampComparison.difference > 0 ? ' Physical count is higher than book stock.' : ' Physical count is lower than book stock.'}
+                      </span>
+                      <Button onClick={saveStampVerification} size="sm" variant="outline" className="ml-4">
+                        Save Verification
+                      </Button>
                     </AlertDescription>
                   </Alert>
                 )}
