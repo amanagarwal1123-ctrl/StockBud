@@ -18,9 +18,30 @@ export default function UploadManager() {
     physical_stock: null,
     master_stock: null,
   });
+  const [dateRanges, setDateRanges] = useState({
+    purchase: { start: '', end: '' },
+    sale: { start: '', end: '' },
+    physical_stock: { date: '' }
+  });
 
   const handleFileUpload = async (fileType, file) => {
     if (!file) return;
+
+    // Check if date range is required
+    if (fileType === 'purchase' || fileType === 'sale') {
+      const range = dateRanges[fileType];
+      if (!range.start || !range.end) {
+        toast.error('Please select date range for this transaction file');
+        return;
+      }
+    }
+
+    if (fileType === 'physical_stock') {
+      if (!dateRanges.physical_stock.date) {
+        toast.error('Please select verification date for physical stock');
+        return;
+      }
+    }
 
     // Confirmation dialog
     const fileTypeNames = {
@@ -31,12 +52,18 @@ export default function UploadManager() {
       'master_stock': 'Master Stock (STOCK 2026) - This will replace your opening stock!'
     };
 
-    const confirmed = window.confirm(
-      `Are you sure you want to upload ${fileTypeNames[fileType]}?\n\n` +
-      `File: ${file.name}\n\n` +
-      `This will ${fileType === 'opening_stock' || fileType === 'physical_stock' ? 'replace all existing data' : 'add new transactions'}.`
-    );
+    let confirmMessage = `Are you sure you want to upload ${fileTypeNames[fileType]}?\n\nFile: ${file.name}\n\n`;
+    
+    if (fileType === 'purchase' || fileType === 'sale') {
+      const range = dateRanges[fileType];
+      confirmMessage += `Date Range: ${range.start} to ${range.end}\n\nThis will REPLACE all ${fileType} transactions in this date range.`;
+    } else if (fileType === 'physical_stock') {
+      confirmMessage += `Verification Date: ${dateRanges.physical_stock.date}`;
+    } else {
+      confirmMessage += `This will ${fileType === 'opening_stock' || fileType === 'master_stock' ? 'replace all existing data' : 'add new transactions'}.`;
+    }
 
+    const confirmed = window.confirm(confirmMessage);
     if (!confirmed) return;
 
     setUploading(true);
@@ -48,11 +75,12 @@ export default function UploadManager() {
       if (fileType === 'opening_stock') {
         endpoint = `${API}/opening-stock/upload`;
       } else if (fileType === 'physical_stock') {
-        endpoint = `${API}/physical-stock/upload`;
+        endpoint = `${API}/physical-stock/upload?verification_date=${dateRanges.physical_stock.date}`;
       } else if (fileType === 'master_stock') {
         endpoint = `${API}/master-stock/upload`;
       } else {
-        endpoint = `${API}/transactions/upload/${fileType}`;
+        const range = dateRanges[fileType];
+        endpoint = `${API}/transactions/upload/${fileType}?start_date=${range.start}&end_date=${range.end}`;
       }
 
       const response = await axios.post(endpoint, formData, {
