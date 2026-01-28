@@ -113,6 +113,8 @@ export default function PhysicalStockComparison() {
     setStampComparison(null);
   };
 
+  const summary = comparison?.summary;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
