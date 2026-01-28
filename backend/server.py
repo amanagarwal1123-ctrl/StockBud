@@ -996,8 +996,23 @@ async def calculate_profit(
         purchases = data['purchases']
         sales = data['sales']
         
-        if not purchases or not sales:
+        # Skip if no sales
+        if not sales:
             continue
+        
+        # If no purchases in this period, try to get cost basis from purchase ledger
+        if not purchases:
+            ledger_item = await db.purchase_ledger.find_one({"item_name": item_name}, {"_id": 0})
+            if ledger_item:
+                # Use cumulative purchase data as cost basis
+                purchases = [{
+                    'net_wt': ledger_item.get('total_purchased_kg', 0) * 1000,  # Convert to grams
+                    'tunch': ledger_item.get('purchase_tunch', 0),
+                    'labor': ledger_item.get('labour_per_kg', 0)
+                }]
+            else:
+                # No purchase history - skip this item
+                continue
         
         # Calculate total and average values
         total_purchase_wt = sum(p['net_wt'] for p in purchases)
