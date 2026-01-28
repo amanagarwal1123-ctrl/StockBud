@@ -223,8 +223,13 @@ export default function PhysicalStockComparison() {
                 <SelectTrigger>
                   <SelectValue placeholder="Choose stamp..." />
                 </SelectTrigger>
-                <SelectContent>
-                  {Object.keys(stampWeights).sort().map(stamp => (
+                <SelectContent className="max-h-60">
+                  {Object.keys(stampWeights).sort((a, b) => {
+                    // Extract number from "Stamp X" format
+                    const numA = parseInt(a.replace(/\D/g, '')) || 0;
+                    const numB = parseInt(b.replace(/\D/g, '')) || 0;
+                    return numA - numB;
+                  }).map(stamp => (
                     <SelectItem key={stamp} value={stamp}>
                       {stamp} ({stampWeights[stamp]?.itemCount || 0} items)
                     </SelectItem>
