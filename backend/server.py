@@ -1028,6 +1028,10 @@ async def calculate_profit(
     
     transactions = await db.transactions.find(query, {"_id": 0}).to_list(10000)
     
+    # Fetch ALL purchase ledger items upfront (for items sold from opening stock)
+    all_ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(10000)
+    ledger_map = {item['item_name']: item for item in all_ledger}
+    
     # Group transactions by item for profit calculation
     item_transactions = defaultdict(lambda: {'purchases': [], 'sales': []})
     
@@ -1064,7 +1068,7 @@ async def calculate_profit(
         
         # If no purchases in this period, try to get cost basis from purchase ledger
         if not purchases:
-            ledger_item = await db.purchase_ledger.find_one({"item_name": item_name}, {"_id": 0})
+            ledger_item = ledger_map.get(item_name)
             if ledger_item:
                 # Use cumulative purchase data as cost basis
                 purchases = [{
