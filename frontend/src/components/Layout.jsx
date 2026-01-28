@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Upload, Package, Users, TrendingUp, History, RotateCcw, Power, Tag, Scale } from 'lucide-react';
+import { LayoutDashboard, Upload, Package, Users, TrendingUp, History, RotateCcw, Power, Tag, Scale, Link2, GitBranch } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -32,6 +32,8 @@ export default function Layout({ children }) {
     { name: 'Upload Files', href: '/upload', icon: Upload },
     { name: 'Current Stock', href: '/current-stock', icon: Package },
     { name: 'Physical vs Book', href: '/physical-vs-book', icon: Scale },
+    { name: 'Item Mapping', href: '/item-mapping', icon: Link2 },
+    { name: 'Manage Mappings', href: '/mapping-management', icon: GitBranch },
     { name: 'Stamp Management', href: '/stamps', icon: Tag },
     { name: 'Party Analytics', href: '/party-analytics', icon: Users },
     { name: 'Profit Analysis', href: '/profit', icon: TrendingUp },
