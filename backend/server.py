@@ -808,6 +808,10 @@ async def upload_purchase_ledger(file: UploadFile = File(...)):
             if not item_name or len(item_name) < 2:
                 continue
             
+            # ⚠️ CRITICAL: ALWAYS skip "Totals" row - this is a sum row, not an item!
+            if 'total' in item_name.lower():
+                continue
+            
             less = float(row.get('Less', 0) or 0)
             sil_fine = float(row.get('Sil.Fine', 0) or 0)
             total = float(row.get('Total', 0) or 0)
