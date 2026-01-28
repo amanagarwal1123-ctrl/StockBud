@@ -126,7 +126,7 @@ export default function ItemMapping() {
           Item Name Mapping
         </h1>
         <p className="text-lg text-muted-foreground mt-2">
-          Map transaction item names to master stock items (STOCK 2026)
+          Map transaction item names to master stock items (STOCK 2026) - {allMasterItems.length} master items available
         </p>
       </div>
 
