@@ -473,6 +473,18 @@ async def upload_opening_stock(file: UploadFile = File(...)):
         total_gr_wt = sum(item['gr_wt'] for item in stock_items)
         
         await save_action('upload_opening_stock', f"Uploaded {len(stock_items)} merged opening stock items, total: {total_net_wt/1000:.3f} kg")
+        
+        return {
+            "success": True,
+            "count": len(stock_items),
+            "original_rows": len(records),
+            "merged_items": len(stock_items),
+            "total_net_wt_kg": round(total_net_wt/1000, 3),
+            "total_gr_wt_kg": round(total_gr_wt/1000, 3),
+            "message": f"Merged {len(records)} rows into {len(stock_items)} items. Total: {total_net_wt/1000:.3f} kg"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error processing file: {str(e)}")
 
 
 # ==================== AUTHENTICATION ENDPOINTS ====================
