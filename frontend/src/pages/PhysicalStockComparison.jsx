@@ -15,9 +15,14 @@ const API = `${BACKEND_URL}/api`;
 export default function PhysicalStockComparison() {
   const [comparison, setComparison] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [stampWeights, setStampWeights] = useState({});
+  const [selectedStamp, setSelectedStamp] = useState('');
+  const [stampGrossWeight, setStampGrossWeight] = useState('');
+  const [stampComparison, setStampComparison] = useState(null);
 
   useEffect(() => {
     fetchComparison();
+    fetchStampWeights();
   }, []);
 
   const fetchComparison = async () => {
@@ -29,6 +34,59 @@ export default function PhysicalStockComparison() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchStampWeights = async () => {
+    try {
+      const response = await axios.get(`${API}/inventory/current`);
+      // Calculate stamp-wise totals from book stock
+      const byStamp = response.data.by_stamp || {};
+      const totals = {};
+      
+      Object.keys(byStamp).forEach(stamp => {
+        const items = byStamp[stamp];
+        totals[stamp] = {
+          gross: items.reduce((sum, item) => sum + item.gr_wt, 0),
+          net: items.reduce((sum, item) => sum + item.net_wt, 0),
+          itemCount: items.length
+        };
+      });
+      
+      setStampWeights(totals);
+    } catch (error) {
+      console.error('Error fetching stamp weights:', error);
+    }
+  };
+
+  const handleStampMatch = () => {
+    if (!selectedStamp || !stampGrossWeight) {
+      return;
+    }
+
+    const physicalGross = parseFloat(stampGrossWeight) * 1000; // Convert kg to grams
+    const bookData = stampWeights[selectedStamp];
+
+    if (bookData) {
+      const difference = physicalGross - bookData.gross;
+      const matchPercentage = (Math.min(physicalGross, bookData.gross) / Math.max(physicalGross, bookData.gross) * 100);
+
+      setStampComparison({
+        stamp: selectedStamp,
+        physicalGross: physicalGross,
+        bookGross: bookData.gross,
+        bookNet: bookData.net,
+        itemCount: bookData.itemCount,
+        difference: difference,
+        matchPercentage: matchPercentage,
+        isMatch: Math.abs(difference) < 100 // Within 100 grams tolerance
+      });
+    }
+  };
+
+  const clearStampMatch = () => {
+    setSelectedStamp('');
+    setStampGrossWeight('');
+    setStampComparison(null);
   };
 
   if (loading) {
