@@ -43,8 +43,12 @@ export default function ItemMapping() {
   };
 
   const getSuggestions = (transactionName) => {
+    if (!allMasterItems || allMasterItems.length === 0) {
+      return [];
+    }
+
     // Intelligent matching: find items with similar names
-    const searchTerms = transactionName.toLowerCase().split(/[\s-]+/);
+    const searchTerms = transactionName.toLowerCase().split(/[\s-]+/).filter(term => term.length > 2);
     
     const scored = allMasterItems.map(item => {
       const itemLower = item.item_name.toLowerCase();
@@ -56,25 +60,39 @@ export default function ItemMapping() {
       } else {
         // Partial matches
         searchTerms.forEach(term => {
-          if (term.length > 2 && itemLower.includes(term)) {
+          if (itemLower.includes(term)) {
             score += 10;
           }
         });
         
         // Check if starts with same chars
-        if (itemLower.startsWith(transactionName.toLowerCase().substring(0, 3))) {
+        const prefix = transactionName.toLowerCase().substring(0, Math.min(5, transactionName.length));
+        if (itemLower.startsWith(prefix)) {
           score += 5;
+        }
+        
+        // For very short names or specific patterns, be more lenient
+        if (transactionName.length <= 10) {
+          const transWords = transactionName.toLowerCase().split(/[\s-]+/);
+          const itemWords = itemLower.split(/[\s-]+/);
+          transWords.forEach(tw => {
+            itemWords.forEach(iw => {
+              if (tw.length > 2 && iw.includes(tw)) {
+                score += 3;
+              }
+            });
+          });
         }
       }
       
       return { ...item, score };
     });
     
-    // Return top 5 suggestions with score > 0
+    // Return top 8 suggestions with score > 0
     return scored
       .filter(item => item.score > 0)
       .sort((a, b) => b.score - a.score)
-      .slice(0, 5);
+      .slice(0, 8);
   };
 
   const handleSaveMapping = async (transactionName, masterName) => {
