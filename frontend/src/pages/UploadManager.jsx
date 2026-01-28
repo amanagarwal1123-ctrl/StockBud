@@ -27,7 +27,8 @@ export default function UploadManager() {
       'opening_stock': 'Opening Stock (PREV_STOCK)',
       'purchase': 'Purchase Transactions',
       'sale': 'Sale Transactions',
-      'physical_stock': 'Physical Stock (CURRENT_STOCK)'
+      'physical_stock': 'Physical Stock (CURRENT_STOCK)',
+      'master_stock': 'Master Stock (STOCK 2026) - This will replace your opening stock!'
     };
 
     const confirmed = window.confirm(
@@ -48,6 +49,8 @@ export default function UploadManager() {
         endpoint = `${API}/opening-stock/upload`;
       } else if (fileType === 'physical_stock') {
         endpoint = `${API}/physical-stock/upload`;
+      } else if (fileType === 'master_stock') {
+        endpoint = `${API}/master-stock/upload`;
       } else {
         endpoint = `${API}/transactions/upload/${fileType}`;
       }
@@ -123,16 +126,26 @@ export default function UploadManager() {
 
       <Tabs defaultValue="transactions" className="space-y-6">
         <TabsList>
+          <TabsTrigger value="master" data-testid="tab-master">
+            Master Stock
+          </TabsTrigger>
           <TabsTrigger value="transactions" data-testid="tab-transactions">
             Transactions
-          </TabsTrigger>
-          <TabsTrigger value="opening" data-testid="tab-opening">
-            Opening Stock
           </TabsTrigger>
           <TabsTrigger value="physical" data-testid="tab-physical">
             Physical Stock
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="master" className="space-y-6">
+          <div className="max-w-2xl">
+            <FileUploadCard
+              type="master_stock"
+              title="Master Stock (STOCK 2026)"
+              description="Upload your FINAL verified stock with definitive item names and stamps. This replaces opening stock and becomes the reference for all future transactions."
+            />
+          </div>
+        </TabsContent>
 
         <TabsContent value="transactions" className="space-y-6">
           <div className="grid gap-6 md:grid-cols-2">
@@ -145,16 +158,6 @@ export default function UploadManager() {
               type="sale"
               title="Sale File"
               description="Upload your sale transactions Excel file"
-            />
-          </div>
-        </TabsContent>
-
-        <TabsContent value="opening" className="space-y-6">
-          <div className="max-w-2xl">
-            <FileUploadCard
-              type="opening_stock"
-              title="Opening Stock (PREV_STOCK)"
-              description="Upload your opening stock Excel file. Duplicate items will be automatically merged."
             />
           </div>
         </TabsContent>
