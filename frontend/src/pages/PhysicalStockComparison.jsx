@@ -62,28 +62,42 @@ export default function PhysicalStockComparison() {
     }
   };
 
-  const handleStampMatch = () => {
+  const handleStampMatch = async () => {
     if (!selectedStamp || !stampGrossWeight) {
       return;
     }
 
-    const physicalGross = parseFloat(stampGrossWeight) * 1000; // Convert kg to grams
-    const bookData = stampWeights[selectedStamp];
+    try {
+      // Fetch detailed breakdown for this stamp
+      const breakdownRes = await axios.get(`${API}/inventory/stamp-breakdown/${encodeURIComponent(selectedStamp)}`);
+      const breakdown = breakdownRes.data;
 
-    if (bookData) {
-      const difference = physicalGross - bookData.gross;
-      const matchPercentage = (Math.min(physicalGross, bookData.gross) / Math.max(physicalGross, bookData.gross) * 100);
+      const physicalGross = parseFloat(stampGrossWeight) * 1000; // Convert kg to grams
+      const bookGross = breakdown.current_gross;
+      const bookNet = breakdown.current_net;
+      
+      const difference = physicalGross - bookGross;
+      const matchPercentage = (Math.min(physicalGross, bookGross) / Math.max(physicalGross, bookGross) * 100);
 
       setStampComparison({
         stamp: selectedStamp,
         physicalGross: physicalGross,
-        bookGross: bookData.gross,
-        bookNet: bookData.net,
-        itemCount: bookData.itemCount,
+        bookGross: bookGross,
+        bookNet: bookNet,
+        itemCount: breakdown.item_count + breakdown.mapped_count,
         difference: difference,
         matchPercentage: matchPercentage,
-        isMatch: Math.abs(difference) < 100 // Within 100 grams tolerance
+        isMatch: Math.abs(difference) < 100, // Within 100 grams tolerance
+        // Breakdown details
+        openingGross: breakdown.opening_gross,
+        openingNet: breakdown.opening_net,
+        purchaseGross: breakdown.purchase_gross,
+        purchaseNet: breakdown.purchase_net,
+        saleGross: breakdown.sale_gross,
+        saleNet: breakdown.sale_net
       });
+    } catch (error) {
+      toast.error('Failed to fetch stamp breakdown');
     }
   };
 
