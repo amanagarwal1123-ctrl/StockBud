@@ -647,6 +647,151 @@ async def compare_physical_with_book():
     for key in physical_items.keys():
         if key not in book_items:
             only_in_physical.append({
+
+@api_router.post("/master-stock/upload")
+async def upload_master_stock(file: UploadFile = File(...)):
+    """Upload STOCK 2026 as master reference - FINAL item names and stamps"""
+    content = await file.read()
+    
+    try:
+        df = pd.read_excel(BytesIO(content), header=0)
+        df = df.fillna('')
+        df.columns = df.columns.str.strip()
+        
+        # Remove totals row
+        df = df[~df['Item Name'].astype(str).str.lower().str.contains('total', na=False)]
+        
+        # Clear existing opening stock and master items
+        await db.opening_stock.delete_many({})
+        await db.master_items.delete_many({})
+        
+        opening_items = []
+        master_items = []
+        
+        for _, row in df.iterrows():
+            item_name = str(row.get('Item Name', '')).strip()
+            if not item_name or len(item_name) < 2:
+                continue
+            
+            stamp = str(row.get('Stamp', '')).strip()
+            gr_wt = float(row.get('Gross weigth', 0) or 0)
+            net_wt = float(row.get('Net Weight', 0) or 0)
+            
+            # Opening stock
+            opening_items.append({
+                'item_name': item_name,
+                'stamp': stamp,
+                'unit': 'kg',
+                'pc': 0,
+                'gr_wt': gr_wt,
+                'net_wt': net_wt,
+                'fine': 0.0,
+                'labor_wt': 0.0,
+                'labor_rs': 0.0,
+                'rate': 0.0,
+                'total': 0.0
+            })
+            
+            # Master reference
+            master_items.append({
+                'item_name': item_name,
+                'stamp': stamp,
+                'gr_wt': gr_wt,
+                'net_wt': net_wt,
+                'is_master': True
+            })
+        
+        await db.opening_stock.insert_many(opening_items)
+        await db.master_items.insert_many(master_items)
+        
+        total_net = sum(i['net_wt'] for i in opening_items)
+        
+        return {
+            "success": True,
+            "count": len(opening_items),
+            "total_net_kg": round(total_net / 1000, 3),
+            "message": f"Master stock uploaded: {len(opening_items)} items, {total_net/1000:.3f} kg"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error: {str(e)}")
+
+@api_router.get("/mappings/unmapped")
+async def get_unmapped_items():
+    """Get all unmapped items from transactions"""
+    # Get all transaction item names
+    transactions = await db.transactions.find({}, {"_id": 0, "item_name": 1}).to_list(10000)
+    trans_names = set(t['item_name'] for t in transactions)
+    
+    # Get all master item names
+    master = await db.master_items.find({}, {"_id": 0, "item_name": 1}).to_list(10000)
+    master_names = set(m['item_name'] for m in master)
+    
+    # Get existing mappings
+    mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
+    mapped_names = set(m['transaction_name'] for m in mappings)
+    
+    # Find unmapped: in transactions but not in master and not already mapped
+    unmapped = []
+    for name in trans_names:
+        if name not in master_names and name not in mapped_names:
+            unmapped.append(name)
+    
+    return {
+        "unmapped_items": sorted(unmapped),
+        "count": len(unmapped)
+    }
+
+@api_router.post("/mappings/create")
+async def create_mapping(transaction_name: str, master_name: str):
+    """Create a mapping from transaction name to master name"""
+    # Verify master name exists
+    master = await db.master_items.find_one({"item_name": master_name}, {"_id": 0})
+    if not master:
+        raise HTTPException(status_code=404, detail="Master item not found")
+    
+    # Check if mapping already exists
+    existing = await db.item_mappings.find_one({"transaction_name": transaction_name})
+    if existing:
+        # Update existing
+        await db.item_mappings.update_one(
+            {"transaction_name": transaction_name},
+            {"$set": {"master_name": master_name}}
+        )
+    else:
+        # Create new
+        mapping = ItemMapping(
+            transaction_name=transaction_name,
+            master_name=master_name
+        )
+        await db.item_mappings.insert_one(mapping.model_dump())
+    
+    return {"success": True, "message": f"Mapped '{transaction_name}' → '{master_name}'"}
+
+@api_router.get("/mappings/all")
+async def get_all_mappings():
+    """Get all item mappings"""
+    mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
+    return mappings
+
+@api_router.delete("/mappings/{transaction_name}")
+async def delete_mapping(transaction_name: str):
+    """Delete a mapping"""
+    result = await db.item_mappings.delete_one({"transaction_name": transaction_name})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Mapping not found")
+    return {"success": True, "message": "Mapping deleted"}
+
+@api_router.get("/master-items")
+async def get_master_items(search: Optional[str] = None):
+    """Get all master items with optional search"""
+    query = {}
+    if search:
+        query = {"item_name": {"$regex": search, "$options": "i"}}
+    
+    items = await db.master_items.find(query, {"_id": 0}).sort("item_name", 1).to_list(1000)
+    return items
+
+
                 'item_name': physical_items[key]['item_name'],
                 'stamp': physical_items[key].get('stamp', ''),
                 'physical_net_wt': physical_items[key]['net_wt'],
