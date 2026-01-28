@@ -781,6 +781,57 @@ async def upload_master_stock(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error: {str(e)}")
 
+@api_router.post("/purchase-ledger/upload")
+async def upload_purchase_ledger(file: UploadFile = File(...)):
+    """Upload PURCHASE_CUMUL file to create/update purchase rate ledger"""
+    content = await file.read()
+    
+    try:
+        df = pd.read_excel(BytesIO(content), header=2)
+        df = df.fillna(0)
+        df.columns = df.columns.str.strip()
+        
+        # Clear existing ledger
+        await db.purchase_ledger.delete_many({})
+        
+        ledger_items = []
+        
+        for _, row in df.iterrows():
+            item_name = str(row.get('Particular', '')).strip()
+            if not item_name or len(item_name) < 2:
+                continue
+            
+            less = float(row.get('Less', 0) or 0)
+            sil_fine = float(row.get('Sil.Fine', 0) or 0)
+            total = float(row.get('Total', 0) or 0)
+            
+            if less > 0:
+                # Calculate purchase tunch and labour per kg
+                purchase_tunch = (sil_fine / less * 100)
+                labour_per_kg = (total / less)
+                
+                ledger_items.append({
+                    'item_name': item_name,
+                    'purchase_tunch': purchase_tunch,
+                    'labour_per_kg': labour_per_kg,
+                    'total_purchased_kg': less,
+                    'total_fine_kg': sil_fine,
+                    'total_labour': total
+                })
+        
+        if ledger_items:
+            await db.purchase_ledger.insert_many(ledger_items)
+        
+        return {
+            "success": True,
+            "count": len(ledger_items),
+            "message": f"Purchase ledger created with {len(ledger_items)} items"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error: {str(e)}")
+
+
+
 @api_router.get("/mappings/unmapped")
 async def get_unmapped_items():
     """Get all unmapped items from transactions"""
