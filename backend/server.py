@@ -473,6 +473,140 @@ async def upload_opening_stock(file: UploadFile = File(...)):
         total_gr_wt = sum(item['gr_wt'] for item in stock_items)
         
         await save_action('upload_opening_stock', f"Uploaded {len(stock_items)} merged opening stock items, total: {total_net_wt/1000:.3f} kg")
+
+
+# ==================== AUTHENTICATION ENDPOINTS ====================
+
+@api_router.post("/auth/login", response_model=Token)
+async def login(request: LoginRequest):
+    """Login endpoint - Returns JWT token valid for 18 hours"""
+    user = await db.users.find_one({"username": request.username})
+    
+    if not user or not verify_password(request.password, user['password_hash']):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    
+    if not user.get('is_active', True):
+        raise HTTPException(status_code=401, detail="User account is inactive")
+    
+    # Create JWT token
+    access_token = create_access_token({"sub": user['username'], "role": user['role']})
+    
+    # Remove sensitive data
+    user_data = {k: v for k, v in user.items() if k not in ['_id', 'password_hash']}
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": user_data
+    }
+
+@api_router.get("/auth/me")
+async def get_current_user_info(current_user: dict = Depends(get_current_user)):
+    """Get current logged-in user info"""
+    return current_user
+
+@api_router.post("/auth/logout")
+async def logout():
+    """Logout endpoint (client-side token removal)"""
+    return {"message": "Logged out successfully"}
+
+# ==================== USER MANAGEMENT (Admin Only) ====================
+
+@api_router.post("/users/create")
+async def create_user(
+    request: CreateUserRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Create new user (Admin only)"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Only admins can create users")
+    
+    # Check if username exists
+    existing = await db.users.find_one({"username": request.username})
+    if existing:
+        raise HTTPException(status_code=400, detail="Username already exists")
+    
+    # Validate role
+    if request.role not in ['admin', 'manager', 'executive']:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    
+    # Create user
+    user = User(
+        username=request.username,
+        password_hash=get_password_hash(request.password),
+        full_name=request.full_name,
+        role=request.role,
+        created_by=current_user['username']
+    )
+    
+    await db.users.insert_one(user.model_dump())
+    
+    return {
+        "success": True,
+        "message": f"User {request.username} created successfully",
+        "user": {
+            "username": user.username,
+            "full_name": user.full_name,
+            "role": user.role
+        }
+    }
+
+@api_router.get("/users/list")
+async def list_users(current_user: dict = Depends(get_current_user)):
+    """List all users (Admin and Manager can view)"""
+    if current_user['role'] not in ['admin', 'manager']:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(100)
+    return users
+
+@api_router.delete("/users/{username}")
+async def delete_user(
+    username: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Delete user (Admin only)"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Only admins can delete users")
+    
+    if username == current_user['username']:
+        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+    
+    result = await db.users.delete_one({"username": username})
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return {"success": True, "message": f"User {username} deleted"}
+
+@api_router.post("/users/initialize-admin")
+async def initialize_admin():
+    """Create initial admin user if no users exist (one-time setup)"""
+    count = await db.users.count_documents({})
+    
+    if count > 0:
+        raise HTTPException(status_code=400, detail="Users already exist. Use login.")
+    
+    # Create default admin
+    admin = User(
+        username="admin",
+        password_hash=get_password_hash("admin123"),  # Change on first login!
+        full_name="System Administrator",
+        role="admin",
+        created_by="system"
+    )
+    
+    await db.users.insert_one(admin.model_dump())
+    
+    return {
+        "success": True,
+        "message": "Admin user created",
+        "username": "admin",
+        "password": "admin123",
+        "warning": "Please change password after first login!"
+    }
+
+
         
         return {
             "success": True,
