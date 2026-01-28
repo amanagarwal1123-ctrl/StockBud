@@ -980,18 +980,6 @@ async def save_stamp_verification(
         'total_stamps': len(total_stamps)
     }
 
-
-        )
-    else:
-        # Create new
-        mapping = ItemMapping(
-            transaction_name=transaction_name,
-            master_name=master_name
-        )
-        await db.item_mappings.insert_one(mapping.model_dump())
-    
-    return {"success": True, "message": f"Mapped '{transaction_name}' → '{master_name}'"}
-
 @api_router.get("/mappings/all")
 async def get_all_mappings():
     """Get all item mappings"""
