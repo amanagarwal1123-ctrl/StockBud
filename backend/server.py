@@ -888,6 +888,16 @@ async def create_mapping(transaction_name: str, master_name: str):
         await db.item_mappings.update_one(
             {"transaction_name": transaction_name},
             {"$set": {"master_name": master_name}}
+        )
+    else:
+        # Create new
+        mapping = ItemMapping(
+            transaction_name=transaction_name,
+            master_name=master_name
+        )
+        await db.item_mappings.insert_one(mapping.model_dump())
+    
+    return {"success": True, "message": f"Mapped '{transaction_name}' → '{master_name}'"}
 
 @api_router.post("/stamp-verification/save")
 async def save_stamp_verification(
