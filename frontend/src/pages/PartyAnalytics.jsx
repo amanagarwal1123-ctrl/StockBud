@@ -425,39 +425,83 @@ export default function PartyAnalytics() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {topSuppliers.length === 0 ? (
+                    {paginatedSuppliers.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                           No supplier data available
                         </TableCell>
                       </TableRow>
                     ) : (
-                      topSuppliers.map((supplier, idx) => (
-                        <TableRow key={idx} className="table-row" data-testid={`supplier-row-${idx}`}>
-                          <TableCell>
-                            <Badge variant="outline" className="font-mono">
-                              #{idx + 1}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="font-medium">{supplier.party_name}</TableCell>
-                          <TableCell className="text-right font-mono text-primary font-semibold">
-                            {(supplier.total_net_wt / 1000).toFixed(3)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono text-accent font-semibold">
-                            {(supplier.total_fine_wt / 1000).toFixed(3)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatIndianCurrency(supplier.total_purchases_value)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {supplier.transaction_count}
-                          </TableCell>
-                        </TableRow>
-                      ))
+                      paginatedSuppliers.map((supplier, idx) => {
+                        const actualRank = supplierStartIdx + idx + 1;
+                        return (
+                          <TableRow key={idx} className="table-row" data-testid={`supplier-row-${idx}`}>
+                            <TableCell>
+                              <Badge variant="outline" className="font-mono">
+                                #{actualRank}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="font-medium">{supplier.party_name}</TableCell>
+                            <TableCell className="text-right font-mono text-primary font-semibold">
+                              {(supplier.total_net_wt / 1000).toFixed(3)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-accent font-semibold">
+                              {(supplier.total_fine_wt / 1000).toFixed(3)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatIndianCurrency(supplier.total_purchases_value)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {supplier.transaction_count}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>
               </div>
+
+              {/* Pagination Controls */}
+              {topSuppliers.length > 10 && (
+                <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Items per page:</span>
+                    <Select value={String(itemsPerPage)} onValueChange={(val) => { setItemsPerPage(Number(val)); setSupplierPage(1); }}>
+                      <SelectTrigger className="w-20">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="10">10</SelectItem>
+                        <SelectItem value="20">20</SelectItem>
+                        <SelectItem value="30">30</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={() => setSupplierPage(p => Math.max(1, p - 1))}
+                      disabled={supplierPage === 1}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Previous
+                    </Button>
+                    <span className="text-sm text-muted-foreground">
+                      Page {supplierPage} of {totalSupplierPages} ({topSuppliers.length} total)
+                    </span>
+                    <Button
+                      onClick={() => setSupplierPage(p => Math.min(totalSupplierPages, p + 1))}
+                      disabled={supplierPage === totalSupplierPages}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
