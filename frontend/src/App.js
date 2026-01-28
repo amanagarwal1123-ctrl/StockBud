@@ -12,6 +12,7 @@ import StampManagement from './pages/StampManagement';
 import PhysicalStockComparison from './pages/PhysicalStockComparison';
 import ItemMapping from './pages/ItemMapping';
 import MappingManagement from './pages/MappingManagement';
+import PurchaseRates from './pages/PurchaseRates';
 import Layout from './components/Layout';
 import { Toaster } from '@/components/ui/sonner';
 
@@ -27,6 +28,7 @@ function App() {
             <Route path="/physical-vs-book" element={<PhysicalStockComparison />} />
             <Route path="/item-mapping" element={<ItemMapping />} />
             <Route path="/mapping-management" element={<MappingManagement />} />
+            <Route path="/purchase-rates" element={<PurchaseRates />} />
             <Route path="/party-analytics" element={<PartyAnalytics />} />
             <Route path="/profit" element={<ProfitAnalysis />} />
             <Route path="/history" element={<History />} />
