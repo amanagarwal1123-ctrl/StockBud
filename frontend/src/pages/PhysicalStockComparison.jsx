@@ -561,6 +561,18 @@ export default function PhysicalStockComparison() {
           </Card>
         </TabsContent>
       </Tabs>
+        </>
+      )}
+
+      {/* Info message when no physical stock data */}
+      {!summary && (
+        <Alert>
+          <AlertTriangle className="h-5 w-5" />
+          <AlertDescription>
+            No physical stock comparison data available yet. Upload a physical stock file to see detailed comparisons, or use Quick Stamp Verification above for quick checks.
+          </AlertDescription>
+        </Alert>
+      )}
     </div>
   );
 }
