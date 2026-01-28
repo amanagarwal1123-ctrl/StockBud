@@ -888,6 +888,89 @@ async def create_mapping(transaction_name: str, master_name: str):
         await db.item_mappings.update_one(
             {"transaction_name": transaction_name},
             {"$set": {"master_name": master_name}}
+
+@api_router.post("/stamp-verification/save")
+async def save_stamp_verification(
+    stamp: str,
+    physical_gross_wt: float,
+    book_gross_wt: float,
+    difference: float,
+    is_match: bool,
+    verification_date: str
+):
+    """Save stamp verification record"""
+    
+    # Save to history
+    await save_action(
+        'stamp_verification',
+        f"{stamp} verified: {'MATCH' if is_match else 'MISMATCH'} (Diff: {difference/1000:.3f} kg)",
+        {
+            'stamp': stamp,
+            'physical_gross_wt': physical_gross_wt,
+            'book_gross_wt': book_gross_wt,
+            'difference': difference,
+            'is_match': is_match,
+            'verification_date': verification_date
+        }
+    )
+    
+    # Save stamp verification record
+    verification = {
+        'stamp': stamp,
+        'physical_gross_wt': physical_gross_wt,
+        'book_gross_wt': book_gross_wt,
+        'difference': difference,
+        'is_match': is_match,
+        'verification_date': verification_date,
+        'verified_at': datetime.now(timezone.utc).isoformat()
+    }
+    
+    # Update or insert
+    await db.stamp_verifications.update_one(
+        {'stamp': stamp, 'verification_date': verification_date},
+        {'$set': verification},
+        upsert=True
+    )
+    
+    # Check if all stamps verified
+    total_stamps = await db.master_items.distinct('stamp')
+    verified_stamps = await db.stamp_verifications.distinct('stamp', {'verification_date': verification_date})
+    
+    notification_msg = f"{stamp} {'matched' if is_match else 'mismatched'}"
+    
+    if len(verified_stamps) >= len(total_stamps):
+        notification_msg += " - ALL STAMPS VERIFIED!"
+        
+        # Create notification for admin
+        await db.notifications.insert_one({
+            'type': 'full_stock_match',
+            'message': f'Full stock verification complete for {verification_date}',
+            'severity': 'success',
+            'for_role': 'admin',
+            'created_at': datetime.now(timezone.utc).isoformat(),
+            'read': False
+        })
+    else:
+        # Individual stamp notification
+        await db.notifications.insert_one({
+            'type': 'stamp_verification',
+            'message': notification_msg,
+            'severity': 'warning' if not is_match else 'info',
+            'for_role': 'admin',
+            'stamp': stamp,
+            'is_match': is_match,
+            'created_at': datetime.now(timezone.utc).isoformat(),
+            'read': False
+        })
+    
+    return {
+        'success': True,
+        'message': notification_msg,
+        'verified_stamps': len(verified_stamps),
+        'total_stamps': len(total_stamps)
+    }
+
+
         )
     else:
         # Create new
