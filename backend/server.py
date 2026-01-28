@@ -819,36 +819,6 @@ async def get_master_items(search: Optional[str] = None):
     items = await db.master_items.find(query, {"_id": 0}).sort("item_name", 1).to_list(1000)
     return items
 
-
-                'item_name': physical_items[key]['item_name'],
-                'stamp': physical_items[key].get('stamp', ''),
-                'physical_net_wt': physical_items[key]['net_wt'],
-                'physical_net_wt_kg': round(physical_items[key]['net_wt']/1000, 3)
-            })
-    
-    # Sort discrepancies by absolute difference
-    discrepancies.sort(key=lambda x: abs(x['difference']), reverse=True)
-    
-    # Calculate totals
-    total_book = sum(item['net_wt'] for item in book_items.values())
-    total_physical = sum(item['net_wt'] for item in physical_items.values())
-    
-    return {
-        "summary": {
-            "total_book_kg": round(total_book/1000, 3),
-            "total_physical_kg": round(total_physical/1000, 3),
-            "total_difference_kg": round((total_physical - total_book)/1000, 3),
-            "match_count": len(matches),
-            "discrepancy_count": len(discrepancies),
-            "only_in_book_count": len(only_in_book),
-            "only_in_physical_count": len(only_in_physical)
-        },
-        "matches": matches[:50],
-        "discrepancies": discrepancies[:50],
-        "only_in_book": only_in_book[:50],
-        "only_in_physical": only_in_physical[:50]
-    }
-
 @api_router.get("/analytics/party-analysis")
 async def get_party_analysis(
     start_date: Optional[str] = None,
