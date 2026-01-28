@@ -120,6 +120,32 @@ class PurchaseLedger(BaseModel):
     total_labour: float
     last_updated: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
+class User(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    username: str
+    password_hash: str
+    full_name: str
+    role: str  # 'admin', 'manager', 'executive'
+    is_active: bool = True
+    created_by: str = "system"
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+    full_name: str
+    role: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: Dict[str, Any]
+
 class ActionHistory(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
