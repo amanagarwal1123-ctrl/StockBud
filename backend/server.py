@@ -76,6 +76,7 @@ class PhysicalStock(BaseModel):
     gr_wt: float = 0.0
     net_wt: float = 0.0
     fine: float = 0.0
+    verification_date: Optional[str] = None
     upload_date: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 class MasterItem(BaseModel):
