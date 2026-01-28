@@ -97,6 +97,17 @@ class ItemMapping(BaseModel):
     created_by: str = "system"
     created_date: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
+class PurchaseLedger(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    item_name: str
+    purchase_tunch: float
+    labour_per_kg: float
+    total_purchased_kg: float
+    total_fine_kg: float
+    total_labour: float
+    last_updated: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
 class ActionHistory(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
