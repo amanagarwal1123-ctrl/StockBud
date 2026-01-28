@@ -33,26 +33,42 @@ export default function Layout({ children }) {
   
   const { user, logout, isAdmin, isManager } = useAuth();
 
-  const navigation = [
-    { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-    { name: 'Upload Files', href: '/upload', icon: Upload },
-    { name: 'Current Stock', href: '/current-stock', icon: Package },
-    { name: 'Physical vs Book', href: '/physical-vs-book', icon: Scale },
-    { name: 'Item Mapping', href: '/item-mapping', icon: Link2 },
-    { name: 'Manage Mappings', href: '/mapping-management', icon: GitBranch },
-    { name: 'Purchase Rates', href: '/purchase-rates', icon: Receipt },
-    { name: 'Stamp Management', href: '/stamps', icon: Tag },
-    { name: 'Party Analytics', href: '/party-analytics', icon: Users },
-    { name: 'Profit Analysis', href: '/profit', icon: TrendingUp },
-    { name: 'History', href: '/history', icon: History },
+  // Base navigation for all users
+  const baseNavigation = [
+    { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['admin', 'manager', 'executive'] },
+    { name: 'Notifications', href: '/notifications', icon: Receipt, roles: ['admin', 'manager', 'executive'] },
   ];
 
-  // Admin-only navigation items
-  const adminNavigation = isAdmin ? [
-    { name: 'User Management', href: '/users', icon: User }
-  ] : [];
+  // Executive-specific
+  const executiveNavigation = [
+    { name: 'Stock Entry', href: '/executive-entry', icon: Package, roles: ['executive'] },
+  ];
 
-  const allNavigation = [...navigation, ...adminNavigation];
+  // Manager-specific  
+  const managerNavigation = [
+    { name: 'Approvals', href: '/approvals', icon: CheckCircle2, roles: ['manager', 'admin'] },
+    { name: 'Physical vs Book', href: '/physical-vs-book', icon: Scale, roles: ['manager', 'admin'] },
+  ];
+
+  // Admin-only navigation
+  const adminNavigation = [
+    { name: 'Upload Files', href: '/upload', icon: Upload, roles: ['admin'] },
+    { name: 'Current Stock', href: '/current-stock', icon: Package, roles: ['admin'] },
+    { name: 'Item Mapping', href: '/item-mapping', icon: Link2, roles: ['admin'] },
+    { name: 'Manage Mappings', href: '/mapping-management', icon: GitBranch, roles: ['admin'] },
+    { name: 'Purchase Rates', href: '/purchase-rates', icon: Receipt, roles: ['admin'] },
+    { name: 'Stamp Management', href: '/stamps', icon: Tag, roles: ['admin'] },
+    { name: 'Party Analytics', href: '/party-analytics', icon: Users, roles: ['admin'] },
+    { name: 'Profit Analysis', href: '/profit', icon: TrendingUp, roles: ['admin'] },
+    { name: 'History', href: '/history', icon: History, roles: ['admin'] },
+    { name: 'User Management', href: '/users', icon: User, roles: ['admin'] },
+  ];
+
+  // Combine and filter based on user role
+  const allNavigationItems = [...baseNavigation, ...executiveNavigation, ...managerNavigation, ...adminNavigation];
+  const allNavigation = allNavigationItems.filter(item => 
+    !user || item.roles.includes(user.role)
+  );
 
   const handleUndo = async () => {
     // Fetch recent uploads
