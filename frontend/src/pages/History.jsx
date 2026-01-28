@@ -1,29 +1,53 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { History as HistoryIcon, Calendar, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { History as HistoryIcon, Calendar, Download, FileUp, FileDown, CheckCircle2, Scale } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { format } from 'date-fns';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
+import { exportToCSV } from '@/utils/exportCSV';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
 export default function History() {
-  const [snapshots, setSnapshots] = useState([]);
+  const [actions, setActions] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchSnapshots();
+    fetchHistory();
   }, []);
 
-  const fetchSnapshots = async () => {
+  const fetchHistory = async () => {
     try {
-      const response = await axios.get(`${API}/snapshots`);
-      setSnapshots(response.data);
+      const response = await axios.get(`${API}/history/actions?limit=100`);
+      setActions(response.data);
     } catch (error) {
-      console.error('Error fetching snapshots:', error);
+      console.error('Error fetching history:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleExport = () => {
+    const exportData = actions.map((action, idx) => ({
+      'No.': actions.length - idx,
+      'Action': action.action_type,
+      'Description': action.description,
+      'Date': new Date(action.timestamp).toLocaleString(),
+      'Can Undo': action.can_undo ? 'Yes' : 'No'
+    }));
+    exportToCSV(exportData, 'action_history');
+  };
+
+  const getActionIcon = (type) => {
+    switch(type) {
+      case 'upload_purchase': return <FileUp className="h-4 w-4 text-green-600" />;
+      case 'upload_sale': return <FileDown className="h-4 w-4 text-red-600" />;
+      case 'upload_opening_stock': return <FileUp className="h-4 w-4 text-blue-600" />;
+      case 'stamp_verification': return <Scale className="h-4 w-4 text-purple-600" />;
+      case 'item_mapping': return <CheckCircle2 className="h-4 w-4 text-green-600" />;
+      default: return <HistoryIcon className="h-4 w-4" />;
     }
   };
 
@@ -36,104 +60,84 @@ export default function History() {
   }
 
   return (
-    <div className="p-6 md:p-8 space-y-6" data-testid="history-page">
+    <div className="p-6 md:p-8 space-y-6">
       <div>
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight" data-testid="history-title">
-          Matching History
+        <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
+          Action History
         </h1>
         <p className="text-lg text-muted-foreground mt-2">
-          Historical inventory matching snapshots
+          All system actions and user activities
         </p>
       </div>
 
-      {snapshots.length === 0 ? (
+      {actions.length === 0 ? (
         <Card className="border-border/40 shadow-sm">
           <CardContent className="flex flex-col items-center justify-center py-16 text-center">
             <HistoryIcon className="h-16 w-16 text-muted-foreground mb-4" />
             <h3 className="text-xl font-semibold mb-2">No History Yet</h3>
             <p className="text-muted-foreground">
-              Run inventory matching to create your first snapshot
+              Upload files or perform actions to see history
             </p>
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-4">
-          {snapshots.map((snapshot, idx) => (
-            <Card
-              key={snapshot.id}
-              className="border-border/40 shadow-sm hover:shadow-md transition-shadow"
-              data-testid={`snapshot-${idx}`}
-            >
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-muted">
-                      {snapshot.complete_match ? (
-                        <CheckCircle2 className="h-6 w-6 text-emerald-600" />
-                      ) : (
-                        <AlertTriangle className="h-6 w-6 text-amber-600" />
-                      )}
-                    </div>
-                    <div>
-                      <CardTitle className="text-xl flex items-center gap-2">
-                        Match {snapshots.length - idx}
-                        {snapshot.complete_match && (
-                          <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200">
-                            Complete
-                          </Badge>
-                        )}
-                      </CardTitle>
-                      <CardDescription className="flex items-center gap-2 mt-1">
-                        <Calendar className="h-4 w-4" />
-                        {format(new Date(snapshot.date), 'PPpp')}
-                      </CardDescription>
-                    </div>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {snapshot.complete_match ? (
-                  <p className="text-sm text-muted-foreground">
-                    Perfect match - All items aligned between book and physical inventory.
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="flex gap-6">
-                      {snapshot.differences.length > 0 && (
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="font-mono">
-                            {snapshot.differences.length}
-                          </Badge>
-                          <span className="text-sm text-muted-foreground">Differences</span>
-                        </div>
-                      )}
-                      {snapshot.unmatched_items.length > 0 && (
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="font-mono">
-                            {snapshot.unmatched_items.length}
-                          </Badge>
-                          <span className="text-sm text-muted-foreground">Unmatched Items</span>
-                        </div>
-                      )}
-                    </div>
-                    {snapshot.differences.length > 0 && (
-                      <div className="mt-3 p-3 bg-muted/30 rounded-lg">
-                        <p className="text-xs font-medium text-muted-foreground mb-2">Sample Differences:</p>
-                        <div className="space-y-1">
-                          {snapshot.differences.slice(0, 3).map((diff, i) => (
-                            <p key={i} className="text-xs text-muted-foreground font-mono">
-                              {diff.item_name}: {diff.gr_wt_diff > 0 ? '+' : ''}{diff.gr_wt_diff.toFixed(2)}g
-                            </p>
-                          ))}
-                        </div>
+        <Card className="border-border/40 shadow-sm">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Recent Actions ({actions.length})</CardTitle>
+                <CardDescription>All user activities and system events</CardDescription>
+              </div>
+              <Button onClick={handleExport} variant="outline" size="sm">
+                <Download className="h-4 w-4 mr-2" />
+                Export CSV
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-12">#</TableHead>
+                  <TableHead>Action</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Date & Time</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {actions.map((action, idx) => (
+                  <TableRow key={idx}>
+                    <TableCell className="font-mono text-muted-foreground">
+                      {actions.length - idx}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {getActionIcon(action.action_type)}
+                        <span className="font-medium capitalize">
+                          {action.action_type.replace(/_/g, ' ')}
+                        </span>
                       </div>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                    </TableCell>
+                    <TableCell className="max-w-md">
+                      {action.description}
+                    </TableCell>
+                    <TableCell className="font-mono text-sm">
+                      {new Date(action.timestamp).toLocaleString()}
+                    </TableCell>
+                    <TableCell>
+                      {action.can_undo ? (
+                        <Badge variant="outline" className="text-green-600">Active</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-muted-foreground">Undone</Badge>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
