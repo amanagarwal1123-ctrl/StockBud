@@ -700,6 +700,63 @@ async def get_recent_uploads():
     
     return actions
 
+
+@api_router.get("/inventory/stamp-breakdown/{stamp}")
+async def get_stamp_breakdown(stamp: str):
+    """Get detailed breakdown for a specific stamp (opening + purchases - sales)"""
+    
+    # Get opening stock for this stamp
+    opening = await db.opening_stock.find({"stamp": stamp}, {"_id": 0}).to_list(1000)
+    stamp_item_names = [item['item_name'] for item in opening]
+    
+    # Get mappings to this stamp's items
+    all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
+    mapped_names = [m['transaction_name'] for m in all_mappings if m['master_name'] in stamp_item_names]
+    
+    # All names that belong to this stamp
+    all_names = stamp_item_names + mapped_names
+    
+    # Calculate opening totals
+    opening_gross = sum(item.get('gr_wt', 0) for item in opening)
+    opening_net = sum(item.get('net_wt', 0) for item in opening)
+    
+    # Get purchases for these items
+    purchases = await db.transactions.find({
+        "item_name": {"$in": all_names},
+        "type": {"$in": ["purchase", "purchase_return"]}
+    }, {"_id": 0}).to_list(10000)
+    
+    purchase_gross = sum(t.get('gr_wt', 0) for t in purchases)
+    purchase_net = sum(t.get('net_wt', 0) for t in purchases)
+    
+    # Get sales for these items
+    sales = await db.transactions.find({
+        "item_name": {"$in": all_names},
+        "type": {"$in": ["sale", "sale_return"]}
+    }, {"_id": 0}).to_list(10000)
+    
+    sale_gross = sum(t.get('gr_wt', 0) for t in sales)
+    sale_net = sum(t.get('net_wt', 0) for t in sales)
+    
+    # Current = Opening + Purchases - Sales
+    current_gross = opening_gross + purchase_gross - sale_gross
+    current_net = opening_net + purchase_net - sale_net
+    
+    return {
+        "stamp": stamp,
+        "opening_gross": opening_gross,
+        "opening_net": opening_net,
+        "purchase_gross": purchase_gross,
+        "purchase_net": purchase_net,
+        "sale_gross": sale_gross,
+        "sale_net": sale_net,
+        "current_gross": current_gross,
+        "current_net": current_net,
+        "item_count": len(stamp_item_names),
+        "mapped_count": len(mapped_names)
+    }
+
+
 @api_router.post("/history/undo-upload")
 async def undo_upload(batch_id: str):
     """Undo a specific file upload by batch_id"""
