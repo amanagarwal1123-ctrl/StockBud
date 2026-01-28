@@ -467,7 +467,7 @@ export default function PhysicalStockComparison() {
                   <CardTitle>Only in Book Stock</CardTitle>
                   <CardDescription>
                     Items present in calculated book stock but missing from physical count. 
-                    This is normal if you're doing partial physical verification.
+                    This is normal if you&apos;re doing partial physical verification.
                   </CardDescription>
                 </div>
                 <Button onClick={handleExportOnlyBook} variant="outline" size="sm">
