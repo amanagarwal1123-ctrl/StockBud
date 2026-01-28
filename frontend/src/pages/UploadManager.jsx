@@ -16,6 +16,7 @@ export default function UploadManager() {
     sale: null,
     opening_stock: null,
     physical_stock: null,
+    master_stock: null,
   });
 
   const handleFileUpload = async (fileType, file) => {
