@@ -169,14 +169,16 @@ export default function ItemMapping() {
                       <SelectContent className="max-h-60">
                         {itemsToShow.map((master, midx) => (
                           <SelectItem key={midx} value={master.item_name}>
-                            <div className="flex items-center justify-between w-full">
-                              <span>{master.item_name}</span>
-                              <Badge variant="outline" className="ml-2 text-xs">{master.stamp}</Badge>
-                            </div>
+                            {master.item_name} [{master.stamp}]
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    {selectedMappings[item] && (
+                      <p className="text-xs text-muted-foreground">
+                        Selected: {selectedMappings[item]}
+                      </p>
+                    )}
                   </div>
 
                   <div className="flex gap-2">
