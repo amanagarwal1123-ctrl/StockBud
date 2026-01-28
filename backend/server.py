@@ -29,6 +29,7 @@ api_router = APIRouter(prefix="/api")
 class Transaction(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    batch_id: Optional[str] = None  # Track which upload this transaction belongs to
     date: Optional[str] = None
     type: str  # 'purchase', 'purchase_return', 'sale', 'sale_return'
     refno: Optional[str] = None
@@ -422,6 +423,9 @@ async def upload_transaction_file(
     if not records:
         raise HTTPException(status_code=400, detail="No valid records found in file")
     
+    # Generate unique batch ID for this upload
+    batch_id = str(uuid.uuid4())
+    
     # If date range provided, DELETE existing transactions in that range
     deleted_count = 0
     if start_date and end_date:
@@ -432,6 +436,10 @@ async def upload_transaction_file(
         delete_result = await db.transactions.delete_many(delete_query)
         deleted_count = delete_result.deleted_count
     
+    # Add batch_id to all transactions
+    for record in records:
+        record['batch_id'] = batch_id
+    
     # Insert new transactions
     transactions = [Transaction(**record).model_dump() for record in records]
     result = await db.transactions.insert_many(transactions)
@@ -440,12 +448,25 @@ async def upload_transaction_file(
     if deleted_count > 0:
         message += f" (replaced {deleted_count} existing records from {start_date} to {end_date})"
     
-    await save_action(f'upload_{file_type}', message)
+    # Save action with batch_id
+    await save_action(
+        f'upload_{file_type}',
+        message,
+        {
+            'batch_id': batch_id,
+            'file_name': file.filename,
+            'file_type': file_type,
+            'count': len(transactions),
+            'start_date': start_date,
+            'end_date': end_date
+        }
+    )
     
     return {
         "success": True,
         "count": len(transactions),
         "replaced_count": deleted_count,
+        "batch_id": batch_id,
         "message": message
     }
 
