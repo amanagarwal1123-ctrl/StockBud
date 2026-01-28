@@ -205,6 +205,17 @@ export default function Layout({ children }) {
               </AlertDialogContent>
             </AlertDialog>
             
+            {/* Logout Button */}
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={logout}
+              className="w-full justify-start text-xs text-orange-600 border-orange-600/20 hover:bg-orange-600/10"
+            >
+              <LogOut className="h-3.5 w-3.5 mr-2" />
+              Logout
+            </Button>
+            
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button 
