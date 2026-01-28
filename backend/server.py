@@ -1331,17 +1331,24 @@ async def calculate_profit(
         avg_purchase_tunch = sum(p['tunch'] * abs(p['net_wt']) for p in purchases) / sum(abs(p['net_wt']) for p in purchases) if purchases else 0
         avg_sale_tunch = sum(s['tunch'] * abs(s['net_wt']) for s in sales) / sum(abs(s['net_wt']) for s in sales) if sales else 0
         
-        # Labour per kg = Total labour / Net weight (using absolute values for average)
-        avg_purchase_labor_per_kg = sum(abs(p['labor']) for p in purchases) / sum(abs(p['net_wt']) for p in purchases) if purchases else 0
-        avg_sale_labor_per_kg = sum(abs(s['labor']) for s in sales) / sum(abs(s['net_wt']) for s in sales) if sales else 0
+        # Labour per kg calculation
+        # Purchase ledger has labour_per_kg (per kilogram)
+        # Sales have labor (total) and net_wt (in grams)
+        # Need to calculate both in same unit (per gram)
+        
+        # Purchase: labour_per_kg → labour_per_gram
+        purchase_labour_per_gram = sum(abs(p['labor']) / 1000 for p in purchases) / sum(abs(p['net_wt']) for p in purchases) if purchases else 0
+        
+        # Sale: total labour / total grams
+        sale_labour_per_gram = sum(abs(s['labor']) for s in sales) / sum(abs(s['net_wt']) for s in sales) if sales else 0
         
         # USER'S FORMULA:
         # 1. Silver Profit (kg) = (sale tunch - purchase tunch) * sale net weight / 100
         silver_profit_grams = (avg_sale_tunch - avg_purchase_tunch) * total_sale_wt / 100
         silver_profit_kg = silver_profit_grams / 1000  # Convert to kg
         
-        # 2. Labour Profit (INR) = (sale labour per kg - purchase labour per kg) * sale net weight
-        labor_profit_inr = (avg_sale_labor_per_kg - avg_purchase_labor_per_kg) * total_sale_wt
+        # 2. Labour Profit (INR) = (sale labour per gram - purchase labour per gram) * sale net weight (grams)
+        labor_profit_inr = (sale_labour_per_gram - purchase_labour_per_gram) * total_sale_wt
         
         total_silver_profit_kg += silver_profit_kg
         total_labor_profit_inr += labor_profit_inr
