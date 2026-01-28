@@ -78,6 +78,24 @@ class PhysicalStock(BaseModel):
     fine: float = 0.0
     upload_date: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
+class MasterItem(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    item_name: str
+    stamp: str
+    gr_wt: float = 0.0
+    net_wt: float = 0.0
+    is_master: bool = True
+    upload_date: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+class ItemMapping(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    transaction_name: str  # Name found in purchase/sale files
+    master_name: str  # Name in STOCK 2026
+    created_by: str = "system"
+    created_date: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
 class ActionHistory(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
