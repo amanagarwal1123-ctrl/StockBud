@@ -169,7 +169,7 @@ export default function ItemMapping() {
                       <p className="text-sm text-muted-foreground">
                         {suggestions.length > 0 
                           ? `${suggestions.length} intelligent suggestions` 
-                          : 'No suggestions found'}
+                          : 'No suggestions found - Click "Show All Items" below'}
                       </p>
                     </div>
                     <Badge variant="outline" className="text-orange-600">Unmapped</Badge>
@@ -177,24 +177,41 @@ export default function ItemMapping() {
 
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Map to master item:</label>
-                    <Select
-                      value={selectedMappings[item] || ''}
-                      onValueChange={(value) => setSelectedMappings(prev => ({ ...prev, [item]: value }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select master item..." />
-                      </SelectTrigger>
-                      <SelectContent className="max-h-60">
-                        {itemsToShow.map((master, midx) => (
-                          <SelectItem key={midx} value={master.item_name}>
-                            {master.item_name} [{master.stamp}]
-                          </SelectItem>
+                    
+                    {/* Show suggestions as buttons if available */}
+                    {suggestions.length > 0 && !showingAll && (
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        <p className="text-xs text-muted-foreground w-full">Quick select suggestions:</p>
+                        {suggestions.map((master, sidx) => (
+                          <Button
+                            key={sidx}
+                            variant={selectedMappings[item] === master.item_name ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setSelectedMappings(prev => ({ ...prev, [item]: master.item_name }))}
+                          >
+                            {master.item_name} <Badge variant="secondary" className="ml-1">{master.stamp}</Badge>
+                          </Button>
                         ))}
-                      </SelectContent>
-                    </Select>
+                      </div>
+                    )}
+                    
+                    {/* Standard select for all items */}
+                    <select
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      value={selectedMappings[item] || ''}
+                      onChange={(e) => setSelectedMappings(prev => ({ ...prev, [item]: e.target.value }))}
+                    >
+                      <option value="">Select master item...</option>
+                      {itemsToShow.map((master, midx) => (
+                        <option key={midx} value={master.item_name}>
+                          {master.item_name} [{master.stamp}]
+                        </option>
+                      ))}
+                    </select>
+                    
                     {selectedMappings[item] && (
-                      <p className="text-xs text-muted-foreground">
-                        Selected: {selectedMappings[item]}
+                      <p className="text-xs text-green-600 font-medium">
+                        ✓ Will map to: {selectedMappings[item]}
                       </p>
                     )}
                   </div>
@@ -209,7 +226,7 @@ export default function ItemMapping() {
                       Save Mapping
                     </Button>
                     
-                    {!showingAll && suggestions.length > 0 && (
+                    {!showingAll && (
                       <Button
                         onClick={() => setShowAllForItem(prev => ({ ...prev, [item]: true }))}
                         variant="outline"
