@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import '@/App.css';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import Dashboard from './pages/Dashboard';
 import UploadManager from './pages/UploadManager';
 import CurrentStock from './pages/CurrentStock';
@@ -13,31 +14,58 @@ import PhysicalStockComparison from './pages/PhysicalStockComparison';
 import ItemMapping from './pages/ItemMapping';
 import MappingManagement from './pages/MappingManagement';
 import PurchaseRates from './pages/PurchaseRates';
+import Login from './pages/Login';
 import Layout from './components/Layout';
 import { Toaster } from '@/components/ui/sonner';
+
+function ProtectedRoute({ children }) {
+  const { isAuthenticated, loading } = useAuth();
+  
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
+  
+  return isAuthenticated ? children : <Navigate to="/login" replace />;
+}
 
 function App() {
   return (
     <div className="App">
       <BrowserRouter>
-        <Layout>
+        <AuthProvider>
           <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/upload" element={<UploadManager />} />
-            <Route path="/current-stock" element={<CurrentStock />} />
-            <Route path="/physical-vs-book" element={<PhysicalStockComparison />} />
-            <Route path="/item-mapping" element={<ItemMapping />} />
-            <Route path="/mapping-management" element={<MappingManagement />} />
-            <Route path="/purchase-rates" element={<PurchaseRates />} />
-            <Route path="/party-analytics" element={<PartyAnalytics />} />
-            <Route path="/profit" element={<ProfitAnalysis />} />
-            <Route path="/history" element={<History />} />
-            <Route path="/stamps" element={<StampManagement />} />
-            <Route path="/item/:itemName" element={<ItemDetail />} />
+            <Route path="/login" element={<Login />} />
+            <Route
+              path="/*"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <Routes>
+                      <Route path="/" element={<Dashboard />} />
+                      <Route path="/upload" element={<UploadManager />} />
+                      <Route path="/current-stock" element={<CurrentStock />} />
+                      <Route path="/physical-vs-book" element={<PhysicalStockComparison />} />
+                      <Route path="/item-mapping" element={<ItemMapping />} />
+                      <Route path="/mapping-management" element={<MappingManagement />} />
+                      <Route path="/purchase-rates" element={<PurchaseRates />} />
+                      <Route path="/party-analytics" element={<PartyAnalytics />} />
+                      <Route path="/profit" element={<ProfitAnalysis />} />
+                      <Route path="/history" element={<History />} />
+                      <Route path="/stamps" element={<StampManagement />} />
+                      <Route path="/item/:itemName" element={<ItemDetail />} />
+                    </Routes>
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
           </Routes>
-        </Layout>
+          <Toaster richColors position="top-right" />
+        </AuthProvider>
       </BrowserRouter>
-      <Toaster richColors position="top-right" />
     </div>
   );
 }
