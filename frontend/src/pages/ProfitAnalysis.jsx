@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { exportToCSV } from '@/utils/exportCSV';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -19,6 +20,8 @@ export default function ProfitAnalysis() {
   const [loading, setLoading] = useState(true);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   useEffect(() => {
     fetchProfit();
@@ -103,6 +106,12 @@ export default function ProfitAnalysis() {
       </div>
     );
   }
+
+  const allProfitableItems = profitData?.top_profitable_items || [];
+  const startIdx = (currentPage - 1) * itemsPerPage;
+  const endIdx = startIdx + itemsPerPage;
+  const paginatedItems = allProfitableItems.slice(startIdx, endIdx);
+  const totalPages = Math.ceil(allProfitableItems.length / itemsPerPage);
 
   return (
     <div className="p-6 md:p-8 space-y-6" data-testid="profit-page">
