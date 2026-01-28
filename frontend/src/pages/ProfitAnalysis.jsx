@@ -285,6 +285,7 @@ export default function ProfitAnalysis() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Rank</TableHead>
                   <TableHead>Item Name</TableHead>
                   <TableHead className="text-right font-mono">Net Wt Sold (kg)</TableHead>
                   <TableHead className="text-right">Avg Purchase Tunch</TableHead>
@@ -294,31 +295,78 @@ export default function ProfitAnalysis() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {profitData?.top_profitable_items?.length === 0 ? (
+                {paginatedItems.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       No profit data available
                     </TableCell>
                   </TableRow>
                 ) : (
-                  profitData?.top_profitable_items?.slice(0, 15).map((item, idx) => (
-                    <TableRow key={idx} className="table-row">
-                      <TableCell className="font-medium">{item.item_name}</TableCell>
-                      <TableCell className="text-right font-mono">{item.net_wt_sold_kg}</TableCell>
-                      <TableCell className="text-right font-mono">{item.avg_purchase_tunch}%</TableCell>
-                      <TableCell className="text-right font-mono">{item.avg_sale_tunch}%</TableCell>
-                      <TableCell className="text-right font-mono text-green-600 font-semibold">
-                        {item.silver_profit_kg} kg
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-blue-600 font-semibold">
-                        {formatIndianCurrency(item.labor_profit_inr)}
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  paginatedItems.map((item, idx) => {
+                    const actualRank = startIdx + idx + 1;
+                    return (
+                      <TableRow key={idx} className="table-row">
+                        <TableCell>
+                          <Badge variant="outline" className="font-mono">#{actualRank}</Badge>
+                        </TableCell>
+                        <TableCell className="font-medium">{item.item_name}</TableCell>
+                        <TableCell className="text-right font-mono">{item.net_wt_sold_kg}</TableCell>
+                        <TableCell className="text-right font-mono">{item.avg_purchase_tunch}%</TableCell>
+                        <TableCell className="text-right font-mono">{item.avg_sale_tunch}%</TableCell>
+                        <TableCell className="text-right font-mono text-green-600 font-semibold">
+                          {item.silver_profit_kg} kg
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-blue-600 font-semibold">
+                          {formatIndianCurrency(item.labor_profit_inr)}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
           </div>
+
+          {/* Pagination Controls */}
+          {allProfitableItems.length > 10 && (
+            <div className="flex items-center justify-between mt-4 pt-4 border-t">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Items per page:</span>
+                <Select value={String(itemsPerPage)} onValueChange={(val) => { setItemsPerPage(Number(val)); setCurrentPage(1); }}>
+                  <SelectTrigger className="w-20">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="20">20</SelectItem>
+                    <SelectItem value="30">30</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  variant="outline"
+                  size="sm"
+                >
+                  Previous
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  Page {currentPage} of {totalPages} ({allProfitableItems.length} total)
+                </span>
+                <Button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  variant="outline"
+                  size="sm"
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
