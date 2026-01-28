@@ -176,9 +176,6 @@ async def require_role(required_roles: List[str], user: dict = Depends(get_curre
         raise HTTPException(status_code=403, detail=f"Access denied. Required role: {', '.join(required_roles)}")
     return user
 
-
-    password: str
-
 class CreateUserRequest(BaseModel):
     username: str
     password: str
