@@ -323,6 +323,14 @@ export default function PartyAnalytics() {
             <Package className="h-4 w-4 mr-2" />
             Suppliers
           </TabsTrigger>
+          <TabsTrigger value="customer-profit">
+            <TrendingUp className="h-4 w-4 mr-2" />
+            Customer Profit
+          </TabsTrigger>
+          <TabsTrigger value="supplier-profit">
+            <TrendingUp className="h-4 w-4 mr-2" />
+            Supplier Profit
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="customers">
