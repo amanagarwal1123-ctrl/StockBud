@@ -816,69 +816,6 @@ async def mark_notification_read(notification_id: str):
     )
     return {'success': True}
 
-
-    file_type: str, 
-    file: UploadFile = File(...),
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None
-):
-    """Upload purchase or sale Excel file - REPLACES transactions in specified date range"""
-    if file_type not in ['purchase', 'sale']:
-        raise HTTPException(status_code=400, detail="file_type must be 'purchase' or 'sale'")
-    
-    content = await file.read()
-    records = parse_excel_file(content, file_type)
-    
-    if not records:
-        raise HTTPException(status_code=400, detail="No valid records found in file")
-    
-    # Generate unique batch ID for this upload
-    batch_id = str(uuid.uuid4())
-    
-    # If date range provided, DELETE existing transactions in that range
-    deleted_count = 0
-    if start_date and end_date:
-        delete_query = {
-            "type": {"$in": [file_type, f"{file_type}_return"]},
-            "date": {"$gte": start_date, "$lte": end_date}
-        }
-        delete_result = await db.transactions.delete_many(delete_query)
-        deleted_count = delete_result.deleted_count
-    
-    # Add batch_id to all transactions
-    for record in records:
-        record['batch_id'] = batch_id
-    
-    # Insert new transactions
-    transactions = [Transaction(**record).model_dump() for record in records]
-    result = await db.transactions.insert_many(transactions)
-    
-    message = f"Uploaded {len(transactions)} {file_type} records"
-    if deleted_count > 0:
-        message += f" (replaced {deleted_count} existing records from {start_date} to {end_date})"
-    
-    # Save action with batch_id
-    await save_action(
-        f'upload_{file_type}',
-        message,
-        {
-            'batch_id': batch_id,
-            'file_name': file.filename,
-            'file_type': file_type,
-            'count': len(transactions),
-            'start_date': start_date,
-            'end_date': end_date
-        }
-    )
-    
-    return {
-        "success": True,
-        "count": len(transactions),
-        "replaced_count": deleted_count,
-        "batch_id": batch_id,
-        "message": message
-    }
-
 @api_router.get("/transactions")
 async def get_transactions(type: Optional[str] = None, limit: int = 5000):
     """Get all transactions"""
