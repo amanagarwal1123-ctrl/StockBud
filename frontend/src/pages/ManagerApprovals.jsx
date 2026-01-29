@@ -117,25 +117,33 @@ export default function ManagerApprovals() {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground mb-3">
-                  {entry.entries?.length || 0} items entered
+                  {entry.entries?.length || 0} items entered (gross weights only)
                 </p>
                 <div className="max-h-48 overflow-y-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Item Name</TableHead>
-                        <TableHead className="text-right">Gross (kg)</TableHead>
-                        <TableHead className="text-right">Net (kg)</TableHead>
+                        <TableHead className="text-right">Entered Gross (kg)</TableHead>
+                        <TableHead className="text-right">Book Gross (kg)</TableHead>
+                        <TableHead className="text-right">Difference</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {entry.entries?.slice(0, 10).map((item, i) => (
-                        <TableRow key={i}>
-                          <TableCell className="font-medium text-sm">{item.item_name}</TableCell>
-                          <TableCell className="text-right font-mono">{item.gross_wt?.toFixed(3) || '0.000'}</TableCell>
-                          <TableCell className="text-right font-mono">{item.net_wt?.toFixed(3) || '0.000'}</TableCell>
-                        </TableRow>
-                      ))}
+                      {entry.entries?.slice(0, 10).map((item, i) => {
+                        const bookGross = 0; // TODO: Fetch from current stock
+                        const diff = (item.gross_wt || 0) - bookGross;
+                        return (
+                          <TableRow key={i}>
+                            <TableCell className="font-medium text-sm">{item.item_name}</TableCell>
+                            <TableCell className="text-right font-mono">{item.gross_wt?.toFixed(3) || '0.000'}</TableCell>
+                            <TableCell className="text-right font-mono text-muted-foreground">{bookGross.toFixed(3)}</TableCell>
+                            <TableCell className={`text-right font-mono font-semibold ${Math.abs(diff) < 0.01 ? 'text-green-600' : 'text-orange-600'}`}>
+                              {diff >= 0 ? '+' : ''}{diff.toFixed(3)}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
