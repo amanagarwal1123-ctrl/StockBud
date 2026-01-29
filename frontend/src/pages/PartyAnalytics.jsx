@@ -550,6 +550,108 @@ export default function PartyAnalytics() {
             </CardContent>
           </Card>
         </TabsContent>
+
+
+        {/* Customer Profit Tab */}
+        <TabsContent value="customer-profit">
+          <Card className="border-border/40 shadow-sm">
+            <CardHeader>
+              <CardTitle>Customer-Wise Profit</CardTitle>
+              <CardDescription>Profit made from each customer (silver & labour)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Rank</TableHead>
+                    <TableHead>Customer Name</TableHead>
+                    <TableHead className="text-right font-mono">Silver Profit (kg)</TableHead>
+                    <TableHead className="text-right font-mono">Labour Profit</TableHead>
+                    <TableHead className="text-right font-mono">Total Sold (kg)</TableHead>
+                    <TableHead className="text-right">Transactions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {customerProfit?.customers?.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                        No customer profit data available
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    customerProfit?.customers?.map((customer, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell>
+                          <Badge variant="outline" className="font-mono">#{idx + 1}</Badge>
+                        </TableCell>
+                        <TableCell className="font-medium">{customer.customer_name}</TableCell>
+                        <TableCell className="text-right font-mono text-green-600 font-semibold">
+                          {customer.silver_profit_kg?.toFixed(3)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-blue-600 font-semibold">
+                          {formatIndianCurrency(customer.labour_profit_inr)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {customer.total_sold_kg?.toFixed(3)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {customer.transaction_count}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Supplier Profit Tab */}
+        <TabsContent value="supplier-profit">
+          <Card className="border-border/40 shadow-sm">
+            <CardHeader>
+              <CardTitle>Supplier-Wise Data</CardTitle>
+              <CardDescription>Items purchased from each supplier</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Rank</TableHead>
+                    <TableHead>Supplier Name</TableHead>
+                    <TableHead className="text-right font-mono">Total Purchased (kg)</TableHead>
+                    <TableHead className="text-right">Transactions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {supplierProfit?.suppliers?.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                        No supplier data available
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    supplierProfit?.suppliers?.map((supplier, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell>
+                          <Badge variant="outline" className="font-mono">#{idx + 1}</Badge>
+                        </TableCell>
+                        <TableCell className="font-medium">{supplier.supplier_name}</TableCell>
+                        <TableCell className="text-right font-mono text-primary font-semibold">
+                          {supplier.total_purchased_kg?.toFixed(3)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {supplier.transaction_count}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
       </Tabs>
     </div>
   );
