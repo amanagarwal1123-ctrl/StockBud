@@ -17,6 +17,8 @@ const API = `${BACKEND_URL}/api`;
 
 export default function PartyAnalytics() {
   const [analytics, setAnalytics] = useState(null);
+  const [customerProfit, setCustomerProfit] = useState(null);
+  const [supplierProfit, setSupplierProfit] = useState(null);
   const [loading, setLoading] = useState(true);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -26,6 +28,8 @@ export default function PartyAnalytics() {
 
   useEffect(() => {
     fetchAnalytics();
+    fetchCustomerProfit();
+    fetchSupplierProfit();
   }, []);
 
   const fetchAnalytics = async (start = '', end = '') => {
@@ -43,9 +47,37 @@ export default function PartyAnalytics() {
     }
   };
 
+  const fetchCustomerProfit = async (start = '', end = '') => {
+    try {
+      let url = `${API}/analytics/customer-profit`;
+      if (start && end) {
+        url += `?start_date=${start}&end_date=${end}`;
+      }
+      const response = await axios.get(url);
+      setCustomerProfit(response.data);
+    } catch (error) {
+      console.error('Error fetching customer profit:', error);
+    }
+  };
+
+  const fetchSupplierProfit = async (start = '', end = '') => {
+    try {
+      let url = `${API}/analytics/supplier-profit`;
+      if (start && end) {
+        url += `?start_date=${start}&end_date=${end}`;
+      }
+      const response = await axios.get(url);
+      setSupplierProfit(response.data);
+    } catch (error) {
+      console.error('Error fetching supplier profit:', error);
+    }
+  };
+
   const handleApplyDateRange = () => {
     if (startDate && endDate) {
       fetchAnalytics(startDate, endDate);
+      fetchCustomerProfit(startDate, endDate);
+      fetchSupplierProfit(startDate, endDate);
     }
   };
 
@@ -53,6 +85,8 @@ export default function PartyAnalytics() {
     setStartDate('');
     setEndDate('');
     fetchAnalytics();
+    fetchCustomerProfit();
+    fetchSupplierProfit();
   };
 
   const setQuickRange = (days) => {
@@ -63,6 +97,8 @@ export default function PartyAnalytics() {
     setStartDate(start.toISOString().split('T')[0]);
     setEndDate(end.toISOString().split('T')[0]);
     fetchAnalytics(start.toISOString().split('T')[0], end.toISOString().split('T')[0]);
+    fetchCustomerProfit(start.toISOString().split('T')[0], end.toISOString().split('T')[0]);
+    fetchSupplierProfit(start.toISOString().split('T')[0], end.toISOString().split('T')[0]);
   };
 
   if (loading) {
