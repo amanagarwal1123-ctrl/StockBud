@@ -1273,6 +1273,141 @@ async def upload_purchase_ledger(file: UploadFile = File(...)):
     
     try:
         df = pd.read_excel(BytesIO(content), header=2)
+
+
+@api_router.get("/analytics/customer-profit")
+async def get_customer_profit(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+):
+    """Calculate profit per customer (silver & labour)"""
+    
+    query = {}
+    if start_date and end_date:
+        query['date'] = {'$gte': start_date, '$lte': end_date}
+    
+    # Get all sales
+    sales = await db.transactions.find(
+        {**query, "type": {"$in": ["sale", "sale_return"]}},
+        {"_id": 0}
+    ).to_list(10000)
+    
+    # Get purchase ledger
+    ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(10000)
+    ledger_map = {item['item_name']: item for item in ledger}
+    
+    # Group by customer
+    customer_profit = defaultdict(lambda: {
+        'customer_name': '',
+        'silver_profit_kg': 0.0,
+        'labour_profit_inr': 0.0,
+        'total_sold_kg': 0.0,
+        'transaction_count': 0
+    })
+    
+    for sale in sales:
+        customer = sale.get('party_name', 'Unknown')
+        if not customer:
+            continue
+        
+        item_name = sale.get('item_name', '')
+        sale_tunch = float(sale.get('tunch', 0) or 0)
+        sale_net_wt = sale.get('net_wt', 0)
+        sale_labour = sale.get('labor', 0)
+        
+        # Get purchase rates from ledger
+        ledger_item = ledger_map.get(item_name)
+        if ledger_item:
+            purchase_tunch = ledger_item.get('purchase_tunch', 0)
+            purchase_labour_per_gram = ledger_item.get('labour_per_kg', 0) / 1000
+        else:
+            purchase_tunch = 0
+            purchase_labour_per_gram = 0
+        
+        # Calculate profit for this transaction
+        silver_profit_grams = (sale_tunch - purchase_tunch) * sale_net_wt / 100
+        silver_profit_kg = silver_profit_grams / 1000
+        
+        sale_labour_per_gram = sale_labour / sale_net_wt if sale_net_wt > 0 else 0
+        labour_profit = (sale_labour_per_gram - purchase_labour_per_gram) * sale_net_wt
+        
+        customer_profit[customer]['customer_name'] = customer
+        customer_profit[customer]['silver_profit_kg'] += silver_profit_kg
+        customer_profit[customer]['labour_profit_inr'] += labour_profit
+        customer_profit[customer]['total_sold_kg'] += sale_net_wt / 1000
+        customer_profit[customer]['transaction_count'] += 1
+    
+    # Convert to list and sort
+    customers = sorted(
+        [v for v in customer_profit.values()],
+        key=lambda x: x['silver_profit_kg'],
+        reverse=True
+    )
+    
+    return {
+        "customers": customers,
+        "total_customers": len(customers)
+    }
+
+@api_router.get("/analytics/supplier-profit")
+async def get_supplier_profit(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+):
+    """Calculate profit per supplier (based on items purchased from them)"""
+    
+    query = {}
+    if start_date and end_date:
+        query['date'] = {'$gte': start_date, '$lte': end_date}
+    
+    # Get all purchases
+    purchases = await db.transactions.find(
+        {**query, "type": {"$in": ["purchase", "purchase_return"]}},
+        {"_id": 0}
+    ).to_list(10000)
+    
+    # Group by supplier with cumulative purchase data
+    supplier_data = defaultdict(lambda: {
+        'supplier_name': '',
+        'total_purchased_kg': 0.0,
+        'transaction_count': 0,
+        'items': defaultdict(lambda: {'net_wt': 0, 'tunch': 0, 'labour': 0})
+    })
+    
+    for purchase in purchases:
+        supplier = purchase.get('party_name', 'Unknown')
+        if not supplier:
+            continue
+        
+        item_name = purchase.get('item_name', '')
+        purchase_tunch = float(purchase.get('tunch', 0) or 0)
+        purchase_net_wt = purchase.get('net_wt', 0)
+        purchase_labour = purchase.get('labor', 0)
+        
+        supplier_data[supplier]['supplier_name'] = supplier
+        supplier_data[supplier]['total_purchased_kg'] += purchase_net_wt / 1000
+        supplier_data[supplier]['transaction_count'] += 1
+        
+        # Track per-item data for this supplier
+        supplier_data[supplier]['items'][item_name]['net_wt'] += purchase_net_wt
+        supplier_data[supplier]['items'][item_name]['tunch'] += purchase_tunch * abs(purchase_net_wt)
+        supplier_data[supplier]['items'][item_name]['labour'] += purchase_labour
+    
+    # Note: Supplier profit requires knowing what we sold those items for
+    # This is complex - for now just return purchase data
+    suppliers = sorted(
+        [v for v in supplier_data.values()],
+        key=lambda x: x['total_purchased_kg'],
+        reverse=True
+    )
+    
+    return {
+        "suppliers": suppliers,
+        "total_suppliers": len(suppliers),
+        "note": "Supplier profit requires matching sold items - placeholder for now"
+    }
+
+
         df = df.fillna(0)
         df.columns = df.columns.str.strip()
         
