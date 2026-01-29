@@ -35,11 +35,10 @@ export default function Layout({ children }) {
 
   // Base navigation for all users
   const baseNavigation = [
-    { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['admin', 'manager', 'executive'] },
-    { name: 'Notifications', href: '/notifications', icon: Receipt, roles: ['admin', 'manager', 'executive'] },
+    { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['admin', 'manager'] },
   ];
 
-  // Executive-specific
+  // Executive-specific (ONLY Stock Entry)
   const executiveNavigation = [
     { name: 'Stock Entry', href: '/executive-entry', icon: Package, roles: ['executive'] },
   ];
@@ -48,6 +47,7 @@ export default function Layout({ children }) {
   const managerNavigation = [
     { name: 'Approvals', href: '/approvals', icon: CheckCircle2, roles: ['manager', 'admin'] },
     { name: 'Physical vs Book', href: '/physical-vs-book', icon: Scale, roles: ['manager', 'admin'] },
+    { name: 'Notifications', href: '/notifications', icon: Receipt, roles: ['manager', 'admin'] },
   ];
 
   // Admin-only navigation

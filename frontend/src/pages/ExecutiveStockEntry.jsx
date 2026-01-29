@@ -47,10 +47,10 @@ export default function ExecutiveStockEntry() {
       const items = response.data.filter(item => item.stamp === stamp);
       setStampItems(items);
       
-      // Initialize stock data
+      // Initialize stock data (only gross weight)
       const initialData = {};
       items.forEach(item => {
-        initialData[item.item_name] = { gross: '', net: '' };
+        initialData[item.item_name] = { gross: '' };
       });
       setStockData(initialData);
     } catch (error) {
@@ -77,11 +77,10 @@ export default function ExecutiveStockEntry() {
 
   const handleSave = async () => {
     const entries = Object.entries(stockData)
-      .filter(([_, data]) => data.gross || data.net)
+      .filter(([_, data]) => data.gross)
       .map(([itemName, data]) => ({
         item_name: itemName,
-        gross_wt: parseFloat(data.gross) || 0,
-        net_wt: parseFloat(data.net) || 0
+        gross_wt: parseFloat(data.gross) || 0
       }));
 
     if (entries.length === 0) {
@@ -155,28 +154,18 @@ export default function ExecutiveStockEntry() {
             ) : (
               <div className="space-y-3 max-h-96 overflow-y-auto">
                 {stampItems.map((item, idx) => (
-                  <div key={idx} className="grid grid-cols-3 gap-3 items-center p-3 border rounded-lg">
+                  <div key={idx} className="grid grid-cols-2 gap-3 items-center p-3 border rounded-lg">
                     <div>
                       <p className="font-medium text-sm">{item.item_name}</p>
                     </div>
                     <div>
-                      <Label className="text-xs">Gross (kg)</Label>
+                      <Label className="text-xs">Gross Weight (kg) *</Label>
                       <Input
                         type="number"
                         step="0.001"
                         placeholder="0.000"
                         value={stockData[item.item_name]?.gross || ''}
                         onChange={(e) => handleWeightChange(item.item_name, 'gross', e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Net (kg)</Label>
-                      <Input
-                        type="number"
-                        step="0.001"
-                        placeholder="0.000"
-                        value={stockData[item.item_name]?.net || ''}
-                        onChange={(e) => handleWeightChange(item.item_name, 'net', e.target.value)}
                       />
                     </div>
                   </div>
