@@ -235,6 +235,8 @@ export default function Layout({ children }) {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+              </>
+            )}
             
             {/* Logout Button - All users */}
             <Button 
