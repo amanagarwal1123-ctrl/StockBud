@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { exportToCSV } from '@/utils/exportCSV';
 import { toast } from 'sonner';
+import { useAuth } from '../context/AuthContext';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -128,6 +129,7 @@ export default function PhysicalStockComparison() {
   };
 
   const summary = comparison?.summary;
+  const { isAdmin } = useAuth();
 
   if (loading) {
     return (
@@ -325,8 +327,8 @@ export default function PhysicalStockComparison() {
         </Alert>
       )}
 
-      {/* Summary Cards - Only show if comparison data exists */}
-      {summary && (
+      {/* Summary Cards - Only show for Admin */}
+      {summary && isAdmin && (
         <>
           <div className="grid gap-6 md:grid-cols-4">
             <Card className="border-border/40 shadow-sm bg-gradient-to-br from-blue-500/10 to-transparent">
