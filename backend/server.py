@@ -865,6 +865,52 @@ async def adjust_polythene(
         'adjusted_by': adjusted_by,
         'created_at': datetime.now(timezone.utc).isoformat(),
         'date': datetime.now(timezone.utc).date().isoformat()
+
+
+@api_router.post("/polythene/adjust-batch")
+async def adjust_polythene_batch(
+    entries: List[Dict],
+    adjusted_by: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Save multiple polythene adjustments at once"""
+    
+    if current_user['role'] not in ['polythene_executive', 'admin']:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    saved_entries = []
+    
+    for entry in entries:
+        adjustment = {
+            'id': str(uuid.uuid4()),
+            'item_name': entry['item_name'],
+            'stamp': entry.get('stamp', ''),
+            'poly_weight': entry['poly_weight'],
+            'operation': entry['operation'],
+            'adjusted_by': adjusted_by,
+            'created_at': datetime.now(timezone.utc).isoformat(),
+            'date': datetime.now(timezone.utc).date().isoformat()
+        }
+        
+        saved_entries.append(adjustment)
+        
+        # Log activity
+        await db.activity_log.insert_one({
+            'user': adjusted_by,
+            'user_role': current_user['role'],
+            'action_type': 'polythene_adjustment',
+            'description': f'{entry["operation"].upper()} {entry["poly_weight"]} kg polythene for {entry["item_name"]}',
+            'details': entry,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+    
+    # Insert all at once
+    if saved_entries:
+        await db.polythene_adjustments.insert_many(saved_entries)
+    
+    return {'success': True, 'message': f'{len(saved_entries)} polythene adjustments saved', 'count': len(saved_entries)}
+
+
     }
     
     await db.polythene_adjustments.insert_one(adjustment)
