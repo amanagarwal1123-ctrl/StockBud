@@ -401,14 +401,25 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error parsing Excel file: {str(e)}")
 
-# Save action for undo/redo
-async def save_action(action_type: str, description: str, data_snapshot: dict = None):
+# Save action for undo/redo and accountability
+async def save_action(action_type: str, description: str, data_snapshot: dict = None, user: dict = None):
     action = ActionHistory(
         action_type=action_type,
         description=description,
         data_snapshot=data_snapshot or {}
     )
     await db.action_history.insert_one(action.model_dump())
+    
+    # Also log to activity_log for accountability if user provided
+    if user:
+        await db.activity_log.insert_one({
+            'user': user.get('username', 'system'),
+            'user_role': user.get('role', 'system'),
+            'action_type': action_type,
+            'description': description,
+            'details': data_snapshot or {},
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
     
     # Keep only last 20 actions
     count = await db.action_history.count_documents({})
