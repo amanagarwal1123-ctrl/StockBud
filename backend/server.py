@@ -1123,6 +1123,73 @@ async def compare_physical_with_book():
     matches = []
     discrepancies = []
     only_in_book = []
+    only_in_physical = []
+    
+    # Check items in both
+    for key in book_items.keys():
+        if key in physical_items:
+            book_item = book_items[key]
+            phys_item = physical_items[key]
+            
+            book_net = book_item['net_wt']
+            phys_net = phys_item['net_wt']
+            diff = phys_net - book_net
+            
+            comparison = {
+                'item_name': book_item['item_name'],
+                'stamp': book_item.get('stamp', ''),
+                'book_net_wt': book_net,
+                'physical_net_wt': phys_net,
+                'difference': diff,
+                'difference_kg': round(diff/1000, 3),
+                'match_percentage': round((min(book_net, phys_net) / max(book_net, phys_net) * 100) if max(book_net, phys_net) > 0 else 100, 2)
+            }
+            
+            if abs(diff) < 10:
+                matches.append(comparison)
+            else:
+                discrepancies.append(comparison)
+    
+    # Items only in book
+    for key in book_items.keys():
+        if key not in physical_items:
+            only_in_book.append({
+                'item_name': book_items[key]['item_name'],
+                'stamp': book_items[key].get('stamp', ''),
+                'book_net_wt': book_items[key]['net_wt'],
+                'book_net_wt_kg': round(book_items[key]['net_wt']/1000, 3)
+            })
+    
+    # Items only in physical
+    for key in physical_items.keys():
+        if key not in book_items:
+            only_in_physical.append({
+                'item_name': physical_items[key]['item_name'],
+                'stamp': physical_items[key].get('stamp', ''),
+                'physical_net_wt': physical_items[key]['net_wt'],
+                'physical_net_wt_kg': round(physical_items[key]['net_wt']/1000, 3)
+            })
+    
+    discrepancies.sort(key=lambda x: abs(x['difference']), reverse=True)
+    
+    total_book = sum(item['net_wt'] for item in book_items.values())
+    total_physical = sum(item['net_wt'] for item in physical_items.values())
+    
+    return {
+        "summary": {
+            "total_book_kg": round(total_book/1000, 3),
+            "total_physical_kg": round(total_physical/1000, 3),
+            "total_difference_kg": round((total_physical - total_book)/1000, 3),
+            "match_count": len(matches),
+            "discrepancy_count": len(discrepancies),
+            "only_in_book_count": len(only_in_book),
+            "only_in_physical_count": len(only_in_physical)
+        },
+        "matches": matches[:50],
+        "discrepancies": discrepancies[:50],
+        "only_in_book": only_in_book[:50],
+        "only_in_physical": only_in_physical[:50]
+    }
 
 @api_router.get("/history/recent-uploads")
 async def get_recent_uploads():
@@ -1361,7 +1428,48 @@ async def upload_purchase_ledger(file: UploadFile = File(...)):
     
     try:
         df = pd.read_excel(BytesIO(content), header=2)
-
+        df = df.fillna(0)
+        df.columns = df.columns.str.strip()
+        
+        await db.purchase_ledger.delete_many({})
+        
+        ledger_items = []
+        
+        for _, row in df.iterrows():
+            item_name = str(row.get('Particular', '')).strip()
+            if not item_name or len(item_name) < 2:
+                continue
+            
+            if 'total' in item_name.lower():
+                continue
+            
+            less = float(row.get('Less', 0) or 0)
+            sil_fine = float(row.get('Sil.Fine', 0) or 0)
+            total = float(row.get('Total', 0) or 0)
+            
+            if less > 0:
+                purchase_tunch = (sil_fine / less * 100)
+                labour_per_kg = (total / less)
+                
+                ledger_items.append({
+                    'item_name': item_name,
+                    'purchase_tunch': purchase_tunch,
+                    'labour_per_kg': labour_per_kg,
+                    'total_purchased_kg': less,
+                    'total_fine_kg': sil_fine,
+                    'total_labour': total
+                })
+        
+        if ledger_items:
+            await db.purchase_ledger.insert_many(ledger_items)
+        
+        return {
+            "success": True,
+            "count": len(ledger_items),
+            "message": f"Purchase ledger created with {len(ledger_items)} items"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error: {str(e)}")
 
 @api_router.get("/analytics/customer-profit")
 async def get_customer_profit(
