@@ -865,7 +865,20 @@ async def adjust_polythene(
         'adjusted_by': adjusted_by,
         'created_at': datetime.now(timezone.utc).isoformat(),
         'date': datetime.now(timezone.utc).date().isoformat()
-
+    }
+    
+    await db.polythene_adjustments.insert_one(adjustment)
+    
+    await db.activity_log.insert_one({
+        'user': adjusted_by,
+        'user_role': current_user['role'],
+        'action_type': 'polythene_adjustment',
+        'description': f'{operation.upper()} {poly_weight} kg polythene for {item_name}',
+        'details': {'item': item_name, 'weight': poly_weight, 'operation': operation},
+        'timestamp': datetime.now(timezone.utc).isoformat()
+    })
+    
+    return {'success': True, 'message': 'Polythene adjustment saved'}
 
 @api_router.post("/polythene/adjust-batch")
 async def adjust_polythene_batch(
