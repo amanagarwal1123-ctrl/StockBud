@@ -35,7 +35,7 @@ export default function Layout({ children }) {
 
   // Base navigation for all users
   const baseNavigation = [
-    { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['admin', 'manager'] },
+    { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['admin'] },
   ];
 
   // Executive-specific (ONLY Stock Entry)
@@ -50,8 +50,8 @@ export default function Layout({ children }) {
 
   // Manager-specific  
   const managerNavigation = [
-    { name: 'Approvals', href: '/approvals', icon: CheckCircle2, roles: ['manager', 'admin'] },
     { name: 'Physical vs Book', href: '/physical-vs-book', icon: Scale, roles: ['manager', 'admin'] },
+    { name: 'Approvals', href: '/approvals', icon: CheckCircle2, roles: ['manager', 'admin'] },
     { name: 'Notifications', href: '/notifications', icon: Receipt, roles: ['manager', 'admin'] },
   ];
 
@@ -233,7 +233,7 @@ export default function Layout({ children }) {
               </AlertDialogContent>
             </AlertDialog>
             
-            {/* Logout Button */}
+            {/* Logout Button - All users */}
             <Button 
               variant="outline" 
               size="sm" 
@@ -244,7 +244,9 @@ export default function Layout({ children }) {
               Logout
             </Button>
             
-            <AlertDialog>
+            {/* Reset - Admin only */}
+            {isAdmin && (
+              <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button 
                   variant="destructive" 
