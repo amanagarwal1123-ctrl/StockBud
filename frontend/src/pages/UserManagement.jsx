@@ -170,6 +170,7 @@ export default function UserManagement() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="executive">Stock Entry Executive</SelectItem>
+                      <SelectItem value="polythene_executive">Polythene Entry Executive</SelectItem>
                       <SelectItem value="manager">Manager</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>

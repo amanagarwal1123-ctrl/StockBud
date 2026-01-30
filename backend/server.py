@@ -537,7 +537,7 @@ async def create_user(
         raise HTTPException(status_code=400, detail="Username already exists")
     
     # Validate role
-    if request.role not in ['admin', 'manager', 'executive']:
+    if request.role not in ['admin', 'manager', 'executive', 'polythene_executive']:
         raise HTTPException(status_code=400, detail="Invalid role")
     
     # Create user
