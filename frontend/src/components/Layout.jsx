@@ -284,6 +284,7 @@ export default function Layout({ children }) {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+            )}
             
             <div className="mt-3 rounded-lg bg-gradient-to-r from-primary/10 via-secondary/10 to-accent/10 p-3 text-xs">
               <p className="font-medium text-foreground">StockBud v2.0</p>
