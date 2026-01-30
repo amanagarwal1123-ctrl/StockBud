@@ -34,6 +34,20 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 app = FastAPI()
+
+
+# Health check endpoint for Kubernetes
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for deployment"""
+    return {"status": "healthy", "service": "stockbud-backend"}
+
+@app.get("/api/health")
+async def api_health_check():
+    """Health check endpoint under /api prefix"""
+    return {"status": "healthy", "service": "stockbud-backend"}
+
+
 api_router = APIRouter(prefix="/api")
 
 # Models

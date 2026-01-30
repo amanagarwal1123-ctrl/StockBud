@@ -25,7 +25,7 @@ import Layout from './components/Layout';
 import { Toaster } from '@/components/ui/sonner';
 
 function ProtectedRoute({ children }) {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
   
   if (loading) {
     return (
@@ -35,7 +35,16 @@ function ProtectedRoute({ children }) {
     );
   }
   
-  return isAuthenticated ? children : <Navigate to="/login" replace />;
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  // Redirect polythene_executive to their dedicated page
+  if (user?.role === 'polythene_executive' && window.location.pathname === '/') {
+    return <Navigate to="/polythene-entry" replace />;
+  }
+  
+  return children;
 }
 
 function App() {
