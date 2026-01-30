@@ -1480,7 +1480,8 @@ async def get_customer_profit(
     
     query = {}
     if start_date and end_date:
-        query['date'] = {'$gte': start_date, '$lte': end_date}
+        end_date_with_time = end_date + ' 23:59:59'
+        query['date'] = {'$gte': start_date, '$lte': end_date_with_time}
     
     # Get all sales
     sales = await db.transactions.find(
@@ -1554,7 +1555,8 @@ async def get_supplier_profit(
     
     query = {}
     if start_date and end_date:
-        query['date'] = {'$gte': start_date, '$lte': end_date}
+        end_date_with_time = end_date + ' 23:59:59'
+        query['date'] = {'$gte': start_date, '$lte': end_date_with_time}
     
     # Get all purchases
     purchases = await db.transactions.find(
@@ -1776,7 +1778,8 @@ async def get_party_analysis(
     
     query = {}
     if start_date and end_date:
-        query['date'] = {'$gte': start_date, '$lte': end_date}
+        end_date_with_time = end_date + ' 23:59:59'
+        query['date'] = {'$gte': start_date, '$lte': end_date_with_time}
     
     transactions = await db.transactions.find(query, {"_id": 0}).to_list(10000)
     
