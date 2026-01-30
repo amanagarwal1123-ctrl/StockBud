@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Search, Plus, Minus, Save, Eye } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { Search, Plus, Minus, Save, Trash2, CheckCircle2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,7 +9,6 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { useAuth } from '../context/AuthContext';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -17,11 +17,13 @@ export default function PolytheneEntry() {
   const [searchTerm, setSearchTerm] = useState('');
   const [allItems, setAllItems] = useState([]);
   const [filteredItems, setFilteredItems] = useState([]);
-  const [selectedItem, setSelectedItem] = useState(null);
-  const [polyWeight, setPolyWeight] = useState('');
-  const [operation, setOperation] = useState('add'); // 'add' or 'subtract'
-  const [todayEntries, setTodayEntries] = useState([]);
-  const [showHistory, setShowHistory] = useState(false);
+  const [pendingEntries, setPendingEntries] = useState([]);
+  const [savedEntries, setSavedEntries] = useState([]);
+  const [currentEntry, setCurrentEntry] = useState({
+    item: null,
+    polyWeight: '',
+    operation: 'add'
+  });
   
   const { user } = useAuth();
 
@@ -53,49 +55,68 @@ export default function PolytheneEntry() {
   const fetchTodayEntries = async () => {
     try {
       const response = await axios.get(`${API}/polythene/today/${user.username}`);
-      setTodayEntries(response.data);
+      setSavedEntries(response.data);
     } catch (error) {
       console.error('Error fetching entries:', error);
     }
   };
 
   const selectItem = (item) => {
-    setSelectedItem(item);
+    setCurrentEntry({ ...currentEntry, item });
     setSearchTerm(item.item_name);
     setFilteredItems([]);
   };
 
-  const handleSave = async () => {
-    if (!selectedItem || !polyWeight) {
+  const addToPending = () => {
+    if (!currentEntry.item || !currentEntry.polyWeight) {
       toast.error('Please select item and enter weight');
       return;
     }
 
+    setPendingEntries([...pendingEntries, {
+      item_name: currentEntry.item.item_name,
+      stamp: currentEntry.item.stamp,
+      poly_weight: parseFloat(currentEntry.polyWeight),
+      operation: currentEntry.operation
+    }]);
+
+    // Reset for next entry
+    setCurrentEntry({ item: null, polyWeight: '', operation: 'add' });
+    setSearchTerm('');
+    toast.success('Entry added to list');
+  };
+
+  const removePending = (index) => {
+    setPendingEntries(pendingEntries.filter((_, i) => i !== index));
+  };
+
+  const saveAllEntries = async () => {
+    if (pendingEntries.length === 0) {
+      toast.error('No entries to save');
+      return;
+    }
+
     try {
-      await axios.post(`${API}/polythene/adjust`, {
-        item_name: selectedItem.item_name,
-        poly_weight: parseFloat(polyWeight),
-        operation: operation,
+      await axios.post(`${API}/polythene/adjust-batch`, {
+        entries: pendingEntries,
         adjusted_by: user.username
       });
 
-      toast.success(`Polythene ${operation === 'add' ? 'added' : 'removed'} successfully!`);
-      setSelectedItem(null);
-      setSearchTerm('');
-      setPolyWeight('');
+      toast.success(`${pendingEntries.length} polythene adjustments saved!`);
+      setPendingEntries([]);
       fetchTodayEntries();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to save');
+      toast.error(error.response?.data?.detail || 'Failed to save entries');
     }
   };
 
-  const deleteEntry = async (entryId) => {
+  const deleteSavedEntry = async (entryId) => {
     try {
       await axios.delete(`${API}/polythene/${entryId}`);
       toast.success('Entry deleted');
       fetchTodayEntries();
     } catch (error) {
-      toast.error('Failed to delete entry');
+      toast.error('Failed to delete');
     }
   };
 
@@ -106,14 +127,15 @@ export default function PolytheneEntry() {
           Polythene Adjustment
         </h1>
         <p className="text-lg text-muted-foreground mt-2">
-          Adjust gross weights due to polythene changes
+          Adjust gross weights due to polythene changes (net weight unchanged)
         </p>
       </div>
 
-      <Card>
+      {/* Entry Form */}
+      <Card className="border-primary/20">
         <CardHeader>
-          <CardTitle>Search & Select Item</CardTitle>
-          <CardDescription>Search for item to adjust polythene weight</CardDescription>
+          <CardTitle>Add Polythene Adjustment</CardTitle>
+          <CardDescription>Search item, enter weight, choose add/subtract</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="relative">
@@ -133,48 +155,52 @@ export default function PolytheneEntry() {
                     className="p-3 hover:bg-muted cursor-pointer border-b last:border-0"
                   >
                     <p className="font-medium">{item.item_name}</p>
-                    <p className="text-xs text-muted-foreground">{item.stamp} - Gross: {(item.gr_wt/1000).toFixed(3)} kg</p>
+                    <p className="text-xs text-muted-foreground">
+                      {item.stamp} - Current Gross: {(item.gr_wt/1000).toFixed(3)} kg
+                    </p>
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          {selectedItem && (
+          {currentEntry.item && (
             <div className="border-2 border-primary/20 rounded-lg p-4 space-y-4">
               <div>
-                <p className="font-semibold text-lg">{selectedItem.item_name}</p>
+                <p className="font-semibold text-lg">{currentEntry.item.item_name}</p>
                 <p className="text-sm text-muted-foreground">
-                  Current Gross: {(selectedItem.gr_wt/1000).toFixed(3)} kg | Net: {(selectedItem.net_wt/1000).toFixed(3)} kg
+                  {currentEntry.item.stamp} | Gross: {(currentEntry.item.gr_wt/1000).toFixed(3)} kg | Net: {(currentEntry.item.net_wt/1000).toFixed(3)} kg
                 </p>
               </div>
 
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
-                  <Label>Polythene Weight (kg)</Label>
+                  <Label>Polythene Weight (kg) *</Label>
                   <Input
                     type="number"
                     step="0.001"
                     placeholder="0.000"
-                    value={polyWeight}
-                    onChange={(e) => setPolyWeight(e.target.value)}
+                    value={currentEntry.polyWeight}
+                    onChange={(e) => setCurrentEntry({...currentEntry, polyWeight: e.target.value})}
                   />
                 </div>
                 <div>
-                  <Label>Operation</Label>
+                  <Label>Operation *</Label>
                   <div className="flex gap-2">
                     <Button
-                      variant={operation === 'add' ? 'default' : 'outline'}
-                      onClick={() => setOperation('add')}
-                      className="flex-1"
+                      type="button"
+                      variant={currentEntry.operation === 'add' ? 'default' : 'outline'}
+                      onClick={() => setCurrentEntry({...currentEntry, operation: 'add'})}
+                      className="flex-1 bg-green-600 hover:bg-green-700"
                     >
                       <Plus className="h-4 w-4 mr-1" />
                       Add
                     </Button>
                     <Button
-                      variant={operation === 'subtract' ? 'default' : 'outline'}
-                      onClick={() => setOperation('subtract')}
-                      className="flex-1"
+                      type="button"
+                      variant={currentEntry.operation === 'subtract' ? 'default' : 'outline'}
+                      onClick={() => setCurrentEntry({...currentEntry, operation: 'subtract'})}
+                      className="flex-1 bg-red-600 hover:bg-red-700"
                     >
                       <Minus className="h-4 w-4 mr-1" />
                       Subtract
@@ -183,34 +209,77 @@ export default function PolytheneEntry() {
                 </div>
               </div>
 
-              <Button onClick={handleSave} className="w-full">
-                <Save className="h-4 w-4 mr-2" />
-                Save Polythene Adjustment
+              <Button onClick={addToPending} className="w-full" variant="outline">
+                <Plus className="h-4 w-4 mr-2" />
+                Add to List (Add More Entries)
               </Button>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Today's Entries */}
+      {/* Pending Entries */}
+      {pendingEntries.length > 0 && (
+        <Card className="border-orange-500/20">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Pending Entries ({pendingEntries.length})</CardTitle>
+              <Button onClick={saveAllEntries} className="bg-primary">
+                <Save className="h-4 w-4 mr-2" />
+                Save All Entries
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Item Name</TableHead>
+                  <TableHead>Stamp</TableHead>
+                  <TableHead className="text-right">Polythene (kg)</TableHead>
+                  <TableHead>Operation</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pendingEntries.map((entry, idx) => (
+                  <TableRow key={idx}>
+                    <TableCell className="font-medium">{entry.item_name}</TableCell>
+                    <TableCell>{entry.stamp}</TableCell>
+                    <TableCell className="text-right font-mono">{entry.poly_weight.toFixed(3)}</TableCell>
+                    <TableCell>
+                      <Badge className={entry.operation === 'add' ? 'bg-green-600' : 'bg-red-600'}>
+                        {entry.operation === 'add' ? 'ADD' : 'SUBTRACT'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="ghost" size="sm" onClick={() => removePending(idx)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Today's Saved Entries */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Today's Polythene Adjustments</CardTitle>
-            <Button variant="outline" size="sm" onClick={fetchTodayEntries}>
-              <Eye className="h-4 w-4 mr-2" />
-              Refresh
-            </Button>
-          </div>
+          <CardTitle>Today's Saved Adjustments</CardTitle>
+          <CardDescription>All polythene adjustments made today</CardDescription>
         </CardHeader>
         <CardContent>
-          {todayEntries.length === 0 ? (
-            <p className="text-center py-8 text-muted-foreground">No adjustments made today</p>
+          {savedEntries.length === 0 ? (
+            <p className="text-center py-8 text-muted-foreground">No adjustments saved today</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Item Name</TableHead>
+                  <TableHead>Stamp</TableHead>
                   <TableHead className="text-right">Polythene (kg)</TableHead>
                   <TableHead>Operation</TableHead>
                   <TableHead>Time</TableHead>
@@ -218,19 +287,24 @@ export default function PolytheneEntry() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {todayEntries.map((entry, idx) => (
+                {savedEntries.map((entry, idx) => (
                   <TableRow key={idx}>
                     <TableCell className="font-medium">{entry.item_name}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{entry.stamp || 'N/A'}</Badge>
+                    </TableCell>
                     <TableCell className="text-right font-mono">{entry.poly_weight?.toFixed(3)}</TableCell>
                     <TableCell>
                       <Badge className={entry.operation === 'add' ? 'bg-green-600' : 'bg-red-600'}>
                         {entry.operation === 'add' ? 'ADD' : 'SUBTRACT'}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-sm">{new Date(entry.created_at).toLocaleTimeString()}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {new Date(entry.created_at).toLocaleTimeString()}
+                    </TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="sm" onClick={() => deleteEntry(entry.id)}>
-                        Delete
+                      <Button variant="ghost" size="sm" onClick={() => deleteSavedEntry(entry.id)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     </TableCell>
                   </TableRow>
