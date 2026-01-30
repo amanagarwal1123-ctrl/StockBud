@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Upload, Package, Users, TrendingUp, History, RotateCcw, Power, Tag, Scale, Link2, GitBranch, Receipt, LogOut, User, CheckCircle2 } from 'lucide-react';
+import { LayoutDashboard, Upload, Package, Users, TrendingUp, History, RotateCcw, Power, Tag, Scale, Link2, GitBranch, Receipt, LogOut, User, CheckCircle2, Activity, Box } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -43,6 +43,11 @@ export default function Layout({ children }) {
     { name: 'Stock Entry', href: '/executive-entry', icon: Package, roles: ['executive'] },
   ];
 
+  // Polythene Executive-specific
+  const polytheneNavigation = [
+    { name: 'Polythene Adjustment', href: '/polythene-entry', icon: Box, roles: ['polythene_executive'] },
+  ];
+
   // Manager-specific  
   const managerNavigation = [
     { name: 'Approvals', href: '/approvals', icon: CheckCircle2, roles: ['manager', 'admin'] },
@@ -62,10 +67,11 @@ export default function Layout({ children }) {
     { name: 'Profit Analysis', href: '/profit', icon: TrendingUp, roles: ['admin'] },
     { name: 'History', href: '/history', icon: History, roles: ['admin'] },
     { name: 'User Management', href: '/users', icon: User, roles: ['admin'] },
+    { name: 'Activity Log', href: '/activity-log', icon: Activity, roles: ['admin'] },
   ];
 
   // Combine and filter based on user role
-  const allNavigationItems = [...baseNavigation, ...executiveNavigation, ...managerNavigation, ...adminNavigation];
+  const allNavigationItems = [...baseNavigation, ...executiveNavigation, ...polytheneNavigation, ...managerNavigation, ...adminNavigation];
   const allNavigation = allNavigationItems.filter(item => 
     !user || item.roles.includes(user.role)
   );
