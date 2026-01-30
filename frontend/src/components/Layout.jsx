@@ -175,19 +175,22 @@ export default function Layout({ children }) {
               </div>
             )}
 
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="w-full justify-start text-xs"
-              onClick={handleUndo}
-              data-testid="undo-button"
-            >
-              <RotateCcw className="h-3.5 w-3.5 mr-2" />
-              Undo Upload
-            </Button>
+            {/* Admin-only Undo Upload */}
+            {isAdmin && (
+              <>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="w-full justify-start text-xs"
+                  onClick={handleUndo}
+                  data-testid="undo-button"
+                >
+                  <RotateCcw className="h-3.5 w-3.5 mr-2" />
+                  Undo Upload
+                </Button>
 
-            {/* Undo Dialog */}
-            <AlertDialog open={showUndoDialog} onOpenChange={setShowUndoDialog}>
+                {/* Undo Dialog */}
+                <AlertDialog open={showUndoDialog} onOpenChange={setShowUndoDialog}>
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Undo File Upload</AlertDialogTitle>
