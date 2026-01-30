@@ -88,10 +88,6 @@ export default function Login() {
             >
               {loading ? 'Signing in...' : 'Sign In'}
             </Button>
-
-            <p className="text-xs text-center text-muted-foreground mt-4">
-              Default admin credentials: admin / admin123
-            </p>
           </form>
         </CardContent>
       </Card>

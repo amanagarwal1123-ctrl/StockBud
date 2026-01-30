@@ -39,9 +39,15 @@ function ProtectedRoute({ children }) {
     return <Navigate to="/login" replace />;
   }
   
-  // Redirect polythene_executive to their dedicated page
-  if (user?.role === 'polythene_executive' && window.location.pathname === '/') {
-    return <Navigate to="/polythene-entry" replace />;
+  // Role-based redirects from root
+  if (window.location.pathname === '/') {
+    if (user?.role === 'polythene_executive') {
+      return <Navigate to="/polythene-entry" replace />;
+    } else if (user?.role === 'executive') {
+      return <Navigate to="/executive-entry" replace />;
+    } else if (user?.role === 'manager') {
+      return <Navigate to="/physical-vs-book" replace />;
+    }
   }
   
   return children;

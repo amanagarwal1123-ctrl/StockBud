@@ -923,23 +923,6 @@ async def adjust_polythene_batch(
     
     return {'success': True, 'message': f'{len(saved_entries)} polythene adjustments saved', 'count': len(saved_entries)}
 
-
-    }
-    
-    await db.polythene_adjustments.insert_one(adjustment)
-    
-    # Log activity for accountability
-    await db.activity_log.insert_one({
-        'user': adjusted_by,
-        'user_role': current_user['role'],
-        'action_type': 'polythene_adjustment',
-        'description': f'{operation.upper()} {poly_weight} kg polythene for {item_name}',
-        'details': {'item': item_name, 'weight': poly_weight, 'operation': operation},
-        'timestamp': datetime.now(timezone.utc).isoformat()
-    })
-    
-    return {'success': True, 'message': 'Polythene adjustment saved'}
-
 @api_router.get("/polythene/today/{username}")
 async def get_today_polythene_entries(username: str):
     """Get today's polythene entries by user"""
