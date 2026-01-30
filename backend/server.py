@@ -814,6 +814,83 @@ async def mark_notification_read(notification_id: str):
         {'id': notification_id},
         {'$set': {'read': True}}
     )
+
+
+# ==================== POLYTHENE EXECUTIVE ENDPOINTS ====================
+
+@api_router.post("/polythene/adjust")
+async def adjust_polythene(
+    item_name: str,
+    poly_weight: float,
+    operation: str,
+    adjusted_by: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Adjust polythene weight for an item (gross weight changes, net stays same)"""
+    
+    if current_user['role'] not in ['polythene_executive', 'admin']:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Save polythene adjustment
+    adjustment = {
+        'id': str(uuid.uuid4()),
+        'item_name': item_name,
+        'poly_weight': poly_weight,
+        'operation': operation,
+        'adjusted_by': adjusted_by,
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        'date': datetime.now(timezone.utc).date().isoformat()
+    }
+    
+    await db.polythene_adjustments.insert_one(adjustment)
+    
+    # Log activity for accountability
+    await db.activity_log.insert_one({
+        'user': adjusted_by,
+        'user_role': current_user['role'],
+        'action_type': 'polythene_adjustment',
+        'description': f'{operation.upper()} {poly_weight} kg polythene for {item_name}',
+        'details': {'item': item_name, 'weight': poly_weight, 'operation': operation},
+        'timestamp': datetime.now(timezone.utc).isoformat()
+    })
+    
+    return {'success': True, 'message': 'Polythene adjustment saved'}
+
+@api_router.get("/polythene/today/{username}")
+async def get_today_polythene_entries(username: str):
+    """Get today's polythene entries by user"""
+    today = datetime.now(timezone.utc).date().isoformat()
+    
+    entries = await db.polythene_adjustments.find(
+        {'adjusted_by': username, 'date': today},
+        {"_id": 0}
+    ).to_list(100)
+    
+    return entries
+
+@api_router.delete("/polythene/{entry_id}")
+async def delete_polythene_entry(entry_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete a polythene entry"""
+    result = await db.polythene_adjustments.delete_one({'id': entry_id})
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    
+    return {'success': True}
+
+# ==================== ADMIN ACCOUNTABILITY ====================
+
+@api_router.get("/activity-log")
+async def get_activity_log(current_user: dict = Depends(get_current_user)):
+    """Get complete activity log for admin accountability"""
+    
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    
+    activities = await db.activity_log.find({}, {"_id": 0}).sort('timestamp', -1).limit(200).to_list(200)
+    return activities
+
+
     return {'success': True}
 
 @api_router.get("/transactions")
