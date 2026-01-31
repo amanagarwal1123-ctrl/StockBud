@@ -735,14 +735,27 @@ async def update_stock_entry(
     
     return {'success': True, 'message': 'Entry updated'}
 
+@api_router.get("/manager/all-entries")
+async def get_all_entries(current_user: dict = Depends(get_current_user)):
+    """Get all stock entries for manager (pending, approved, rejected)"""
+    if current_user['role'] not in ['manager', 'admin']:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    entries = await db.stock_entries.find({}, {"_id": 0}).sort('entry_date', -1).to_list(200)
+    return entries
 
-        "success": True,
-        "count": len(transactions),
-        "replaced_count": deleted_count,
-        "batch_id": batch_id,
-        "message": message
-    }
-
+@api_router.delete("/executive/delete-entry/{stamp}/{username}")
+async def delete_executive_entry(stamp: str, username: str, current_user: dict = Depends(get_current_user)):
+    """Delete a stock entry"""
+    if current_user['username'] != username and current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Can only delete your own entries")
+    
+    result = await db.stock_entries.delete_one({'stamp': stamp, 'entered_by': username})
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    
+    return {'success': True, 'message': 'Entry deleted'}
 
 # ==================== EXECUTIVE ENDPOINTS ====================
 
@@ -781,6 +794,55 @@ async def save_executive_stock_entry(
     existing = await db.stock_entries.find_one({'stamp': stamp, 'entered_by': entered_by})
     if existing:
         entry_record['iteration'] = existing.get('iteration', 1) + 1
+
+
+@api_router.get("/manager/approval-details/{stamp}")
+async def get_approval_details(stamp: str, current_user: dict = Depends(get_current_user)):
+    """Get detailed approval data including book stock for comparison"""
+    
+    if current_user['role'] not in ['manager', 'admin']:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Get pending entry
+    entry = await db.stock_entries.find_one({'stamp': stamp, 'status': 'pending'}, {"_id": 0})
+    
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    
+    # Get book stock breakdown for this stamp
+    breakdown = await get_stamp_breakdown(stamp)
+    
+    # Get all stamp items from master
+    master_items = await db.master_items.find({'stamp': stamp}, {"_id": 0}).to_list(1000)
+    
+    # Calculate book gross for each item
+    book_items = {}
+    for item in master_items:
+        book_items[item['item_name']] = {
+            'book_gross': item.get('gr_wt', 0),
+            'book_net': item.get('net_wt', 0)
+        }
+    
+    # Merge with entered data
+    comparison = []
+    for entered in entry.get('entries', []):
+        item_name = entered['item_name']
+        book_data = book_items.get(item_name, {'book_gross': 0, 'book_net': 0})
+        
+        comparison.append({
+            'item_name': item_name,
+            'entered_gross': entered['gross_wt'],
+            'book_gross': book_data['book_gross'] / 1000,  # Convert to kg
+            'difference': (entered['gross_wt'] - book_data['book_gross'] / 1000)
+        })
+    
+    return {
+        'entry': entry,
+        'breakdown': breakdown,
+        'comparison': comparison
+    }
+
+
     
     # Update or insert
     await db.stock_entries.update_one(

@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
-import { Package, Save, CheckCircle2 } from 'lucide-react';
+import { Package, Save, CheckCircle2, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -19,11 +20,14 @@ export default function ExecutiveStockEntry() {
   const [stockData, setStockData] = useState({});
   const [loading, setLoading] = useState(false);
   const [stamps, setStamps] = useState([]);
+  const [myEntries, setMyEntries] = useState([]);
+  const [editingEntry, setEditingEntry] = useState(null);
 
   const { user } = useAuth();
 
   useEffect(() => {
     fetchStamps();
+    fetchMyEntries();
   }, []);
 
   const fetchStamps = async () => {
@@ -40,14 +44,22 @@ export default function ExecutiveStockEntry() {
     }
   };
 
+  const fetchMyEntries = async () => {
+    try {
+      const response = await axios.get(`${API}/executive/my-entries/${user.username}`);
+      setMyEntries(response.data);
+    } catch (error) {
+      console.error('Failed to fetch entries:', error);
+    }
+  };
+
   const loadStampItems = async (stamp) => {
     setLoading(true);
     try {
-      const response = await axios.get(`${API}/master-items?search=`);
+      const response = await axios.get(`${API}/master-items`);
       const items = response.data.filter(item => item.stamp === stamp);
       setStampItems(items);
       
-      // Initialize stock data (only gross weight)
       const initialData = {};
       items.forEach(item => {
         initialData[item.item_name] = { gross: '' };
@@ -61,18 +73,10 @@ export default function ExecutiveStockEntry() {
   };
 
   const handleStampChange = (stamp) => {
-    setSelectedStamp(stamp);
-    loadStampItems(stamp);
-  };
-
-  const handleWeightChange = (itemName, field, value) => {
-    setStockData(prev => ({
-      ...prev,
-      [itemName]: {
-        ...prev[itemName],
-        [field]: value
-      }
-    }));
+    if (!editingEntry) {
+      setSelectedStamp(stamp);
+      loadStampItems(stamp);
+    }
   };
 
   const handleSave = async () => {
@@ -89,16 +93,58 @@ export default function ExecutiveStockEntry() {
     }
 
     try {
-      await axios.post(`${API}/executive/stock-entry`, {
-        stamp: selectedStamp,
-        entries,
-        entered_by: user.username
-      });
+      if (editingEntry) {
+        await axios.put(`${API}/executive/update-entry/${selectedStamp}`, {
+          entries,
+          entered_by: user.username
+        });
+        toast.success('Entry updated and resubmitted!');
+      } else {
+        await axios.post(`${API}/executive/stock-entry`, {
+          stamp: selectedStamp,
+          entries,
+          entered_by: user.username
+        });
+        toast.success('Sent for approval!');
+      }
       
-      toast.success(`Stock entry saved for ${selectedStamp}!`);
       setStockData({});
+      setEditingEntry(null);
+      setSelectedStamp('');
+      setStampItems([]);
+      fetchMyEntries();
     } catch (error) {
       toast.error('Failed to save stock entry');
+    }
+  };
+
+  const editEntry = (entry) => {
+    setEditingEntry(entry);
+    setSelectedStamp(entry.stamp);
+    
+    axios.get(`${API}/master-items`).then(response => {
+      const items = response.data.filter(item => item.stamp === entry.stamp);
+      setStampItems(items);
+      
+      const data = {};
+      items.forEach(item => {
+        const existingEntry = entry.entries?.find(e => e.item_name === item.item_name);
+        data[item.item_name] = { gross: existingEntry?.gross_wt || '' };
+      });
+      setStockData(data);
+    });
+  };
+
+  const deleteEntry = async (stamp) => {
+    const confirmed = window.confirm(`Delete stock entry for ${stamp}?`);
+    if (!confirmed) return;
+
+    try {
+      await axios.delete(`${API}/executive/delete-entry/${stamp}/${user.username}`);
+      toast.success('Entry deleted');
+      fetchMyEntries();
+    } catch (error) {
+      toast.error('Failed to delete entry');
     }
   };
 
@@ -109,18 +155,58 @@ export default function ExecutiveStockEntry() {
           Stock Entry
         </h1>
         <p className="text-lg text-muted-foreground mt-2">
-          Enter physical stock for one stamp at a time
+          Enter physical stock for stamps
         </p>
       </div>
+
+      {/* My Entries */}
+      {myEntries.length > 0 && (
+        <Card className="border-primary/20">
+          <CardHeader>
+            <CardTitle>My Stock Entries</CardTitle>
+            <CardDescription>Previous submissions - Edit rejected entries</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {myEntries.map((entry, idx) => (
+                <div key={idx} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div>
+                    <p className="font-semibold">{entry.stamp}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(entry.entry_date).toLocaleString()} - {entry.entries?.length || 0} items
+                    </p>
+                    <Badge className={
+                      entry.status === 'approved' ? 'bg-green-600' : 
+                      entry.status === 'rejected' ? 'bg-red-600' : 'bg-orange-600'
+                    }>
+                      {entry.status.toUpperCase()}
+                    </Badge>
+                  </div>
+                  <div className="flex gap-2">
+                    {(entry.status === 'rejected' || entry.status === 'pending') && (
+                      <Button onClick={() => editEntry(entry)} size="sm">Edit</Button>
+                    )}
+                    {entry.status !== 'approved' && (
+                      <Button onClick={() => deleteEntry(entry.stamp)} size="sm" variant="destructive">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stamp Selector */}
       <Card className="border-primary/20">
         <CardHeader>
           <CardTitle>Select Stamp</CardTitle>
-          <CardDescription>Choose which warehouse location to count</CardDescription>
+          <CardDescription>Choose warehouse location to count</CardDescription>
         </CardHeader>
         <CardContent>
-          <Select value={selectedStamp} onValueChange={handleStampChange}>
+          <Select value={selectedStamp} onValueChange={handleStampChange} disabled={editingEntry !== null}>
             <SelectTrigger className="w-full md:w-64">
               <SelectValue placeholder="Choose stamp..." />
             </SelectTrigger>
@@ -130,6 +216,9 @@ export default function ExecutiveStockEntry() {
               ))}
             </SelectContent>
           </Select>
+          {editingEntry && (
+            <p className="text-xs text-orange-600 mt-2">✏️ Editing {selectedStamp} - Stamp locked</p>
+          )}
         </CardContent>
       </Card>
 
@@ -140,11 +229,11 @@ export default function ExecutiveStockEntry() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>{selectedStamp} - Stock Entry</CardTitle>
-                <CardDescription>{stampItems.length} items in this stamp</CardDescription>
+                <CardDescription>{stampItems.length} items</CardDescription>
               </div>
               <Button onClick={handleSave}>
                 <Save className="h-4 w-4 mr-2" />
-                Save Entry
+                {editingEntry ? 'Update Entry' : 'Save Entry'}
               </Button>
             </div>
           </CardHeader>
@@ -165,7 +254,7 @@ export default function ExecutiveStockEntry() {
                         step="0.001"
                         placeholder="0.000"
                         value={stockData[item.item_name]?.gross || ''}
-                        onChange={(e) => handleWeightChange(item.item_name, 'gross', e.target.value)}
+                        onChange={(e) => setStockData({...stockData, [item.item_name]: { gross: e.target.value }})}
                       />
                     </div>
                   </div>
@@ -179,8 +268,7 @@ export default function ExecutiveStockEntry() {
       <Alert className="border-blue-500/50 bg-blue-500/10">
         <CheckCircle2 className="h-5 w-5 text-blue-600" />
         <AlertDescription>
-          <strong>Stock Entry Instructions:</strong> Select a stamp, enter gross and net weights for items you've counted. 
-          The manager will verify and approve your entry.
+          <strong>Instructions:</strong> Select stamp, enter gross weights. Manager will review and approve.
         </AlertDescription>
       </Alert>
     </div>
