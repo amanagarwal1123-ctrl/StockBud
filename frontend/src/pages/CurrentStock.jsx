@@ -328,6 +328,42 @@ export default function CurrentStock() {
           </CardContent>
         </Card>
       )}
+
+      {/* Stock Summary at Bottom */}
+      <Card className="border-primary/20 shadow-sm bg-gradient-to-br from-primary/5 to-transparent">
+        <CardHeader>
+          <CardTitle>Current Stock Summary</CardTitle>
+          <CardDescription>Total inventory overview</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="text-center p-4 bg-muted/30 rounded-lg">
+              <p className="text-sm text-muted-foreground mb-2">Total Gross Weight</p>
+              <p className="font-mono font-bold text-2xl text-blue-600">
+                {(totalGrWt / 1000).toFixed(3)} kg
+              </p>
+            </div>
+            <div className="text-center p-4 bg-muted/30 rounded-lg">
+              <p className="text-sm text-muted-foreground mb-2">Total Net Weight</p>
+              <p className="font-mono font-bold text-2xl text-green-600">
+                {(totalNetWt / 1000).toFixed(3)} kg
+              </p>
+            </div>
+            <div className="text-center p-4 bg-muted/30 rounded-lg">
+              <p className="text-sm text-muted-foreground mb-2">Total Fine Silver</p>
+              <p className="font-mono font-bold text-2xl text-purple-600">
+                {(inventory.reduce((sum, item) => sum + item.fine, 0) / 1000).toFixed(3)} kg
+              </p>
+            </div>
+            <div className="text-center p-4 bg-muted/30 rounded-lg">
+              <p className="text-sm text-muted-foreground mb-2">Total Labour</p>
+              <p className="font-mono font-bold text-2xl text-orange-600">
+                {formatIndianCurrency(inventory.reduce((sum, item) => sum + (item.labor || 0), 0))}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -794,11 +794,44 @@ async def save_executive_stock_entry(
     existing = await db.stock_entries.find_one({'stamp': stamp, 'entered_by': entered_by})
     if existing:
         entry_record['iteration'] = existing.get('iteration', 1) + 1
-
+    
+    # CRITICAL: Save to database
+    await db.stock_entries.update_one(
+        {'stamp': stamp, 'entered_by': entered_by},
+        {'$set': entry_record},
+        upsert=True
+    )
+    
+    # Create notification for manager
+    await db.notifications.insert_one({
+        'type': 'stock_entry',
+        'message': f'{entered_by} submitted stock for {stamp}',
+        'severity': 'info',
+        'for_role': 'manager',
+        'stamp': stamp,
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        'read': False
+    })
+    
+    # Log to activity log for accountability
+    await db.activity_log.insert_one({
+        'user': entered_by,
+        'user_role': current_user['role'],
+        'action_type': 'stock_entry',
+        'description': f'Submitted stock for {stamp} ({len(entries)} items)',
+        'details': {
+            'stamp': stamp,
+            'items_count': len(entries),
+            'iteration': entry_record['iteration']
+        },
+        'timestamp': datetime.now(timezone.utc).isoformat()
+    })
+    
+    return {'success': True, 'message': 'Stock entry saved successfully'}
 
 @api_router.get("/manager/approval-details/{stamp}")
 async def get_approval_details(stamp: str, current_user: dict = Depends(get_current_user)):
-    """Get detailed approval data including book stock for comparison"""
+    """Get detailed approval data - ALL items in stamp, unentered = 0"""
     
     if current_user['role'] not in ['manager', 'admin']:
         raise HTTPException(status_code=403, detail="Access denied")
@@ -809,37 +842,58 @@ async def get_approval_details(stamp: str, current_user: dict = Depends(get_curr
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
     
-    # Get book stock breakdown for this stamp
-    breakdown = await get_stamp_breakdown(stamp)
-    
-    # Get all stamp items from master
+    # Get ALL items in this stamp from master
     master_items = await db.master_items.find({'stamp': stamp}, {"_id": 0}).to_list(1000)
     
-    # Calculate book gross for each item
-    book_items = {}
-    for item in master_items:
-        book_items[item['item_name']] = {
-            'book_gross': item.get('gr_wt', 0),
-            'book_net': item.get('net_wt', 0)
-        }
-    
-    # Merge with entered data
-    comparison = []
+    # Create map of entered weights
+    entered_map = {}
     for entered in entry.get('entries', []):
-        item_name = entered['item_name']
-        book_data = book_items.get(item_name, {'book_gross': 0, 'book_net': 0})
+        entered_map[entered['item_name']] = entered['gross_wt']
+    
+    # Get current inventory
+    inventory_response = await get_current_inventory()
+    all_inventory = inventory_response.get('inventory', []) + inventory_response.get('negative_items', [])
+    inventory_map = {item['item_name']: item for item in all_inventory}
+    
+    # Build comparison for ALL items in stamp
+    comparison = []
+    total_entered = 0
+    total_book = 0
+    
+    for master_item in master_items:
+        item_name = master_item['item_name']
+        
+        # Entered weight (0 if not entered)
+        entered_gross = entered_map.get(item_name, 0.0)
+        
+        # Book stock from inventory
+        inv_item = inventory_map.get(item_name)
+        if inv_item:
+            book_gross = inv_item.get('gr_wt', 0) / 1000  # Convert to kg
+        else:
+            book_gross = master_item.get('gr_wt', 0) / 1000
+        
+        difference = entered_gross - book_gross
         
         comparison.append({
             'item_name': item_name,
-            'entered_gross': entered['gross_wt'],
-            'book_gross': book_data['book_gross'] / 1000,  # Convert to kg
-            'difference': (entered['gross_wt'] - book_data['book_gross'] / 1000)
+            'entered_gross': entered_gross,
+            'book_gross': book_gross,
+            'difference': difference,
+            'was_entered': item_name in entered_map
         })
+        
+        total_entered += entered_gross
+        total_book += book_gross
     
     return {
         'entry': entry,
-        'breakdown': breakdown,
-        'comparison': comparison
+        'comparison': comparison,
+        'total_items': len(comparison),
+        'items_entered': len(entered_map),
+        'total_entered': round(total_entered, 3),
+        'total_book': round(total_book, 3),
+        'total_difference': round(total_entered - total_book, 3)
     }
 
 
@@ -884,7 +938,7 @@ async def approve_stamp(
     request: Dict,
     current_user: dict = Depends(get_current_user)
 ):
-    """Approve or reject a stamp's stock entry"""
+    """Approve or reject a stamp's stock entry (can reject approved stamps too)"""
     
     if current_user['role'] not in ['manager', 'admin']:
         raise HTTPException(status_code=403, detail="Only managers can approve")
@@ -893,14 +947,14 @@ async def approve_stamp(
     approve = request.get('approve')
     total_difference = request.get('total_difference', 0)
     
-    # Get the entry
-    entry = await db.stock_entries.find_one({'stamp': stamp, 'status': 'pending'})
+    # Get the entry (can be pending or approved)
+    entry = await db.stock_entries.find_one({'stamp': stamp, 'status': {'$in': ['pending', 'approved']}})
     
     iteration = entry.get('iteration', 1) if entry else 1
     
     # Update stock entry status
     await db.stock_entries.update_many(
-        {'stamp': stamp, 'status': 'pending'},
+        {'stamp': stamp, 'status': {'$in': ['pending', 'approved']}},
         {'$set': {
             'status': 'approved' if approve else 'rejected',
             'approved_by': current_user['username'],
@@ -908,7 +962,7 @@ async def approve_stamp(
         }}
     )
     
-    # If approved, lock the stamp
+    # If approving, lock the stamp. If rejecting, unlock it
     if approve:
         await db.stamp_approvals.update_one(
             {'stamp': stamp},
@@ -922,25 +976,55 @@ async def approve_stamp(
             }},
             upsert=True
         )
-        
-        # Notify admin with details
-        is_matching = abs(total_difference) <= 50
-        await db.notifications.insert_one({
-            'type': 'stamp_approval',
-            'message': f'{current_user["username"]} approved {stamp} - {"✓ MATCHING" if is_matching else "⚠️ NOT MATCHING"}',
-            'severity': 'success' if is_matching else 'warning',
-            'for_role': 'admin',
+    else:
+        # Rejecting - remove approval lock
+        await db.stamp_approvals.delete_one({'stamp': stamp})
+    
+    # Enhanced notification message
+    is_matching = abs(total_difference) <= 50
+    
+    if approve:
+        if is_matching:
+            notification_message = f'{current_user["username"]} approved {stamp} - ✓ MATCHING (Diff: {total_difference/1000:.3f}kg)'
+        else:
+            notification_message = f'{current_user["username"]} approved {stamp} - ⚠️ NOT MATCHING (Diff: {total_difference/1000:.3f}kg) - APPROVED DESPITE MISMATCH'
+    else:
+        notification_message = f'{current_user["username"]} rejected {stamp} (Diff: {total_difference/1000:.3f}kg) - Sent back to executive'
+    
+    await db.notifications.insert_one({
+        'type': 'stamp_approval',
+        'message': notification_message,
+        'severity': 'success' if (approve and is_matching) else 'warning',
+        'for_role': 'admin',
+        'stamp': stamp,
+        'details': {
+            'approved_by': current_user['username'],
+            'iterations': iteration,
+            'total_difference_kg': total_difference / 1000,
+            'is_matching': is_matching,
+            'entered_by': entry.get('entered_by') if entry else 'unknown',
+            'action': 'approved' if approve else 'rejected',
+            'approved_despite_mismatch': approve and not is_matching
+        },
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        'read': False
+    })
+    
+    # Log to activity log
+    await db.activity_log.insert_one({
+        'user': current_user['username'],
+        'user_role': current_user['role'],
+        'action_type': 'stamp_approval' if approve else 'stamp_rejection',
+        'description': f'{"Approved" if approve else "Rejected"} {stamp} by {entry.get("entered_by") if entry else "unknown"} - Diff: {total_difference/1000:.3f}kg',
+        'details': {
             'stamp': stamp,
-            'details': {
-                'approved_by': current_user['username'],
-                'iterations': iteration,
-                'total_difference_grams': total_difference,
-                'is_matching': is_matching,
-                'entered_by': entry.get('entered_by') if entry else 'unknown'
-            },
-            'created_at': datetime.now(timezone.utc).isoformat(),
-            'read': False
-        })
+            'action': 'approved' if approve else 'rejected',
+            'total_difference_kg': total_difference / 1000,
+            'iterations': iteration,
+            'entered_by': entry.get('entered_by') if entry else 'unknown'
+        },
+        'timestamp': datetime.now(timezone.utc).isoformat()
+    })
     
     return {'success': True, 'message': f'{stamp} {"approved" if approve else "rejected"}', 'iterations': iteration}
 
@@ -1193,8 +1277,28 @@ async def get_current_inventory():
     total_gr_wt = 0.0
     total_net_wt = 0.0
     
+    # Get purchase ledger for fine and labour calculation
+    ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(10000)
+    ledger_map = {item['item_name']: item for item in ledger}
+    
     for key, item in inventory_map.items():
         item['stamps_seen'] = list(item['stamps_seen']) if isinstance(item['stamps_seen'], set) else item['stamps_seen']
+        
+        # CALCULATE Fine and Labour from current net weight
+        item_name = item['item_name']
+        net_wt_grams = item['net_wt']
+        
+        # Get purchase rates from ledger
+        ledger_item = ledger_map.get(item_name)
+        if ledger_item:
+            tunch = ledger_item.get('purchase_tunch', 0)
+            labour_per_kg = ledger_item.get('labour_per_kg', 0)
+            
+            # Calculate Fine = Net Weight × Tunch / 100
+            item['fine'] = (net_wt_grams * tunch / 100)
+            
+            # Calculate Labour = (Net Weight in kg) × Labour per kg  
+            item['labor'] = (net_wt_grams / 1000) * labour_per_kg
         
         # Always include in total calculation (even negative items)
         total_gr_wt += item['gr_wt']

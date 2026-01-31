@@ -142,6 +142,15 @@ export default function ExecutiveStockEntry() {
     try {
       await axios.delete(`${API}/executive/delete-entry/${stamp}/${user.username}`);
       toast.success('Entry deleted');
+      
+      // Close edit form if currently editing this entry
+      if (editingEntry && editingEntry.stamp === stamp) {
+        setEditingEntry(null);
+        setSelectedStamp('');
+        setStampItems([]);
+        setStockData({});
+      }
+      
       fetchMyEntries();
     } catch (error) {
       toast.error('Failed to delete entry');
@@ -183,13 +192,13 @@ export default function ExecutiveStockEntry() {
                     </Badge>
                   </div>
                   <div className="flex gap-2">
-                    {(entry.status === 'rejected' || entry.status === 'pending') && (
-                      <Button onClick={() => editEntry(entry)} size="sm">Edit</Button>
-                    )}
-                    {entry.status !== 'approved' && (
-                      <Button onClick={() => deleteEntry(entry.stamp)} size="sm" variant="destructive">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                    {entry.status === 'rejected' && (
+                      <>
+                        <Button onClick={() => editEntry(entry)} size="sm">Edit</Button>
+                        <Button onClick={() => deleteEntry(entry.stamp)} size="sm" variant="destructive">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>
