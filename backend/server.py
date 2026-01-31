@@ -698,7 +698,12 @@ async def upload_transaction_file(
     )
     
     return {
-
+        "success": True,
+        "count": len(transactions),
+        "replaced_count": deleted_count,
+        "batch_id": batch_id,
+        "message": message
+    }
 
 @api_router.get("/executive/my-entries/{username}")
 async def get_executive_entries(username: str, current_user: dict = Depends(get_current_user)):
