@@ -698,6 +698,39 @@ async def upload_transaction_file(
     )
     
     return {
+
+
+@api_router.get("/executive/my-entries/{username}")
+async def get_executive_entries(username: str, current_user: dict = Depends(get_current_user)):
+    """Get all stock entries by an executive (for editing rejected ones)"""
+    entries = await db.stock_entries.find(
+        {'entered_by': username},
+        {"_id": 0}
+    ).sort('entry_date', -1).to_list(100)
+    return entries
+
+@api_router.put("/executive/update-entry/{stamp}")
+async def update_stock_entry(
+    stamp: str,
+    request: Dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update a rejected stock entry"""
+    entries = request.get('entries', [])
+    
+    # Update existing entry
+    await db.stock_entries.update_one(
+        {'stamp': stamp, 'entered_by': current_user['username'], 'status': {'$in': ['pending', 'rejected']}},
+        {'$set': {
+            'entries': entries,
+            'entry_date': datetime.now(timezone.utc).isoformat(),
+            'status': 'pending'
+        }}
+    )
+    
+    return {'success': True, 'message': 'Entry updated'}
+
+
         "success": True,
         "count": len(transactions),
         "replaced_count": deleted_count,
@@ -710,15 +743,17 @@ async def upload_transaction_file(
 
 @api_router.post("/executive/stock-entry")
 async def save_executive_stock_entry(
-    stamp: str,
-    entries: List[Dict],
-    entered_by: str,
+    request: Dict,
     current_user: dict = Depends(get_current_user)
 ):
     """Save stock entry from executive (for manager approval)"""
     
     if current_user['role'] not in ['executive', 'manager', 'admin']:
         raise HTTPException(status_code=403, detail="Access denied")
+    
+    stamp = request.get('stamp')
+    entries = request.get('entries', [])
+    entered_by = request.get('entered_by')
     
     # Check if stamp is already approved
     approval = await db.stamp_approvals.find_one({"stamp": stamp, "is_approved": True})
@@ -733,12 +768,18 @@ async def save_executive_stock_entry(
         'entry_date': datetime.now(timezone.utc).isoformat(),
         'status': 'pending',
         'approved_by': None,
-        'approved_at': None
+        'approved_at': None,
+        'iteration': 1  # Track how many times resubmitted
     }
+    
+    # Check if entry exists (resubmission)
+    existing = await db.stock_entries.find_one({'stamp': stamp, 'entered_by': entered_by})
+    if existing:
+        entry_record['iteration'] = existing.get('iteration', 1) + 1
     
     # Update or insert
     await db.stock_entries.update_one(
-        {'stamp': stamp, 'entered_by': entered_by, 'status': 'pending'},
+        {'stamp': stamp, 'entered_by': entered_by},
         {'$set': entry_record},
         upsert=True
     )
@@ -773,14 +814,22 @@ async def get_pending_approvals(current_user: dict = Depends(get_current_user)):
 
 @api_router.post("/manager/approve-stamp")
 async def approve_stamp(
-    stamp: str,
-    approve: bool,
+    request: Dict,
     current_user: dict = Depends(get_current_user)
 ):
     """Approve or reject a stamp's stock entry"""
     
     if current_user['role'] not in ['manager', 'admin']:
         raise HTTPException(status_code=403, detail="Only managers can approve")
+    
+    stamp = request.get('stamp')
+    approve = request.get('approve')
+    total_difference = request.get('total_difference', 0)
+    
+    # Get the entry
+    entry = await db.stock_entries.find_one({'stamp': stamp, 'status': 'pending'})
+    
+    iteration = entry.get('iteration', 1) if entry else 1
     
     # Update stock entry status
     await db.stock_entries.update_many(
@@ -800,26 +849,33 @@ async def approve_stamp(
                 'stamp': stamp,
                 'is_approved': True,
                 'approved_by': current_user['username'],
-                'approved_at': datetime.now(timezone.utc).isoformat()
+                'approved_at': datetime.now(timezone.utc).isoformat(),
+                'iterations': iteration,
+                'total_difference': total_difference
             }},
             upsert=True
         )
+        
+        # Notify admin with details
+        is_matching = abs(total_difference) <= 50
+        await db.notifications.insert_one({
+            'type': 'stamp_approval',
+            'message': f'{current_user["username"]} approved {stamp} - {"✓ MATCHING" if is_matching else "⚠️ NOT MATCHING"}',
+            'severity': 'success' if is_matching else 'warning',
+            'for_role': 'admin',
+            'stamp': stamp,
+            'details': {
+                'approved_by': current_user['username'],
+                'iterations': iteration,
+                'total_difference_grams': total_difference,
+                'is_matching': is_matching,
+                'entered_by': entry.get('entered_by') if entry else 'unknown'
+            },
+            'created_at': datetime.now(timezone.utc).isoformat(),
+            'read': False
+        })
     
-    # Create notification
-    await db.notifications.insert_one({
-        'type': 'stamp_approval',
-        'message': f'{current_user["username"]} {"approved" if approve else "rejected"} {stamp}',
-        'severity': 'success' if approve else 'warning',
-        'for_role': 'admin',
-        'stamp': stamp,
-        'created_at': datetime.now(timezone.utc).isoformat(),
-        'read': False
-    })
-    
-    # Save to history
-    await save_action('stamp_approval', f'{stamp} {"approved" if approve else "rejected"} by {current_user["username"]}', {'stamp': stamp})
-    
-    return {'success': True, 'message': f'{stamp} {"approved" if approve else "rejected"}'}
+    return {'success': True, 'message': f'{stamp} {"approved" if approve else "rejected"}', 'iterations': iteration}
 
 @api_router.get("/notifications/my")
 async def get_my_notifications(current_user: dict = Depends(get_current_user)):
@@ -882,14 +938,16 @@ async def adjust_polythene(
 
 @api_router.post("/polythene/adjust-batch")
 async def adjust_polythene_batch(
-    entries: List[Dict],
-    adjusted_by: str,
+    request: Dict,
     current_user: dict = Depends(get_current_user)
 ):
     """Save multiple polythene adjustments at once"""
     
     if current_user['role'] not in ['polythene_executive', 'admin']:
         raise HTTPException(status_code=403, detail="Access denied")
+    
+    entries = request.get('entries', [])
+    adjusted_by = request.get('adjusted_by')
     
     saved_entries = []
     
