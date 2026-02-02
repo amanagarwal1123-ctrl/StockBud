@@ -19,6 +19,7 @@ import ExecutiveStockEntry from './pages/ExecutiveStockEntry';
 import ManagerApprovals from './pages/ManagerApprovals';
 import Notifications from './pages/Notifications';
 import PolytheneEntry from './pages/PolytheneEntry';
+import PolytheneManagement from './pages/PolytheneManagement';
 import ActivityLog from './pages/ActivityLog';
 import Login from './pages/Login';
 import Layout from './components/Layout';
@@ -80,6 +81,7 @@ function App() {
                       <Route path="/users" element={<UserManagement />} />
                       <Route path="/executive-entry" element={<ExecutiveStockEntry />} />
                       <Route path="/polythene-entry" element={<PolytheneEntry />} />
+                      <Route path="/polythene-management" element={<PolytheneManagement />} />
                       <Route path="/approvals" element={<ManagerApprovals />} />
                       <Route path="/notifications" element={<Notifications />} />
                       <Route path="/activity-log" element={<ActivityLog />} />

@@ -929,6 +929,18 @@ async def get_pending_approvals(current_user: dict = Depends(get_current_user)):
     
     if current_user['role'] not in ['manager', 'admin']:
         raise HTTPException(status_code=403, detail="Access denied")
+
+
+@api_router.get("/polythene/all")
+async def get_all_polythene_adjustments(current_user: dict = Depends(get_current_user)):
+    """Get all polythene adjustments (admin only)"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    
+    entries = await db.polythene_adjustments.find({}, {"_id": 0}).sort('created_at', -1).to_list(100000)
+    return entries
+
+
     
     entries = await db.stock_entries.find({'status': 'pending'}, {"_id": 0}).to_list(100)
     return entries
@@ -958,7 +970,8 @@ async def approve_stamp(
         {'$set': {
             'status': 'approved' if approve else 'rejected',
             'approved_by': current_user['username'],
-            'approved_at': datetime.now(timezone.utc).isoformat()
+            'approved_at': datetime.now(timezone.utc).isoformat(),
+            'rejection_message': request.get('rejection_message', '') if not approve else None
         }}
     )
     
@@ -970,6 +983,89 @@ async def approve_stamp(
                 'stamp': stamp,
                 'is_approved': True,
                 'approved_by': current_user['username'],
+                'approved_at': datetime.now(timezone.utc).isoformat(),
+                'iterations': iteration,
+                'total_difference': total_difference
+            }},
+            upsert=True
+        )
+    else:
+        # Rejecting - remove approval lock
+        await db.stamp_approvals.delete_one({'stamp': stamp})
+    
+    # Notify admin
+    is_matching = abs(total_difference) <= 50
+    
+    if approve:
+        if is_matching:
+            notification_message = f'{current_user["username"]} approved {stamp} - ✓ MATCHING (Diff: {total_difference/1000:.3f}kg)'
+        else:
+            notification_message = f'{current_user["username"]} approved {stamp} - ⚠️ NOT MATCHING (Diff: {total_difference/1000:.3f}kg) - APPROVED DESPITE MISMATCH'
+    else:
+        notification_message = f'{current_user["username"]} rejected {stamp} (Diff: {total_difference/1000:.3f}kg) - Sent back to executive'
+    
+    await db.notifications.insert_one({
+        'type': 'stamp_approval',
+        'message': notification_message,
+        'severity': 'success' if (approve and is_matching) else 'warning',
+        'for_role': 'admin',
+        'stamp': stamp,
+        'details': {
+            'approved_by': current_user['username'],
+            'iterations': iteration,
+            'total_difference_kg': total_difference / 1000,
+            'is_matching': is_matching,
+            'entered_by': entry.get('entered_by') if entry else 'unknown',
+            'action': 'approved' if approve else 'rejected',
+            'approved_despite_mismatch': approve and not is_matching
+        },
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        'read': False
+    })
+    
+    await db.activity_log.insert_one({
+        'user': current_user['username'],
+        'user_role': current_user['role'],
+        'action_type': 'stamp_approval' if approve else 'stamp_rejection',
+        'description': f'{"Approved" if approve else "Rejected"} {stamp} by {entry.get("entered_by") if entry else "unknown"} - Diff: {total_difference/1000:.3f}kg',
+        'details': {
+            'stamp': stamp,
+            'action': 'approved' if approve else 'rejected',
+            'total_difference_kg': total_difference / 1000,
+            'iterations': iteration,
+            'entered_by': entry.get('entered_by') if entry else 'unknown'
+        },
+        'timestamp': datetime.now(timezone.utc).isoformat()
+    })
+    
+    return {'success': True, 'message': f'{stamp} {"approved" if approve else "rejected"}', 'iterations': iteration}
+
+@api_router.get("/stamp-verification/history")
+async def get_stamp_verification_history():
+    """Get verification history for all stamps"""
+    
+    # Get all stamps from master
+    all_stamps = await db.master_items.distinct('stamp')
+    
+    # Get latest verification for each
+    history = []
+    for stamp in sorted(all_stamps, key=lambda s: int(s.replace('Stamp ', '') or 0)):
+        latest = await db.stamp_verifications.find_one(
+            {'stamp': stamp},
+            {"_id": 0},
+            sort=[('verified_at', -1)]
+        )
+        
+        history.append({
+            'stamp': stamp,
+            'last_verified_date': latest.get('verification_date') if latest else None,
+            'verified_by': latest.get('verified_at') if latest else None,
+            'is_match': latest.get('is_match') if latest else None
+        })
+    
+    return history
+
+
                 'approved_at': datetime.now(timezone.utc).isoformat(),
                 'iterations': iteration,
                 'total_difference': total_difference
@@ -1134,13 +1230,13 @@ async def adjust_polythene_batch(
 
 @api_router.get("/polythene/today/{username}")
 async def get_today_polythene_entries(username: str):
-    """Get today's polythene entries by user"""
+    """Get ALL polythene entries by user for today (no limit)"""
     today = datetime.now(timezone.utc).date().isoformat()
     
     entries = await db.polythene_adjustments.find(
         {'adjusted_by': username, 'date': today},
         {"_id": 0}
-    ).to_list(100)
+    ).to_list(10000)  # Increased limit to 10000
     
     return entries
 
@@ -1281,6 +1377,17 @@ async def get_current_inventory():
     ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(10000)
     ledger_map = {item['item_name']: item for item in ledger}
     
+    # Get polythene adjustments to apply to gross weight
+    polythene_adjustments = await db.polythene_adjustments.find({}, {"_id": 0}).to_list(10000)
+    poly_map = defaultdict(float)
+    for adj in polythene_adjustments:
+        item_name = adj['item_name']
+        poly_weight = adj['poly_weight'] * 1000  # Convert kg to grams
+        if adj['operation'] == 'add':
+            poly_map[item_name] += poly_weight
+        else:
+            poly_map[item_name] -= poly_weight
+    
     for key, item in inventory_map.items():
         item['stamps_seen'] = list(item['stamps_seen']) if isinstance(item['stamps_seen'], set) else item['stamps_seen']
         
@@ -1299,6 +1406,10 @@ async def get_current_inventory():
             
             # Calculate Labour = (Net Weight in kg) × Labour per kg  
             item['labor'] = (net_wt_grams / 1000) * labour_per_kg
+        
+        # Apply polythene adjustments to gross weight
+        if item_name in poly_map:
+            item['gr_wt'] += poly_map[item_name]
         
         # Always include in total calculation (even negative items)
         total_gr_wt += item['gr_wt']

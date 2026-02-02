@@ -62,6 +62,7 @@ export default function Layout({ children }) {
     { name: 'Item Mapping', href: '/item-mapping', icon: Link2, roles: ['admin'] },
     { name: 'Manage Mappings', href: '/mapping-management', icon: GitBranch, roles: ['admin'] },
     { name: 'Purchase Rates', href: '/purchase-rates', icon: Receipt, roles: ['admin'] },
+    { name: 'Polythene Management', href: '/polythene-management', icon: Box, roles: ['admin'] },
     { name: 'Stamp Management', href: '/stamps', icon: Tag, roles: ['admin'] },
     { name: 'Party Analytics', href: '/party-analytics', icon: Users, roles: ['admin'] },
     { name: 'Profit Analysis', href: '/profit', icon: TrendingUp, roles: ['admin'] },
