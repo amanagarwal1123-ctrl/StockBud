@@ -18,10 +18,12 @@ export default function UploadManager() {
     opening_stock: null,
     physical_stock: null,
     master_stock: null,
+    branch_transfer: null,
   });
   const [dateRanges, setDateRanges] = useState({
     purchase: { start: '', end: '' },
     sale: { start: '', end: '' },
+    branch_transfer: { start: '', end: '' },
     physical_stock: { date: '' }
   });
 
@@ -29,7 +31,7 @@ export default function UploadManager() {
     if (!file) return;
 
     // Check if date range is required
-    if (fileType === 'purchase' || fileType === 'sale') {
+    if (fileType === 'purchase' || fileType === 'sale' || fileType === 'branch_transfer') {
       const range = dateRanges[fileType];
       if (!range.start || !range.end) {
         toast.error('Please select date range for this transaction file');
@@ -50,7 +52,8 @@ export default function UploadManager() {
       'purchase': 'Purchase Transactions',
       'sale': 'Sale Transactions',
       'physical_stock': 'Physical Stock (CURRENT_STOCK)',
-      'master_stock': 'Master Stock (STOCK 2026) - This will replace your opening stock!'
+      'master_stock': 'Master Stock (STOCK 2026) - This will replace your opening stock!',
+      'branch_transfer': 'Branch Issue/Receive (MMI Jewelly)'
     };
 
     let confirmMessage = `Are you sure you want to upload ${fileTypeNames[fileType]}?\n\nFile: ${file.name}\n\n`;
@@ -98,7 +101,7 @@ export default function UploadManager() {
   };
 
   const FileUploadCard = ({ type, title, description }) => {
-    const needsDateRange = type === 'purchase' || type === 'sale';
+    const needsDateRange = type === 'purchase' || type === 'sale' || type === 'branch_transfer';
     const needsDate = type === 'physical_stock';
 
     return (
@@ -215,15 +218,10 @@ export default function UploadManager() {
 
       <Tabs defaultValue="transactions" className="space-y-6">
         <TabsList>
-          <TabsTrigger value="master" data-testid="tab-master">
-            Master Stock
-          </TabsTrigger>
-          <TabsTrigger value="transactions" data-testid="tab-transactions">
-            Transactions
-          </TabsTrigger>
-          <TabsTrigger value="physical" data-testid="tab-physical">
-            Physical Stock
-          </TabsTrigger>
+          <TabsTrigger value="master">Master Stock</TabsTrigger>
+          <TabsTrigger value="transactions">Transactions</TabsTrigger>
+          <TabsTrigger value="branch">Branch Transfer</TabsTrigger>
+          <TabsTrigger value="physical">Physical Stock</TabsTrigger>
         </TabsList>
 
         <TabsContent value="master" className="space-y-6">
@@ -247,6 +245,16 @@ export default function UploadManager() {
               type="sale"
               title="Sale File"
               description="Upload your sale transactions Excel file"
+            />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="branch" className="space-y-6">
+          <div className="max-w-2xl">
+            <FileUploadCard
+              type="branch_transfer"
+              title="Branch Issue/Receive (MMI Jewelly)"
+              description="Upload branch transfer file. I=Issue (stock out), R=Receive (stock in). No profit calculation."
             />
           </div>
         </TabsContent>

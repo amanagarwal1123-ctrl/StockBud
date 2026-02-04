@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Package, TrendingUp, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Package, TrendingUp, AlertTriangle, CheckCircle2, Clock } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -9,10 +11,12 @@ const API = `${BACKEND_URL}/api`;
 
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
+  const [stampHistory, setStampHistory] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchStats();
+    fetchStampHistory();
   }, []);
 
   const fetchStats = async () => {
@@ -24,6 +28,22 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchStampHistory = async () => {
+    try {
+      const response = await axios.get(`${API}/stamp-verification/history`);
+      setStampHistory(response.data);
+    } catch (error) {
+      console.error('Error fetching stamp history:', error);
+    }
+  };
+
+  const getDaysSinceVerification = (lastDate) => {
+    if (!lastDate) return 999;
+    const last = new Date(lastDate);
+    const now = new Date();
+    return Math.floor((now - last) / (1000 * 60 * 60 * 24));
   };
 
   if (loading) {
@@ -121,6 +141,70 @@ export default function Dashboard() {
           </Card>
         ))}
       </div>
+
+      {/* Stamp Verification Status */}
+      <Card className="border-border/40 shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Clock className="h-5 w-5 text-primary" />
+            Stamp Verification Status
+          </CardTitle>
+          <CardDescription>Last physical verification for each stamp</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto max-h-96">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Stamp</TableHead>
+                  <TableHead>Last Verified</TableHead>
+                  <TableHead>Days Ago</TableHead>
+                  <TableHead className="text-right">Difference</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {stampHistory.map((stamp, idx) => {
+                  const daysAgo = getDaysSinceVerification(stamp.last_verified_date);
+                  const isOverdue = daysAgo > 15;
+                  
+                  return (
+                    <TableRow key={idx} className={isOverdue ? 'bg-red-50 border-l-4 border-red-500' : ''}>
+                      <TableCell className="font-bold">{stamp.stamp}</TableCell>
+                      <TableCell className="text-sm">
+                        {stamp.last_verified_date ? new Date(stamp.last_verified_date).toLocaleDateString() : 'Never'}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={isOverdue ? 'destructive' : 'outline'}>
+                          {daysAgo === 999 ? 'Never' : `${daysAgo} days`}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        {stamp.difference ? `${stamp.difference >= 0 ? '+' : ''}${stamp.difference.toFixed(3)} kg` : '-'}
+                      </TableCell>
+                      <TableCell>
+                        {isOverdue ? (
+                          <Badge className="bg-red-600">
+                            <AlertTriangle className="h-3 w-3 mr-1" />
+                            Needs Verification
+                          </Badge>
+                        ) : stamp.is_match ? (
+                          <Badge className="bg-green-600">
+                            <CheckCircle2 className="h-3 w-3 mr-1" />
+                            Matched
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline">Unknown</Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Quick Actions */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">

@@ -372,6 +372,50 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                     continue
             return records
             
+        elif file_type == 'branch_transfer':
+            records = []
+            for _, row in df.iterrows():
+                try:
+                    item_name = str(get_column_value(row, ['Lnarr'], ''))
+                    if not item_name or len(item_name) < 2:
+                        continue
+                    
+                    # Skip "opening balance" entry
+                    if 'opening' in item_name.lower() and 'balance' in item_name.lower():
+                        continue
+                    
+                    trans_type = str(get_column_value(row, ['Type'], '')).strip().upper()
+                    
+                    # Skip if no type or invalid
+                    if not trans_type or trans_type in ['', 'NAN']:
+                        continue
+                    
+                    record = {
+                        'type': 'receive' if trans_type == 'R' else 'issue',
+                        'date': str(get_column_value(row, ['Date'], '')),
+                        'refno': str(get_column_value(row, ['Refno'], '')),
+                        'party_name': 'MMI Jewelly Branch',
+                        'item_name': item_name,
+                        'stamp': '',
+                        'tag_no': '',
+                        'gr_wt': float(get_column_value(row, ['Gr.Wt.'], 0) or 0) * KG_TO_GRAMS,
+                        'net_wt': float(get_column_value(row, ['Net.Wt.'], 0) or 0) * KG_TO_GRAMS,
+                        'fine': 0.0,
+                        'labor': 0.0,
+                        'labor_on': None,
+                        'dia_wt': 0.0,
+                        'stn_wt': 0.0,
+                        'tunch': '0',
+                        'rate': 0.0,
+                        'total_pc': 0,
+                        'total_amount': 0.0,
+                        'taxable_value': 0.0
+                    }
+                    records.append(record)
+                except Exception as e:
+                    continue
+            return records
+            
         elif file_type == 'opening_stock':
             records = []
             for _, row in df.iterrows():
@@ -648,9 +692,9 @@ async def upload_transaction_file(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ):
-    """Upload purchase or sale Excel file - REPLACES transactions in specified date range"""
-    if file_type not in ['purchase', 'sale']:
-        raise HTTPException(status_code=400, detail="file_type must be 'purchase' or 'sale'")
+    """Upload purchase, sale, or branch_transfer Excel file"""
+    if file_type not in ['purchase', 'sale', 'branch_transfer']:
+        raise HTTPException(status_code=400, detail="file_type must be 'purchase', 'sale', or 'branch_transfer'")
     
     content = await file.read()
     records = parse_excel_file(content, file_type)
@@ -929,7 +973,9 @@ async def get_pending_approvals(current_user: dict = Depends(get_current_user)):
     
     if current_user['role'] not in ['manager', 'admin']:
         raise HTTPException(status_code=403, detail="Access denied")
-
+    
+    entries = await db.stock_entries.find({'status': 'pending'}, {"_id": 0}).to_list(100)
+    return entries
 
 @api_router.get("/polythene/all")
 async def get_all_polythene_adjustments(current_user: dict = Depends(get_current_user)):
@@ -1002,7 +1048,10 @@ async def approve_stamp(
         else:
             notification_message = f'{current_user["username"]} approved {stamp} - ⚠️ NOT MATCHING (Diff: {total_difference/1000:.3f}kg) - APPROVED DESPITE MISMATCH'
     else:
-        notification_message = f'{current_user["username"]} rejected {stamp} (Diff: {total_difference/1000:.3f}kg) - Sent back to executive'
+        rejection_msg = request.get('rejection_message', '')
+        notification_message = f'{current_user["username"]} rejected {stamp} (Diff: {total_difference/1000:.3f}kg)'
+        if rejection_msg:
+            notification_message += f' - Message: "{rejection_msg}"'
     
     await db.notifications.insert_one({
         'type': 'stamp_approval',
@@ -1017,7 +1066,8 @@ async def approve_stamp(
             'is_matching': is_matching,
             'entered_by': entry.get('entered_by') if entry else 'unknown',
             'action': 'approved' if approve else 'rejected',
-            'approved_despite_mismatch': approve and not is_matching
+            'approved_despite_mismatch': approve and not is_matching,
+            'rejection_message': request.get('rejection_message') if not approve else None
         },
         'created_at': datetime.now(timezone.utc).isoformat(),
         'read': False
@@ -1064,65 +1114,6 @@ async def get_stamp_verification_history():
         })
     
     return history
-
-
-                'approved_at': datetime.now(timezone.utc).isoformat(),
-                'iterations': iteration,
-                'total_difference': total_difference
-            }},
-            upsert=True
-        )
-    else:
-        # Rejecting - remove approval lock
-        await db.stamp_approvals.delete_one({'stamp': stamp})
-    
-    # Enhanced notification message
-    is_matching = abs(total_difference) <= 50
-    
-    if approve:
-        if is_matching:
-            notification_message = f'{current_user["username"]} approved {stamp} - ✓ MATCHING (Diff: {total_difference/1000:.3f}kg)'
-        else:
-            notification_message = f'{current_user["username"]} approved {stamp} - ⚠️ NOT MATCHING (Diff: {total_difference/1000:.3f}kg) - APPROVED DESPITE MISMATCH'
-    else:
-        notification_message = f'{current_user["username"]} rejected {stamp} (Diff: {total_difference/1000:.3f}kg) - Sent back to executive'
-    
-    await db.notifications.insert_one({
-        'type': 'stamp_approval',
-        'message': notification_message,
-        'severity': 'success' if (approve and is_matching) else 'warning',
-        'for_role': 'admin',
-        'stamp': stamp,
-        'details': {
-            'approved_by': current_user['username'],
-            'iterations': iteration,
-            'total_difference_kg': total_difference / 1000,
-            'is_matching': is_matching,
-            'entered_by': entry.get('entered_by') if entry else 'unknown',
-            'action': 'approved' if approve else 'rejected',
-            'approved_despite_mismatch': approve and not is_matching
-        },
-        'created_at': datetime.now(timezone.utc).isoformat(),
-        'read': False
-    })
-    
-    # Log to activity log
-    await db.activity_log.insert_one({
-        'user': current_user['username'],
-        'user_role': current_user['role'],
-        'action_type': 'stamp_approval' if approve else 'stamp_rejection',
-        'description': f'{"Approved" if approve else "Rejected"} {stamp} by {entry.get("entered_by") if entry else "unknown"} - Diff: {total_difference/1000:.3f}kg',
-        'details': {
-            'stamp': stamp,
-            'action': 'approved' if approve else 'rejected',
-            'total_difference_kg': total_difference / 1000,
-            'iterations': iteration,
-            'entered_by': entry.get('entered_by') if entry else 'unknown'
-        },
-        'timestamp': datetime.now(timezone.utc).isoformat()
-    })
-    
-    return {'success': True, 'message': f'{stamp} {"approved" if approve else "rejected"}', 'iterations': iteration}
 
 @api_router.get("/notifications/my")
 async def get_my_notifications(current_user: dict = Depends(get_current_user)):
@@ -1261,6 +1252,46 @@ async def get_activity_log(current_user: dict = Depends(get_current_user)):
     
     activities = await db.activity_log.find({}, {"_id": 0}).sort('timestamp', -1).limit(200).to_list(200)
     return activities
+
+
+
+
+@api_router.post("/mappings/create-new-item")
+async def create_new_item_from_unmapped(
+    transaction_name: str,
+    stamp: str = "Unassigned"
+):
+    """Create a completely new item from unmapped transaction name"""
+    
+    # Add to master_items as new item
+    new_item = {
+        'item_name': transaction_name,
+        'stamp': stamp,
+        'gr_wt': 0.0,
+        'net_wt': 0.0,
+        'is_master': True
+    }
+    
+    await db.master_items.insert_one(new_item)
+    
+    # Also add to opening_stock with 0 quantity
+    new_stock = {
+        'item_name': transaction_name,
+        'stamp': stamp,
+        'unit': 'kg',
+        'pc': 0,
+        'gr_wt': 0.0,
+        'net_wt': 0.0,
+        'fine': 0.0,
+        'labor_wt': 0.0,
+        'labor_rs': 0.0,
+        'rate': 0.0,
+        'total': 0.0
+    }
+    
+    await db.opening_stock.insert_one(new_stock)
+    
+    return {'success': True, 'message': f'New item "{transaction_name}" created with stamp: {stamp}'}
 
 
     return {'success': True}

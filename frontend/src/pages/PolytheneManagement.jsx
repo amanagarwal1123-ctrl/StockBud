@@ -17,9 +17,11 @@ const API = `${BACKEND_URL}/api`;
 
 export default function PolytheneManagement() {
   const [entries, setEntries] = useState([]);
+  const [allItems, setAllItems] = useState([]);
   const [users, setUsers] = useState([]);
   const [filterUser, setFilterUser] = useState('all');
   const [filterItem, setFilterItem] = useState('');
+  const [filteredSuggestions, setFilteredSuggestions] = useState([]);
   const [loading, setLoading] = useState(true);
   
   const { isAdmin } = useAuth();
@@ -28,8 +30,29 @@ export default function PolytheneManagement() {
     if (isAdmin) {
       fetchAllEntries();
       fetchUsers();
+      fetchAllItems();
     }
   }, [isAdmin]);
+
+  useEffect(() => {
+    if (filterItem.length > 1) {
+      const suggestions = allItems.filter(item =>
+        item.item_name.toLowerCase().includes(filterItem.toLowerCase())
+      ).slice(0, 10);
+      setFilteredSuggestions(suggestions);
+    } else {
+      setFilteredSuggestions([]);
+    }
+  }, [filterItem, allItems]);
+
+  const fetchAllItems = async () => {
+    try {
+      const response = await axios.get(`${API}/inventory/current`);
+      setAllItems(response.data.inventory);
+    } catch (error) {
+      console.error('Failed to fetch items:', error);
+    }
+  };
 
   const fetchAllEntries = async () => {
     try {
@@ -136,11 +159,29 @@ export default function PolytheneManagement() {
             </div>
             <div>
               <Label className="text-sm mb-2">Filter by Item Name</Label>
-              <Input
-                placeholder="Search item name..."
-                value={filterItem}
-                onChange={(e) => setFilterItem(e.target.value)}
-              />
+              <div className="relative">
+                <Input
+                  placeholder="Search item name..."
+                  value={filterItem}
+                  onChange={(e) => setFilterItem(e.target.value)}
+                />
+                {filteredSuggestions.length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-background border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {filteredSuggestions.map((item, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => {
+                          setFilterItem(item.item_name);
+                          setFilteredSuggestions([]);
+                        }}
+                        className="p-2 hover:bg-muted cursor-pointer text-sm"
+                      >
+                        {item.item_name} <span className="text-xs text-muted-foreground">({item.stamp})</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </CardContent>

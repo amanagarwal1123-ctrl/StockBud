@@ -179,14 +179,21 @@ export default function ExecutiveStockEntry() {
             <div className="space-y-2">
               {myEntries.map((entry, idx) => (
                 <div key={idx} className="flex items-center justify-between p-3 border rounded-lg">
-                  <div>
+                  <div className="flex-1">
                     <p className="font-semibold">{entry.stamp}</p>
                     <p className="text-xs text-muted-foreground">
                       {new Date(entry.entry_date).toLocaleString()} - {entry.entries?.length || 0} items
                     </p>
+                    {entry.rejection_message && (
+                      <Alert className="mt-2 border-red-500/50 bg-red-50">
+                        <AlertDescription className="text-sm">
+                          <strong>Manager says:</strong> {entry.rejection_message}
+                        </AlertDescription>
+                      </Alert>
+                    )}
                     <Badge className={
-                      entry.status === 'approved' ? 'bg-green-600' : 
-                      entry.status === 'rejected' ? 'bg-red-600' : 'bg-orange-600'
+                      entry.status === 'approved' ? 'bg-green-600 mt-2' : 
+                      entry.status === 'rejected' ? 'bg-red-600 mt-2' : 'bg-orange-600 mt-2'
                     }>
                       {entry.status.toUpperCase()}
                     </Badge>

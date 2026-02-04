@@ -111,6 +111,28 @@ export default function ItemMapping() {
     }
   };
 
+  const handleCreateNewItem = async (transactionName) => {
+    const confirmed = window.confirm(`Create "${transactionName}" as a new standalone item?\\n\\nYou can assign a stamp to it later in Stamp Management.`);
+    if (!confirmed) return;
+
+    try {
+      await axios.post(`${API}/mappings/create-new-item`, null, {
+        params: { transaction_name: transactionName, stamp: 'Unassigned' }
+      });
+      
+      toast.success(`New item "${transactionName}" created!`);
+      
+      // Remove from unmapped list
+      setUnmappedItems(prev => prev.filter(item => item !== transactionName));
+      
+      // Refresh master items
+      const response = await axios.get(`${API}/master-items`);
+      setAllMasterItems(response.data);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to create new item');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -223,7 +245,15 @@ export default function ItemMapping() {
                       size="sm"
                     >
                       <Check className="h-4 w-4 mr-1" />
-                      Save Mapping
+                      Map to Existing
+                    </Button>
+                    
+                    <Button
+                      onClick={() => handleCreateNewItem(item)}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Create as New Item
                     </Button>
                     
                     {!showingAll && (
