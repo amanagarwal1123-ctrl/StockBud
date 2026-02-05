@@ -312,7 +312,7 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                     
                     # Store type as-is; weights are already positive/negative in Excel
                     record = {
-                        'date': str(get_column_value(row, ['Date', 'date'], '')),
+                        'date': normalize_date(get_column_value(row, ['Date', 'date'], '')),
                         'type': 'purchase' if trans_type in ['P', 'PURCHASE'] else 'purchase_return',
                         'refno': str(get_column_value(row, ['Refno', 'refno', 'Ref No'], '')),
                         'party_name': str(get_column_value(row, ['Party Name', 'party name', 'Party'], '')),
