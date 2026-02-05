@@ -445,8 +445,8 @@ class CriticalFixesTester:
         
         success, response, details = self.make_request(
             'POST',
-            'stamp-management/assign-stamp',
-            params={'item_name': test_item_name, 'stamp': new_stamp},
+            f'item/{test_item_name}/assign-stamp',
+            params={'stamp': new_stamp},
             expected_status=200
         )
         
