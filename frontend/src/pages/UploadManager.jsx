@@ -280,22 +280,29 @@ export default function UploadManager() {
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
           <div>
-            <p className="font-semibold mb-2">Purchase File Columns:</p>
-            <p className="text-muted-foreground">
-              Date, Type, Refno, Party Name, Item Name, Stamp, Tag.No., Gr.Wt., Net.Wt., Fine Sil., Lbr. Wt/Rs, Dia.Wt., Stn.Wt., Total Pc
-            </p>
+            <p className="font-semibold mb-2">Master Stock (STOCK 2026):</p>
+            <p className="text-muted-foreground">Item Name, Stamp, Gross weight, Net Weight</p>
           </div>
+          
           <div>
-            <p className="font-semibold mb-2">Sale File Columns:</p>
-            <p className="text-muted-foreground">
-              Item Name (or Particular), Gr.Wt., Less (Net Weight), Fine Sil., Fine Total (Labor), Dia.Wt., Stn.Wt., Pc
-            </p>
+            <p className="font-semibold mb-2">Branch Transfer (Issue/Receive):</p>
+            <p className="text-muted-foreground">Date, Type (I/R), Lnarr (item name), Gr.Wt., Net.Wt.</p>
+            <p className="text-xs text-orange-600 mt-1">Skip OPENING BALANCE and Totals rows</p>
           </div>
+
           <div>
-            <p className="font-semibold mb-2">Physical Inventory Columns:</p>
-            <p className="text-muted-foreground">
-              Item Name, Stamp, Gross Weight (or Gr.Wt.), Poly Weight, Net Weight (or Net.Wt.)
-            </p>
+            <p className="font-semibold mb-2">Purchase File:</p>
+            <p className="text-muted-foreground">Date, Type, Party Name, Item Name, Gr.Wt., Net.Wt., Tunch, Total</p>
+          </div>
+
+          <div>
+            <p className="font-semibold mb-2">Sale File:</p>
+            <p className="text-muted-foreground">Date, Type, Party Name, Item Name, Gr.Wt., Gold Std. (Net), Tunch, Total</p>
+          </div>
+
+          <div>
+            <p className="font-semibold mb-2">Physical Stock:</p>
+            <p className="text-muted-foreground">Item Name, Stamp, Gross Weight, Net Weight</p>
           </div>
         </CardContent>
       </Card>

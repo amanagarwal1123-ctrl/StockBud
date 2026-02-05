@@ -247,7 +247,7 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
         header_row_idx = None
         for idx, row in df.iterrows():
             row_str = ' '.join(str(val).lower() for val in row if pd.notna(val))
-            if 'item name' in row_str or 'particular' in row_str or 'party name' in row_str:
+            if 'item name' in row_str or 'particular' in row_str or 'party name' in row_str or 'lnarr' in row_str:
                 header_row_idx = idx
                 break
         
@@ -380,8 +380,15 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                     if not item_name or len(item_name) < 2:
                         continue
                     
-                    # Skip "opening balance" entry
+                    # Skip "opening balance" and "totals" entries
                     if 'opening' in item_name.lower() and 'balance' in item_name.lower():
+                        continue
+                    if 'total' in item_name.lower():
+                        continue
+                    
+                    # Skip if item name is ONLY 1-2 digits (totals row like "26", "27")
+                    # But allow items like "84-18", "84-35" which are valid item names
+                    if item_name.isdigit() and len(item_name) <= 2:
                         continue
                     
                     trans_type = str(get_column_value(row, ['Type'], '')).strip().upper()
@@ -979,11 +986,22 @@ async def get_pending_approvals(current_user: dict = Depends(get_current_user)):
 
 @api_router.get("/polythene/all")
 async def get_all_polythene_adjustments(current_user: dict = Depends(get_current_user)):
-    """Get all polythene adjustments (admin only)"""
+    """Get ALL polythene adjustments from all time (admin only)"""
     if current_user['role'] != 'admin':
         raise HTTPException(status_code=403, detail="Admin only")
     
     entries = await db.polythene_adjustments.find({}, {"_id": 0}).sort('created_at', -1).to_list(100000)
+    return entries
+
+@api_router.get("/polythene/item/{item_name}")
+async def get_item_polythene_history(item_name: str):
+    """Get all polythene adjustments for a specific item"""
+    
+    entries = await db.polythene_adjustments.find(
+        {'item_name': item_name},
+        {"_id": 0}
+    ).sort('created_at', -1).to_list(1000)
+    
     return entries
 
 
@@ -1622,7 +1640,7 @@ async def compare_physical_with_book():
 async def get_recent_uploads():
     """Get last 5 file uploads for undo selection"""
     actions = await db.action_history.find(
-        {"action_type": {"$in": ["upload_purchase", "upload_sale"]}},
+        {"action_type": {"$in": ["upload_purchase", "upload_sale", "upload_branch_transfer"]}},
         {"_id": 0}
     ).sort("timestamp", -1).limit(5).to_list(5)
     

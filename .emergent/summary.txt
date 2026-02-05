@@ -2,201 +2,233 @@
 The user wants to build a software named StockBud to calculate and manage their silver wholesale inventory.
 
 PRODUCT REQUIREMENTS:
-1.  **Core Function:** Calculate book inventory by processing sales and purchase Excel files and compare it against a physical inventory file.
-2.  **File Processing:**
-    *   Ingest  and  files daily/monthly.
-    *   Ingest an  file () which contains a Totals row with the definitive starting net weight.
-    *   The final calculated stock should match the total from a  file.
-3.  **Inventory Management:**
-    *   Display inventory categorized by stamp (item super-category).
-    *   Allow users to assign/change stamps for items, especially for those without one. A dedicated Stamp Management page is required.
-    *   Handle item name discrepancies and negative stock balances, with a workflow for user-guided resolution.
-4.  **Analytics & Insights:**
-    *   Identify slow-moving, fast-moving, and dead items based on user-defined sales benchmarks.
-    *   Analyze customer and supplier performance (top performers, profitability) based on net weight, fine silver weight, and labor.
-    *   Calculate profit based on the difference in  (purity) and labor () between purchases and sales.
-5.  **UI/UX:**
-    *   Rebrand the app to StockBud with a minimal, Google-inspired color theme.
-    *   All weights should be displayed in kilograms (kg).
-    *   Items in lists should be clickable, leading to a detailed item page showing its stats and history.
-6.  **Additional Features:**
-    *   An undo/redo feature for the last action.
-    *   A password-protected (CLOSE) button to reset all application data.
-    *   A new tab/feature to upload a physical stock file to perform a side-by-side match with the calculated book stock, with intelligent suggestions for resolving mismatches.
+1.  **Core Function:** Calculate book inventory by processing sales, purchase, and branch transfer Excel files, comparing it against a physical inventory file.
+2.  **File Processing & Master Data:**
+    *   Ingest , , and  files. The system must handle re-uploads for a given date range by replacing old data.
+    *   Use  as the master reference file. This file's quantities are the definitive opening stock and its item-stamp associations are the single source of truth.
+    *   Use  to create a Purchase Ledger that provides a cost basis (tunch, labour/kg) for profit calculations.
+3.  **Inventory & Stamp Management:**
+    *   Display inventory categorized by stamp (item super-category/warehouse location).
+    *   Allow Admins to assign/change stamps for items. When a stamp is changed, it must be reflected globally.
+    *   Implement an Item Mapping feature to resolve transaction item names (which can have variations) to the definitive master item names from . Unmapped items should be flagged for user resolution, with an option to create a new master item.
+4.  **Multi-User System & Roles (Phase 2):**
+    *   **Admin:** Full access. Manages users, views all reports, sees all activity and notifications.
+    *   **Manager:** Approves/rejects physical stock entries submitted by executives. Can view stamp-wise stock comparisons and differences. Cannot see full dashboard totals.
+    *   **Stock Entry Executive (SEE):** Enters physical stock counts for a specific stamp (gross weight only). Can view and edit their own rejected entries. Cannot see dashboard or other sensitive data.
+    *   **Polythene Entry Executive (PEE):** Adds/subtracts polythene weight from items to adjust gross weight. Cannot see sensitive data.
+5.  **Analytics & Accountability:**
+    *   Calculate profit in two parts: Silver Profit (from tunch difference) and Labour Profit (from labour/kg difference).
+    *   Provide Party Analytics (top customers/suppliers) and Profit Analysis, filterable by date.
+    *   Implement an Activity Log to track all significant user actions (uploads, approvals, edits) for accountability.
+    *   Implement a notification system for admins and managers.
+6.  **UI/UX:**
+    *   A Physical vs. Book page for stamp-wise verification (quick gross weight check) and detailed item-wise comparison (via file upload).
+    *   Date pickers for all relevant analytics and upload pages.
+    *   CSV export functionality for all data tables.
+    *   Indian currency formatting (Lakh/Crore) for all monetary values.
+    *   An Undo Last Upload feature that allows reversing a specific file upload.
 
 **User's preferred language**: English
 
 **what currently exists?**
-A full-stack application (FastAPI backend, React frontend) named StockBud has been developed. The backend includes API endpoints for uploading sales, purchases, and opening stock files, along with endpoints for various analytics (profit, party, movement). The frontend consists of a multi-page interface with a dashboard and pages for stock viewing, analytics, and file uploads. The backend's Excel parser has been specifically adapted to read a Totals row from the opening stock file, which was a critical requirement. A placeholder UI for Stamp Management has also been created.
+A comprehensive full-stack application, StockBud, has been built with a FastAPI backend and React frontend. The system's core logic is centered around a master item list derived from  and a purchase cost ledger from . It features a sophisticated, role-based multi-user system with four distinct roles (Admin, Manager, Stock Entry Executive, Polythene Entry Executive), each with its own dedicated UI and permissions. Key features include date-range based file uploads, item name mapping, detailed profit and party analytics, CSV exports, a multi-step manager approval workflow for physical stock verification, and activity logging for accountability. The backend has numerous endpoints to support these features, though the  file has become a large monolith.
 
 **Last working item**:
-*   **Last item agent was working:** Updating the Party Analytics feature. The backend function  in  was modified to calculate and return  and  in addition to labor costs, as requested by the user. The next step was to update the frontend page to display this new data.
-*   **Status:** IN PROGRESS
-*   **Agent Testing Done:** N
-*   **Which testing method agent to use?** both
-*   **User Testing Done:** N
+- **Last item agent was working:** Debugging why the calculated book value for item  is incorrect. The user reported a final weight of **271.444 kg**, but the agent's calculation resulted in **275.537 kg**. The agent identified two likely causes:
+    1.  The sales total for the item in the database (18.114 kg) does not match the user's expected sales total (19.851 kg).
+    2.  Polythene weight adjustments for this item are not being applied because the item name used in the Polythene Entry page () does not exactly match the master item name ().
+- **Status:** IN PROGRESS
+- **Agent Testing Done:** N
+- **Which testing method agent to use?** backend testing agent
+- **User Testing Done:** Y (User found the bug)
 
 **All Pending/In progress Issue list**:
-*   **Issue 1:** Inventory Calculation Mismatch on Dashboard (P0)
-*   **Issue 2:** Undo/Redo Feature Not Implemented (P1)
-*   **Issue 3:** Password-Protected Reset Not Implemented (P2)
-*   **Issue 4:** Workflow for Negative Stock and Item Name Discrepancies (P3)
-*   **Issue 5:** Physical Stock Matching Feature Not Implemented (P4)
+- **Issue 1:** Inventory Calculation Mismatch for  (P0)
+- **Issue 2:** Stamp Change Propagation (P1)
+- **Issue 3:** Polythene Entry Item Name Matching (P2)
+- **Issue 4:** Password-Protected Reset (P3)
 
 **Issues Detail:**
-*   **Issue 1:**
-    *   **Description:** The total net weight displayed on the Current Stock page is incorrect. The agent identified a bug in the  endpoint where the opening stock total is being double-counted with the sum of individual transactions, leading to a wildly inaccurate final number (e.g., 10,511 kg instead of the expected ~8,349 kg).
-    *   **Attempted fixes:** A previous attempt to modify the  function in  was unsuccessful.
-    *   **Next debug checklist:**
-        1.  Modify the  function in .
-        2.  The logic should be: start with the  value as the base. Then, iterate through purchase and sale transactions, adding or subtracting their  respectively.
-        3.  Do not add the  item from the  again at the end of the calculation.
-        4.  Test the fix by calling the  endpoint and verifying the .
-    *   **Why fix this issue and what will be achieved with the fix?** This is the application's core function. Fixing it will provide the accurate inventory count the user needs.
-    *   **Status:** IN PROGRESS
-    *   **Is recurring issue?** Y
-    *   **Should Test frontend/backend/both after fix?** Backend
-    *   **Blocked on other issue:** None
+- **Issue 1:**
+    - **Description:** The final calculated gross weight for item  is incorrect (275.537 kg vs. user's expected 271.444 kg).
+    - **Attempted fixes:** The agent has traced the calculation and identified discrepancies in the sales total and missing polythene adjustments.
+    - **Next debug checklist:**
+        1.  Verify why the sales transaction sum in the database for  is 18.114 kg instead of 19.851 kg. Check if some sale returns or other transactions are being missed or miscalculated.
+        2.  Fix the polythene adjustment logic (see Issue 3).
+        3.  Re-run the detailed calculation trace for the item after fixing the underlying issues.
+    - **Why fix this issue and what will be achieved with the fix?** This is a critical data integrity bug. Fixing it ensures the application's core stock calculation is reliable.
+    - **Status:** IN PROGRESS
+    - **Is recurring issue?** Y
+    - **Should Test frontend/backend/both after fix?** Backend
+    - **Blocked on other issue:** Issue 3
 
-*   **Issue 2:**
-    *   **Description:** User requested an undo/redo feature for the last action.
-    *   **Next debug checklist:** Plan and implement a state management or action history pattern to track and revert the last database operation (e.g., file upload).
-    *   **Why fix this issue and what will be achieved with the fix?** It provides a safety net for the user, improving usability.
-    *   **Status:** NOT STARTED
-    *   **Is recurring issue?** N
-    *   **Should Test frontend/backend/both after fix?** Both
+- **Issue 2:**
+    - **Description:** When an item's stamp is changed (e.g., via Stamp Management), the change does not propagate correctly to all parts of the application, particularly the Stock Entry Executive's view, where it might still appear under the old stamp.
+    - **Attempted fixes:** None. This was recently reported by the user.
+    - **Next debug checklist:**
+        1.  Review the  endpoint and any related frontend logic used by the Stock Entry page.
+        2.  Ensure that it queries the  collection for the most up-to-date stamp information, rather than relying on potentially stale data in transaction documents.
+        3.  Implement a fix and test the workflow: change a stamp in Stamp Management, then log in as an SEE and verify the item appears under the new stamp.
+    - **Why fix this issue and what will be achieved with the fix?** This is crucial for maintaining a single source of truth for item locations, which is a core requirement.
+    - **Status:** NOT STARTED
+    - **Is recurring issue?** N
+    - **Should Test frontend/backend/both after fix?** Both
 
-*   **Issue 3:**
-    *   **Description:** User requested a password-protected button to clear all application data.
-    *   **Next debug checklist:** Add a button to the UI. Create a new backend endpoint that requires a specific password in the request body to trigger the  operation.
-    *   **Why fix this issue and what will be achieved with the fix?** Allows the user to easily restart their inventory process without developer intervention.
-    *   **Status:** NOT STARTED
-    *   **Is recurring issue?** N
-    *   **Should Test frontend/backend/both after fix?** Both
+- **Issue 3:**
+    - **Description:** Polythene weight adjustments are not being applied if the item name selected in the Polythene Entry UI doesn't perfectly match the master item name. The system needs a more robust matching logic, similar to the Item Mapping feature.
+    - **Attempted fixes:** None. The agent just discovered this while debugging Issue 1.
+    - **Next debug checklist:**
+        1.  Modify the polythene adjustment endpoints and logic to use the  collection.
+        2.  When a polythene adjustment is saved for an item name, it should first resolve that name to its master item name before applying the weight change to the master item's record.
+    - **Why fix this issue and what will be achieved with the fix?** Fixes a critical bug preventing a core feature (polythene adjustment) from working correctly and will help resolve the calculation discrepancy in Issue 1.
+    - **Status:** NOT STARTED
+    - **Is recurring issue?** N
+    - **Should Test frontend/backend/both after fix?** Backend
 
-*   **Issue 4:**
-    *   **Description:** The system currently lists items with negative stock but lacks a workflow for users to resolve them (e.g., merging an item sold under a different name into the correct stock item).
-    *   **Next debug checklist:** Design a UI on the  or a new Resolution page where users can see negative stock items and select another item from the inventory to merge them into. Create a backend endpoint to perform this merge operation.
-    *   **Why fix this issue and what will be achieved with the fix?** This is a critical feature for maintaining data integrity and accurate stock counts.
-    *   **Status:** NOT STARTED
-    *   **Is recurring issue?** N
-    *   **Should Test frontend/backend/both after fix?** Both
-
-*   **Issue 5:**
-    *   **Description:** User requested a feature to upload a physical stock file and have the system compare it to the book stock, providing intelligent suggestions for mismatches.
-    *   **Next debug checklist:** Add a Physical Stock upload tab to . Create a new parser and API endpoint to process this file. Create a new page to display the comparison, highlighting matching items, discrepancies, and items only present in one list.
-    *   **Why fix this issue and what will be achieved with the fix?** This is a primary purpose of the application—to automate the reconciliation of book vs. physical inventory.
-    *   **Status:** NOT STARTED
-    *   **Is recurring issue?** N
-    *   **Should Test frontend/backend/both after fix?** Both
+- **Issue 4:**
+    - **Description:** The user requested a password-protected button to clear all application data, which has not been implemented yet.
+    - **Attempted fixes:** None.
+    - **Next debug checklist:**
+        1.  The UI for this exists in the  component's  but is commented out or not fully wired.
+        2.  Create a secure backend endpoint  that accepts a password.
+        3.  The endpoint should truncate all relevant collections (, , , etc.), except for the  collection.
+    - **Why fix this issue and what will be achieved with the fix?** Provides the admin with a powerful tool to restart the inventory cycle without needing developer intervention.
+    - **Status:** NOT STARTED
+    - **Is recurring issue?** N
+    - **Should Test frontend/backend/both after fix?** Both
 
 **In progress Task List**:
-*   **Task 1:** Update Party Analytics Frontend (P0)
-
-**Task Detail:**
-*   **Task 1:**
-    *   **Where to resume:** Edit the frontend file .
-    *   **What will be achieved with this?** The Party Analytics page will display , , and  for each customer/supplier, as per the user's request, instead of just a single monetary value. The UI should be updated to show a table or cards with these new data points.
-    *   **Status:** IN PROGRESS
-    *   **Should Test frontend/backend/both after fix?** Frontend
-    *   **Blocked on something:** None
+- None. All current work is classified as bug fixing.
 
 **Upcoming and Future Tasks**
 *   **Upcoming Tasks:**
-    *   (P0) Finalize Stamp Management page: Implement backend endpoints for  to fetch items and update their stamps in the database.
+    *   (P0) Finalize and test the complete multi-user workflow, including the Manager Approval lifecycle (approve/reject, notifications, history) and Executive workflow (history, editing rejected entries).
+    *   (P1) Add a Create New Item option to the Item Mapping page for transaction items that don't match any existing master item.
+    *   (P2) Complete the Polythene Management page for Admins to show a filterable list of all adjustments made by all PEEs.
 *   **Future Tasks:**
-    *   (P1) Enhance item merging/resolution with AI-based suggestions for likely matches.
+    *   (P0) Enhance the Item Mapping feature with more intelligent, similarity-based suggestions for likely matches.
 
 **Completed work in this session**
-- **Initial App Scaffolding:** Built the base FastAPI + React application.
-- **StockBud Rebranding:** Changed the app name and applied a Google-inspired color theme.
-- **Advanced Data Handling:**
-  - Implemented parsers for multiple complex Excel formats.
-  - Correctly implemented -based profit calculation logic.
-- **Critical Excel Parsing Fix:**
-  - Discovered and implemented logic to read the definitive stock total from the Totals row in the opening stock file, which was a major breakthrough in getting the calculations closer to the user's expected values.
-- **New Pages & Features:** Created UI pages for Party Analytics, Profit Analysis, Item Details, and a placeholder for Stamp Management.
-- **Party Analytics Backend Update:** The  function in  was updated to return detailed silver weight data.
-
-**Earlier issues found/mentioned but not fixed**
-- All known issues have been captured in the All Pending/In progress Issue list.
+- **Core Logic & Data Integrity:**
+    - Fixed inventory calculations to correctly handle sales, purchases, and their returns (negative values).
+    - Established  as the master data source, replacing previous opening stock logic.
+    - Implemented a Purchase Ledger system from  to provide a cost basis for profit calculations, fixing an issue where profit was showing as zero.
+    - Corrected numerous Excel parsing bugs, especially around ignoring Totals rows and handling varied column names (, , ).
+    - Fixed a critical date-filtering bug that caused multi-day reports to only show data for the first day.
+- **Feature Development & UI/UX:**
+    - Implemented a full multi-user system (Phase 2) with four roles (Admin, Manager, SEE, PEE), complete with JWT authentication, login page, and role-specific navigation and UIs.
+    - Created an Item Mapping page for resolving transaction item names to master names.
+    - Built a Physical vs. Book page with both a Quick Stamp Verification feature and tabs for detailed item-wise comparison.
+    - Developed a complete Manager Approval workflow, allowing managers to view, approve, or reject stock entries with messages.
+    - Added date-range selectors and pagination to all analytics pages.
+    - Added a robust, file-based Undo Last Upload feature.
+    - Added an Activity Log and a notification system for accountability.
+    - Implemented a Branch Issue/Receive upload feature for stock transfers.
+    - Added Indian Lakh/Crore number formatting for all currency values.
+- **Bug Fixes & Stability:**
+    - Resolved dozens of backend  and  crashes in .
+    - Fixed numerous frontend bugs, including missing component imports and incorrect state management.
+    - Added a  endpoint to satisfy deployment health checks.
+    - Used the  to diagnose and fix several persistent backend errors.
 
 **Known issue recurrence from previous fork**
-- N/A
+- The agent repeatedly introduced  and  in  after making edits, often by inserting code in the wrong place or leaving functions incomplete. This led to frequent backend crashes and required multiple attempts to fix. The monolith structure of  exacerbates this problem.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-- **Backend:** FastAPI, Pandas for Excel parsing, Motor for asynchronous MongoDB access.
-- **Frontend:** React, TailwindCSS, Recharts for charts, Axios for API calls.
-- **Data Convention:** Weights are stored in **grams** in the database. Excel files in **KG** are multiplied by 1000 on import. Frontend display divides by 1000 to show KG.
+- **Backend:** FastAPI, Pandas, Motor (async MongoDB), JWT for authentication (Passlib, python-jose, bcrypt).
+- **Frontend:** React, TailwindCSS, shadcn/ui, Recharts, Axios, React Context for auth.
+- **Architecture:** Monolithic backend, role-based access control (RBAC) implemented in both backend (route dependencies) and frontend (UI rendering).
 
 **key DB schema**
-*   ** collection:** Stores all records from uploaded files.
-    *   Fields: ,  ('opening_stock', 'purchase', 'sale'), Mon Jan 26 11:28:24 UTC 2026, , ,  (grams),  (grams),  (grams), , .
-    *   A special document with  stores the initial total from the Excel file's Totals row.
+- ****: Stores all sale, purchase, and branch transfer records. Includes  for undo functionality.
+- ****: The single source of truth for all items, their definitive names, and their official stamps. Derived from .
+- ****: Stores mappings from transaction item names to  names.
+- ****: Stores the authoritative purchase tunch and labour/kg for each item, used for profit calculations.
+- ****: Stores user credentials, including hashed passwords and roles.
+- ****: Stores physical stock counts submitted by Stock Entry Executives, including status (pending, approved, rejected).
+- ****: Records all gross weight adjustments made by Polythene Entry Executives.
+- ****: A log of major system events (e.g., file uploads) for the undo feature.
+- ****: Stores notifications for managers and admins.
+- ****: A historical log of all stamp verification events (approvals/rejections).
 
 **changes in tech stack**
-- None.
+- Added JWT-based authentication stack to the backend (, ).
 
 **All files of reference**
-*   : Contains all backend logic. Critically, the  and  functions are located here.
-*   : Displays the main inventory total, which is currently bugged.
-*   : The frontend page that needs to be updated.
-*   : A placeholder page that needs backend implementation.
+- : The monolithic backend containing all API logic. Very large and prone to syntax errors upon editing.
+- : Contains the main application routing, including protected routes for different user roles.
+- : Renders the main UI shell and role-based navigation sidebar.
+- : Complex page for the manager's approval workflow.
+- : Page for the stock entry executive's primary task.
+- : Page for the polythene entry executive's primary task.
+- : Manages user state and login/logout logic globally.
+- : A document created to remind the agent of the non-standard nature of the user's Excel files.
 
 **Areas that need refactoring**:
--  has grown into a monolith (600+ lines) and should be split into modules for better maintainability (e.g., , , ).
-- The Excel parsing functions are brittle and rely on hardcoded column names and logic derived from trial-and-error. They could be made more configurable or robust.
+- ****: Urgently needs to be broken down into smaller, manageable modules (e.g., , , , ). Its current size (2000+ lines) is the primary source of instability and repeated bugs.
+- **Frontend Pages**: Many pages (, , etc.) contain large amounts of logic and state management that could be extracted into custom hooks or smaller components for better readability and reuse.
 
 **key api endpoints**
-*   : Endpoints for uploading , , .
-*   : **(BUGGY)** Returns the calculated book inventory.
-*   : Returns party analytics data.
-*   : Returns details for a single item.
-*   : Clears the database.
+- : Login endpoint to get JWT token.
+- : Get current user details.
+- : Admin endpoints for user CRUD.
+- : Get current book stock. **(Contains calculation for  bug)**.
+- : Handles all file uploads (purchase, sale, etc.) with date-range replacement.
+- : Endpoints for managing item name mappings.
+- : Endpoints for Stock Entry Executive actions.
+- : Endpoints for Manager approval workflow.
+- : Endpoints for Polythene Entry Executive actions.
+- : Endpoint for admin to view all user activities.
+- : Health check endpoint for deployment.
 
 **Critical Info for New Agent**
-*   **Highest Priority:** Fix the inventory calculation bug in the  function in . The current logic double-counts the opening stock. This is blocking all accurate reporting.
-*   **Excel Parsing is Complex:** The user's Excel files are non-standard. The key to the opening stock calculation is reading the **Totals** row at the bottom of the file, not summing the individual item rows. This logic is in  and must be preserved.
-*   **Weight Unit Convention:** Always adhere to the KG -> grams (on import) and grams -> KG (on display) conversion. All database values are in grams.
-*   **Complete the Party Analytics UI:** The immediate next step is to update  to display the new silver weight data provided by the backend.
-*   The user has repeatedly asked for Stamp Management and Physical Stock Matching. These features are very important to them and should be prioritized after the critical bug fixes.
+- **Login First**: The application now has mandatory authentication. Use the credentials provided below.
+- **Backend Fragility**: Be extremely careful when editing . It is a massive monolith and is the source of 90% of the bugs in this session. A small syntax or indentation error will crash the entire backend. It is highly recommended to break this file up as a first refactoring step.
+- **Data Source of Truth**: The inventory logic is now complex and hierarchical:
+    1.   (from ) is the absolute truth for item names and stamps.
+    2.   resolves messy transaction names to master names.
+    3.   is the truth for cost basis in profit calculations.
+- **User Role Logic**: The UI and API access are strictly controlled by user roles (, , , ). When implementing changes, always consider the impact on all four roles.
+- **Don't Trust Transaction Data**: Data within transaction files (like stamps) is secondary. The  stamp is always the authority. Profit calculations should use the , not costs from individual purchase transactions.
 
 **documents and test reports created in this job**
-*   
-*   
+- 
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **User (11 messages ago):** Complains about incorrect net weight and asks for the pure silver weight label to be removed.
-2.  **User (10 messages ago):** Suggests the agent might be summing the totals row in the Excel file by mistake.
-3.  **Agent (9 messages ago):** Confirms the user is correct and finds the Totals row with the exact expected value.
-4.  **Agent (8 messages ago):** Updates the parser to use the Totals row directly.
-5.  **Agent (7 messages ago):** Restarts the backend and confirms the opening stock is now parsed correctly.
-6.  **Agent (6 messages ago):** Uploads all files and verifies the full calculation, noting it's close but not exact.
-7.  **Agent (5 messages ago):** Identifies the frontend display is still wrong and that the inventory endpoint is adding items incorrectly.
-8.  **User (4 messages ago):** Asks how to assign stamps and clarifies that net weight is in the Gold Std. column for some files.
-9.  **Agent (3 messages ago):** Acknowledges the request, creates a placeholder  page, and provides a final summary.
-10. **User (Latest):** Provides new screenshots, reiterating two key issues: **1.** Party analytics must show silver weights, not just labor/money. **2.** The Current Stock value displayed is still wrong and should be exactly 8,239.753 kg.
+1.  **User (10 messages ago):** Requests that numeric-only item names are treated as valid. (Completed)
+2.  **User (9 messages ago):** Specifies that the admin's Polythene Management page should show all historical entries, not just the current day's. (Completed)
+3.  **User (8 messages ago):** Identifies a bug in the calculation for  and provides the correct inputs and expected output. (In Progress)
+4.  **User (7 messages ago):** States that the Ultra thinking feature is disabled and reiterates the calculation bug. (Agent is debugging)
+5.  **User (6 messages ago):** Points out that polythene adjustments aren't being applied due to item name mismatches. (In Progress)
+6.  **User (5 messages ago):** Specifies that when an item's stamp is changed, it should reflect everywhere and not appear under the old stamp. (Pending)
+7.  **User (4 messages ago):** Reports that the  cannot log in. (Fixed)
+8.  **User (3 messages ago):** Complains that both  and  cannot log in and demands a permanent fix. (Fixed)
+9.  **User (2 messages ago):** Reports login is still failing and that UI elements need to be role-specific (e.g., only admin sees Undo/Reset, default pages per role). (Fixed)
+10. **User (Latest):** Reports multiple bugs across different roles:  save error,  save error, and  view showing incorrect data. (Partially addressed)
 
 **Project Health Check:**
-*   **Broken:** The primary function of displaying the current stock total is broken due to a backend calculation bug.
-*   **Mocked:** The Stamp Management page is a UI placeholder with no functionality.
+- **Broken:** The inventory calculation for specific items like  is incorrect. The global propagation of stamp changes is not working. The polythene adjustment feature has a name-matching bug.
+- **Mocked:** None. Features are implemented but may be buggy.
 
 **3rd Party Integrations**
-- None.
+- **JWT Authentication:** ,  for backend user authentication.
 
 **Testing status**
-*   **Testing agent used after significant changes:** YES
-*   **Troubleshoot agent used after agent stuck in loop:** NO
-*   **Test files created:** None
-*   **Known regressions:** The main inventory calculation is a regression.
+- **Testing agent used after significant changes:** YES, a backend testing agent was used midway, which found and fixed a critical bug. However, many features and fixes were added afterward without comprehensive re-testing.
+- **Troubleshoot agent used after agent stuck in loop:** YES, multiple times to fix persistent backend syntax errors.
+- **Test files created:** None.
+- **Known regressions:** The core inventory calculation, while globally fixed, has specific item-level bugs that have emerged.
 
 **Credentials to test flow:**
-- N/A
+- **Admin:**  / 
+- **Manager:**  / 
+- **Stock Entry Executive:**  / 
+- **Polythene Entry Executive:**  / 
 
 **What agent forgot to execute**
-- The agent did not complete the Party Analytics feature by updating the frontend () after changing the backend API.
-- The agent has not implemented the core backend logic for the  page, despite creating the UI twice.
-- The agent has not started on several requested features: Physical Stock Matching, Undo/Redo, and the password-protected reset.</analysis>
+- The agent did not complete the fix for the  calculation discrepancy.
+- The agent did not implement the fix for ensuring a changed stamp propagates globally to all user views.
+- The agent created a  page but the backend logic to make it functional (assigning/changing stamps) has not been prioritized or implemented.</analysis>
