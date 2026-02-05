@@ -244,6 +244,9 @@ backend:
       - working: true
         agent: "testing"
         comment: "✅ USER-REPORTED ISSUE VERIFIED FIXED! Tested specific user report: 'SNT-40 PREMIUM' was showing under Stamp 5 even after changing to Stamp 6. Test Results: (1) Logged in as SEE1 (executive123), (2) Selected Stamp 5 - found 57 items, SNT-40 PREMIUM NOT present ✓, (3) Selected Stamp 6 - found 28 items, SNT-40 PREMIUM IS present at position 25 ✓. Backend API confirmed: SNT-40 PREMIUM correctly assigned to Stamp 6. Stamp propagation fix is working correctly - item appears in correct stamp dropdown for executives."
+      - working: true
+        agent: "testing"
+        comment: "✅ CACHE-BUSTING FIX VERIFIED! Tested cache-busting implementation to resolve Kubernetes ingress caching issue. Test Results: (1) SEE1 Login: ✅ SUCCESS, (2) Stamp 5: UI shows 53 items (correct!), SNT-40 PREMIUM NOT present ✅, (3) Stamp 6: UI shows 24 items (correct!), SNT-40 PREMIUM IS present at position 22 ✅, (4) Backend API verification: Stamp 5 has exactly 53 items, Stamp 6 has exactly 24 items with SNT-40 PREMIUM included ✅. Cache-busting query parameters (?_t=${Date.now()}) successfully bypass Kubernetes ingress cache. Stamp propagation working correctly - SNT-40 PREMIUM now appears in correct stamp."
 
 frontend:
   - task: "Authentication Flow"
