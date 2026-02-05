@@ -56,7 +56,9 @@ export default function ExecutiveStockEntry() {
   const loadStampItems = async (stamp) => {
     setLoading(true);
     try {
-      const response = await axios.get(`${API}/master-items`);
+      // Add timestamp to bust any proxy/CDN caches
+      const cacheBuster = `?_t=${Date.now()}`;
+      const response = await axios.get(`${API}/master-items${cacheBuster}`);
       const items = response.data.filter(item => item.stamp === stamp);
       setStampItems(items);
       
