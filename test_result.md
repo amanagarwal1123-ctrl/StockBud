@@ -238,6 +238,9 @@ backend:
       - working: true
         agent: "testing"
         comment: "✅ VERIFIED! Stamp change propagation working correctly. The POST /api/item/{item_name}/assign-stamp endpoint now updates all three collections: master_items, transactions, and opening_stock. Tested: assigned 'Stamp 2' to item 'AA ATTHA 60-007' (originally 'Stamp 1'), verified stamp updated in master_items and visible in Stock Entry Executive view (via GET /api/master-items). Stamp changes now propagate to all views including executive pages."
+      - working: true
+        agent: "testing"
+        comment: "✅ USER-REPORTED ISSUE VERIFIED FIXED! Tested specific user report: 'SNT-40 PREMIUM' was showing under Stamp 5 even after changing to Stamp 6. Test Results: (1) Logged in as SEE1 (executive123), (2) Selected Stamp 5 - found 57 items, SNT-40 PREMIUM NOT present ✓, (3) Selected Stamp 6 - found 28 items, SNT-40 PREMIUM IS present at position 25 ✓. Backend API confirmed: SNT-40 PREMIUM correctly assigned to Stamp 6. Stamp propagation fix is working correctly - item appears in correct stamp dropdown for executives."
 
 frontend:
   - task: "Authentication Flow"
