@@ -1,4 +1,5 @@
-from fastapi import FastAPI, APIRouter, UploadFile, File, HTTPException, Query, Query, Depends, Header, Response
+from fastapi import FastAPI, APIRouter, UploadFile, File, HTTPException, Query, Depends, Header
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -2226,7 +2227,7 @@ async def delete_mapping(transaction_name: str):
     return {"success": True, "message": "Mapping deleted"}
 
 @api_router.get("/master-items")
-async def get_master_items(search: Optional[str] = None, response: Response = None):
+async def get_master_items(search: Optional[str] = None):
     """Get all master items with optional search"""
     query = {}
     if search:
@@ -2234,13 +2235,15 @@ async def get_master_items(search: Optional[str] = None, response: Response = No
     
     items = await db.master_items.find(query, {"_id": 0}).sort("item_name", 1).to_list(1000)
     
-    # Add cache-control headers to prevent browser caching of stamp data
-    if response:
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-        response.headers["Pragma"] = "no-cache"
-        response.headers["Expires"] = "0"
-    
-    return items
+    # Return with cache-control headers to prevent browser caching of stamp data
+    return JSONResponse(
+        content=items,
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
 
 @api_router.get("/analytics/party-analysis")
 async def get_party_analysis(
