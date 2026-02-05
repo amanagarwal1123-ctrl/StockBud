@@ -2605,6 +2605,12 @@ async def get_item_detail(item_name: str):
 async def assign_stamp_to_item(item_name: str, stamp: str = Query(...)):
     """Assign stamp to all instances of an item"""
     
+    # Update master_items (single source of truth)
+    result_master = await db.master_items.update_many(
+        {"item_name": item_name},
+        {"$set": {"stamp": stamp}}
+    )
+    
     # Update all transactions
     result1 = await db.transactions.update_many(
         {"item_name": item_name},
@@ -2622,6 +2628,7 @@ async def assign_stamp_to_item(item_name: str, stamp: str = Query(...)):
     return {
         "success": True,
         "message": f"Stamp '{stamp}' assigned to '{item_name}'",
+        "master_items_updated": result_master.modified_count,
         "transactions_updated": result1.modified_count,
         "opening_stock_updated": result2.modified_count
     }
