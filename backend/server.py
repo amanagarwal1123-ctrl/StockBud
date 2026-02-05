@@ -238,6 +238,24 @@ def parse_labor_value(tag_no):
             pass
     return 0.0, None
 
+def normalize_date(date_value):
+    """Normalize date to YYYY-MM-DD format, handling both string and timestamp formats"""
+    if not date_value or pd.isna(date_value):
+        return ''
+    
+    date_str = str(date_value).strip()
+    
+    # If it's already a simple date format, extract just the date part
+    if ' ' in date_str:
+        date_str = date_str.split(' ')[0]
+    
+    # Try parsing as pandas timestamp
+    try:
+        dt = pd.to_datetime(date_str)
+        return dt.strftime('%Y-%m-%d')
+    except:
+        return date_str
+
 def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
     """Parse Excel file and return list of rows. Excel files have weights in KG, multiply by 1000 to store as grams."""
     try:
