@@ -411,14 +411,14 @@ frontend:
 metadata:
   created_by: "testing_agent"
   version: "1.0"
-  test_sequence: 2
+  test_sequence: 3
   run_ui: true
 
 test_plan:
   current_focus:
-    - "All frontend features tested and verified"
+    - "Critical bug fixes verified"
   stuck_tasks: []
-  test_all: true
+  test_all: false
   test_priority: "high_first"
 
 agent_communication:
@@ -432,3 +432,23 @@ agent_communication:
     2. Polythene Item Name Matching FIXED - Modified polythene adjustment logic in /inventory/current endpoint to resolve adjustment item names through item_mappings collection before applying to inventory. Now polythene adjustments will work even if the entered name doesn't exactly match the master item name.
     3. Stamp Change Propagation FIXED - Updated assign_stamp_to_item endpoint to also update master_items collection (in addition to transactions and opening_stock). Now stamp changes propagate to all views including Stock Entry Executive pages.
     Status: Backend restarted successfully, health check passing. Ready for comprehensive testing."
+  - agent: "testing"
+    message: "🎉 CRITICAL BUG FIXES TESTING COMPLETED - ALL 12/12 TESTS PASSED!
+    
+    ✅ FIX 1: Date-Range Replacement - VERIFIED WORKING
+    - normalize_date() function correctly handles Excel timestamp formats
+    - Re-uploading files with date range parameters completely removes old data
+    - Dates stored in correct YYYY-MM-DD format in database
+    - Tested: uploaded 1 transaction, re-uploaded 2 for same range → old data completely removed
+    
+    ✅ FIX 2: Polythene Item Name Matching - VERIFIED WORKING
+    - Polythene adjustments now resolve item names through item_mappings
+    - Tested with 'LOTA' → 'BARTAN-040' mapping
+    - Adjustment correctly applied to master item even when using transaction name
+    
+    ✅ FIX 3: Stamp Change Propagation - VERIFIED WORKING
+    - POST /api/item/{item_name}/assign-stamp updates all 3 collections (master_items, transactions, opening_stock)
+    - Tested: changed stamp from 'Stamp 1' to 'Stamp 2' for item 'AA ATTHA 60-007'
+    - Stamp change visible in inventory and executive views
+    
+    All critical fixes are production-ready. User-reported inventory calculation errors should now be resolved."
