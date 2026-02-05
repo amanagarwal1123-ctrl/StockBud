@@ -433,6 +433,12 @@ agent_communication:
     3. Stamp Change Propagation FIXED - Updated assign_stamp_to_item endpoint to also update master_items collection (in addition to transactions and opening_stock). Now stamp changes propagate to all views including Stock Entry Executive pages.
     Status: Backend restarted successfully, health check passing. Ready for comprehensive testing."
   - agent: "testing"
+    message: "BACKEND TESTING COMPLETED - ALL 12/12 TESTS PASSED! All critical bug fixes verified:
+    Fix 1 (Date-Range Replacement): normalize_date() correctly handles Excel timestamps, re-uploads completely remove old data, dates stored in YYYY-MM-DD format.
+    Fix 2 (Polythene Matching): Item name resolution through mappings working correctly (tested with LOTA → BARTAN-040).
+    Fix 3 (Stamp Propagation): Stamp changes update all 3 collections (master_items, transactions, opening_stock) and propagate to all views.
+    User-reported inventory calculation errors should now be resolved."
+  - agent: "testing"
     message: "🎉 CRITICAL BUG FIXES TESTING COMPLETED - ALL 12/12 TESTS PASSED!
     
     ✅ FIX 1: Date-Range Replacement - VERIFIED WORKING
