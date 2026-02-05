@@ -1448,12 +1448,15 @@ async def get_current_inventory():
     polythene_adjustments = await db.polythene_adjustments.find({}, {"_id": 0}).to_list(10000)
     poly_map = defaultdict(float)
     for adj in polythene_adjustments:
-        item_name = adj['item_name']
+        # Resolve the adjustment item name through mappings first
+        adj_item_name = adj['item_name']
+        master_item_name = mapping_dict.get(adj_item_name, adj_item_name)
+        
         poly_weight = adj['poly_weight'] * 1000  # Convert kg to grams
         if adj['operation'] == 'add':
-            poly_map[item_name] += poly_weight
+            poly_map[master_item_name] += poly_weight
         else:
-            poly_map[item_name] -= poly_weight
+            poly_map[master_item_name] -= poly_weight
     
     for key, item in inventory_map.items():
         item['stamps_seen'] = list(item['stamps_seen']) if isinstance(item['stamps_seen'], set) else item['stamps_seen']
