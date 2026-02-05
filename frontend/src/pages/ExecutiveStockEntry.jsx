@@ -32,7 +32,9 @@ export default function ExecutiveStockEntry() {
 
   const fetchStamps = async () => {
     try {
-      const response = await axios.get(`${API}/master-items`);
+      // Add timestamp to bust any proxy/CDN caches
+      const cacheBuster = `?_t=${Date.now()}`;
+      const response = await axios.get(`${API}/master-items${cacheBuster}`);
       const uniqueStamps = [...new Set(response.data.map(item => item.stamp))].sort((a, b) => {
         const numA = parseInt(a.replace(/\D/g, '')) || 0;
         const numB = parseInt(b.replace(/\D/g, '')) || 0;
