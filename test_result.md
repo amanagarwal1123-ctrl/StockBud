@@ -359,6 +359,9 @@ frontend:
       - working: true
         agent: "testing"
         comment: "PASSED - Note: This page is visible as 'Upload Files' for admin users (role-based navigation working correctly). Stamp selector functional, items load for selected stamp, gross and net weight input fields present, Save Entry button functional. Executive-specific view would show 'Stock Entry' navigation item."
+      - working: true
+        agent: "testing"
+        comment: "✅ USER-REPORTED BUG FIXED! Tested SEE1 login with credentials SEE1/executive123. Login successful, redirected to /executive-entry page. Stamps dropdown loads correctly with 21 stamps (Stamp 1-21). Selected Stamp 1 and verified 42 items loaded successfully with gross weight input fields. NO 'Failed to load stamps' error observed. Also tested SMANAGER/manager123 (redirects to /physical-vs-book) and PEE1/poly123 (redirects to /polythene-entry) - both working correctly. Password reset by main agent resolved the authentication issue."
 
   - task: "Navigation & Layout"
     implemented: true
