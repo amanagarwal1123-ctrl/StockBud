@@ -417,7 +417,7 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                     
                     record = {
                         'type': 'receive' if trans_type == 'R' else 'issue',
-                        'date': str(get_column_value(row, ['Date'], '')),
+                        'date': normalize_date(get_column_value(row, ['Date'], '')),
                         'refno': str(get_column_value(row, ['Refno'], '')),
                         'party_name': 'MMI Jewelly Branch',
                         'item_name': item_name,
