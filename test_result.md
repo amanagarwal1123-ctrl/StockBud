@@ -485,3 +485,20 @@ agent_communication:
        - Polythene UI loads correctly
     
     ROOT CAUSE: Password reset by main agent resolved authentication issues. All user roles now authenticate correctly and see appropriate UI with data loading properly."
+  - agent: "testing"
+    message: "✅ STAMP PROPAGATION FIX VERIFICATION COMPLETED - SNT-40 PREMIUM ISSUE RESOLVED!
+    
+    Tested user-reported issue: 'SNT-40 PREMIUM still showing under Stamp 5 even after changing to Stamp 6'
+    
+    TEST RESULTS (ALL PASSED):
+    1. Login as SEE1 (executive123): ✅ SUCCESS
+    2. Selected Stamp 5: ✅ VERIFIED
+       - Found 57 items in Stamp 5
+       - SNT-40 PREMIUM NOT present in list (as expected)
+    3. Selected Stamp 6: ✅ VERIFIED
+       - Found 28 items in Stamp 6
+       - SNT-40 PREMIUM IS present at position 25 (as expected)
+    4. Backend API verification: ✅ CONFIRMED
+       - GET /api/master-items shows SNT-40 PREMIUM correctly assigned to Stamp 6
+    
+    CONCLUSION: Stamp propagation fix is working correctly. The database update has successfully propagated to the frontend Executive Stock Entry page. Item now appears in the correct stamp dropdown."
