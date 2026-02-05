@@ -522,3 +522,29 @@ agent_communication:
        - GET /api/master-items shows SNT-40 PREMIUM correctly assigned to Stamp 6
     
     CONCLUSION: Stamp propagation fix is working correctly. The database update has successfully propagated to the frontend Executive Stock Entry page. Item now appears in the correct stamp dropdown."
+  - agent: "testing"
+    message: "🎉 CACHE-BUSTING FIX VERIFICATION COMPLETED - ALL TESTS PASSED!
+    
+    Tested cache-busting implementation to resolve Kubernetes ingress caching issue where 'SNT-40 PREMIUM' was showing in wrong stamp.
+    
+    CHANGES VERIFIED:
+    1. ExecutiveStockEntry.jsx - Added ?_t=${Date.now()} to fetchStamps() and loadStampItems()
+    2. PolytheneEntry.jsx - Added cache-busting + included negative_items in search
+    
+    TEST RESULTS (3/3 PASSED):
+    1. SEE1 Login & Stamp 5 Test: ✅ PASS
+       - UI shows exactly 53 items (matches database)
+       - SNT-40 PREMIUM NOT present in Stamp 5 (correct!)
+       - Backend API confirms: 53 items in Stamp 5
+    
+    2. Stamp 6 Test: ✅ PASS
+       - UI shows exactly 24 items (matches database)
+       - SNT-40 PREMIUM IS present in Stamp 6 at position 22 (correct!)
+       - Backend API confirms: 24 items in Stamp 6 including SNT-40 PREMIUM
+    
+    3. PEE1 Polythene Entry Search: ✅ PASS
+       - Search for 'SNT' returns 3 results: SNT-LX, SNT 40-256, SNT-40 PREMIUM
+       - SNT-40 PREMIUM (negative stock: -17.708 kg) now searchable (correct!)
+       - Negative stock items now included via [...inventory, ...negative_items]
+    
+    CONCLUSION: Cache-busting query parameters successfully bypass Kubernetes ingress cache. All stamp item counts are accurate, SNT-40 PREMIUM appears in correct stamp, and negative stock items are now searchable in Polythene Entry. Fix is production-ready!"
