@@ -203,6 +203,42 @@ backend:
         agent: "testing"
         comment: "GET /api/analytics/sales-summary working correctly. Fine: 34.335 kg (exact match!), Labour: ₹680,087 (expected ₹680,000 - within tolerance). Net: 50.956 kg (expected 58.957 kg - 8 kg difference, likely data differences). SILVER ORNAMENTS correctly excluded."
 
+  - task: "CRITICAL FIX 1: Date-Range Replacement in File Uploads"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "critical"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED! Date-range replacement working correctly. normalize_date() function properly handles Excel timestamp formats (e.g., '2024-01-15 00:00:00') and normalizes to 'YYYY-MM-DD'. When re-uploading files with start_date and end_date parameters, old transactions in that range are COMPLETELY REMOVED before inserting new data. Tested: uploaded 1 transaction, then re-uploaded 2 transactions for same date range - old data completely removed, exactly 2 new transactions remain. Dates stored in correct YYYY-MM-DD format."
+
+  - task: "CRITICAL FIX 2: Polythene Item Name Matching"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "critical"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED! Polythene adjustment item name resolution working correctly. The /api/inventory/current endpoint now resolves polythene adjustment item names through item_mappings collection before applying adjustments. Tested with mapping 'LOTA' → 'BARTAN-040': created polythene adjustment using transaction name 'LOTA', verified adjustment correctly applied to master item 'BARTAN-040' in inventory. Polythene adjustments now work even if entered name doesn't exactly match master item name."
+
+  - task: "CRITICAL FIX 3: Stamp Change Propagation"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "critical"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED! Stamp change propagation working correctly. The POST /api/item/{item_name}/assign-stamp endpoint now updates all three collections: master_items, transactions, and opening_stock. Tested: assigned 'Stamp 2' to item 'AA ATTHA 60-007' (originally 'Stamp 1'), verified stamp updated in master_items and visible in Stock Entry Executive view (via GET /api/master-items). Stamp changes now propagate to all views including executive pages."
+
 frontend:
   - task: "Authentication Flow"
     implemented: true
