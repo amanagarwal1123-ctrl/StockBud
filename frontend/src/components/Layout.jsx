@@ -322,6 +322,42 @@ export default function Layout({ children }) {
               <div className="flex-1 overflow-auto p-4">
                 <NavLinks mobile />
               </div>
+              
+              {/* Mobile Footer with User Info and Logout */}
+              <div className="border-t border-border/40 p-4 space-y-2">
+                {/* User Info */}
+                {user && (
+                  <div className="mb-3 p-3 bg-muted/50 rounded-lg">
+                    <div className="flex items-center gap-2 mb-1">
+                      <User className="h-4 w-4 text-muted-foreground" />
+                      <p className="text-sm font-medium">{user.full_name}</p>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{user.username}</p>
+                    <Badge variant="outline" className="mt-2 text-xs">
+                      {user.role.toUpperCase()}
+                    </Badge>
+                  </div>
+                )}
+                
+                {/* Logout Button */}
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => {
+                    logout();
+                    setMobileOpen(false);
+                  }}
+                  className="w-full justify-start text-xs text-orange-600 border-orange-600/20 hover:bg-orange-600/10"
+                >
+                  <LogOut className="h-3.5 w-3.5 mr-2" />
+                  Logout
+                </Button>
+                
+                <div className="mt-3 rounded-lg bg-gradient-to-r from-primary/10 via-secondary/10 to-accent/10 p-3 text-xs">
+                  <p className="font-medium text-foreground">StockBud v2.0</p>
+                  <p className="text-muted-foreground mt-1">Intelligent Inventory</p>
+                </div>
+              </div>
             </div>
           </SheetContent>
         </Sheet>
