@@ -2226,13 +2226,20 @@ async def delete_mapping(transaction_name: str):
     return {"success": True, "message": "Mapping deleted"}
 
 @api_router.get("/master-items")
-async def get_master_items(search: Optional[str] = None):
+async def get_master_items(search: Optional[str] = None, response: Response = None):
     """Get all master items with optional search"""
     query = {}
     if search:
         query = {"item_name": {"$regex": search, "$options": "i"}}
     
     items = await db.master_items.find(query, {"_id": 0}).sort("item_name", 1).to_list(1000)
+    
+    # Add cache-control headers to prevent browser caching of stamp data
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    
     return items
 
 @api_router.get("/analytics/party-analysis")
