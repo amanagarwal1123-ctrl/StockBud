@@ -45,8 +45,13 @@ export default function PolytheneEntry() {
 
   const fetchAllItems = async () => {
     try {
-      const response = await axios.get(`${API}/inventory/current`);
-      setAllItems(response.data.inventory);
+      // Add timestamp to bust any proxy/CDN caches and fetch ALL items including negative stock
+      const cacheBuster = `?_t=${Date.now()}`;
+      const response = await axios.get(`${API}/inventory/current${cacheBuster}`);
+      
+      // Combine both positive and negative items so users can adjust polythene for all items
+      const allInventoryItems = [...response.data.inventory, ...response.data.negative_items];
+      setAllItems(allInventoryItems);
     } catch (error) {
       toast.error('Failed to load items');
     }
