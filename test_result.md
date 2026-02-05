@@ -248,6 +248,18 @@ backend:
         agent: "testing"
         comment: "✅ CACHE-BUSTING FIX VERIFIED! Tested cache-busting implementation to resolve Kubernetes ingress caching issue. Test Results: (1) SEE1 Login: ✅ SUCCESS, (2) Stamp 5: UI shows 53 items (correct!), SNT-40 PREMIUM NOT present ✅, (3) Stamp 6: UI shows 24 items (correct!), SNT-40 PREMIUM IS present at position 22 ✅, (4) Backend API verification: Stamp 5 has exactly 53 items, Stamp 6 has exactly 24 items with SNT-40 PREMIUM included ✅. Cache-busting query parameters (?_t=${Date.now()}) successfully bypass Kubernetes ingress cache. Stamp propagation working correctly - SNT-40 PREMIUM now appears in correct stamp."
 
+  - task: "CRITICAL FIX 4: Polythene Entry Negative Stock Items"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/pages/PolytheneEntry.jsx"
+    stuck_count: 0
+    priority: "critical"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED! Polythene Entry now includes negative stock items in search results. Test Results: (1) PEE1 Login (poly123): ✅ SUCCESS, redirected to /polythene-entry, (2) Search for 'SNT': Found 3 results including 'SNT-LX', 'SNT 40-256', and 'SNT-40 PREMIUM' ✅, (3) SNT-40 PREMIUM (negative stock: -17.708 kg) now appears in search results ✅. Implementation: fetchAllItems() now combines both positive and negative items using [...response.data.inventory, ...response.data.negative_items], and includes cache-busting query parameter (?_t=${Date.now()}). Users can now adjust polythene for items with negative stock."
+
 frontend:
   - task: "Authentication Flow"
     implemented: true
