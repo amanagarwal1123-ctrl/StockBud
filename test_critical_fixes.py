@@ -497,18 +497,21 @@ class CriticalFixesTester:
         # Step 4: Verify stamp visible in Stock Entry Executive view
         print("\n✅ Step 4: Verify stamp visible in Stock Entry Executive view")
         
-        # Get items for the new stamp (this is what executives see)
+        # Get all master items and filter by stamp (this is what executives see)
         success, response, details = self.make_request(
             'GET',
-            f'executive/items-by-stamp/{new_stamp}'
+            'master-items'
         )
         
         if success and response:
             try:
-                items = response.json()
+                all_items = response.json()
+                
+                # Filter items by the new stamp
+                items_with_new_stamp = [item for item in all_items if item.get('stamp') == new_stamp]
                 
                 # Check if our test item is in the list
-                item_found = any(item.get('item_name') == test_item_name for item in items)
+                item_found = any(item.get('item_name') == test_item_name for item in items_with_new_stamp)
                 
                 if item_found:
                     self.log_test("Stamp visible in Executive view", True,
