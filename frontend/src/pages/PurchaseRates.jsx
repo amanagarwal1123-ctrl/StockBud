@@ -111,15 +111,12 @@ export default function PurchaseRates() {
                   <TableHead>Item Name</TableHead>
                   <TableHead className="text-right font-mono">Purchase Tunch (%)</TableHead>
                   <TableHead className="text-right font-mono">Labour per kg</TableHead>
-                  <TableHead className="text-right font-mono">Total Purchased (kg)</TableHead>
-                  <TableHead className="text-right font-mono">Total Fine (kg)</TableHead>
-                  <TableHead className="text-right font-mono">Total Labour</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredLedger.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
                       No items found
                     </TableCell>
                   </TableRow>
@@ -132,15 +129,6 @@ export default function PurchaseRates() {
                       </TableCell>
                       <TableCell className="text-right font-mono text-blue-600">
                         {formatIndianCurrency(item.labour_per_kg)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {item.total_purchased_kg.toFixed(3)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {item.total_fine_kg.toFixed(3)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {formatIndianCurrency(item.total_labour)}
                       </TableCell>
                     </TableRow>
                   ))
