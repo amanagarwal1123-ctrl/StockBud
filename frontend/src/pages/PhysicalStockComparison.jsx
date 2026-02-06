@@ -347,8 +347,15 @@ export default function PhysicalStockComparison() {
                 <CardTitle className="text-sm font-medium text-muted-foreground">Book Stock</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold font-mono text-blue-600">
-                  {summary.total_book_kg.toLocaleString()} kg
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Gross:</p>
+                  <div className="text-2xl font-bold font-mono text-blue-600">
+                    {summary.total_book_gross_kg?.toLocaleString() || '0'} kg
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">Net:</p>
+                  <div className="text-lg font-semibold font-mono text-blue-500">
+                    {summary.total_book_kg?.toLocaleString() || '0'} kg
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -358,8 +365,15 @@ export default function PhysicalStockComparison() {
                 <CardTitle className="text-sm font-medium text-muted-foreground">Physical Stock</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold font-mono text-green-600">
-                  {summary.total_physical_kg.toLocaleString()} kg
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Gross:</p>
+                  <div className="text-2xl font-bold font-mono text-green-600">
+                    {summary.total_physical_gross_kg?.toLocaleString() || '0'} kg
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">Net:</p>
+                  <div className="text-lg font-semibold font-mono text-green-500">
+                    {summary.total_physical_kg?.toLocaleString() || '0'} kg
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -369,8 +383,15 @@ export default function PhysicalStockComparison() {
                 <CardTitle className="text-sm font-medium text-muted-foreground">Difference</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className={`text-3xl font-bold font-mono ${summary.total_difference_kg >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {summary.total_difference_kg >= 0 ? '+' : ''}{summary.total_difference_kg.toLocaleString()} kg
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Gross Diff:</p>
+                  <div className={`text-2xl font-bold font-mono ${(summary.total_difference_gross_kg || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {(summary.total_difference_gross_kg || 0) >= 0 ? '+' : ''}{(summary.total_difference_gross_kg || 0).toLocaleString()} kg
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">Net Diff:</p>
+                  <div className={`text-lg font-semibold font-mono ${(summary.total_difference_kg || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                    {(summary.total_difference_kg || 0) >= 0 ? '+' : ''}{(summary.total_difference_kg || 0).toLocaleString()} kg
+                  </div>
                 </div>
               </CardContent>
             </Card>
