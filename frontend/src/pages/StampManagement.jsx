@@ -19,6 +19,7 @@ export default function StampManagement() {
   const [stampChanges, setStampChanges] = useState({});
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [sortBy, setSortBy] = useState('name');
 
   useEffect(() => {
     fetchInventory();
@@ -100,6 +101,17 @@ export default function StampManagement() {
   const filteredInventory = inventory.filter(item =>
     item.item_name.toLowerCase().includes(searchTerm.toLowerCase())
   );
+  
+  // Sort items
+  const sortedInventory = [...filteredInventory].sort((a, b) => {
+    if (sortBy === 'stamp') {
+      const stampA = parseInt(a.stamp.replace(/\D/g, '')) || 999;
+      const stampB = parseInt(b.stamp.replace(/\D/g, '')) || 999;
+      return stampA - stampB;
+    }
+    // Default: sort by name
+    return a.item_name.localeCompare(b.item_name);
+  });
 
   if (loading) {
     return (
