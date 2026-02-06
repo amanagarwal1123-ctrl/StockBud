@@ -610,8 +610,8 @@ export default function PartyAnalytics() {
         <TabsContent value="supplier-profit">
           <Card className="border-border/40 shadow-sm">
             <CardHeader>
-              <CardTitle>Supplier-Wise Data</CardTitle>
-              <CardDescription>Items purchased from each supplier</CardDescription>
+              <CardTitle>Supplier-Wise Profit</CardTitle>
+              <CardDescription>Profit earned from items supplied by each supplier</CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
@@ -620,13 +620,15 @@ export default function PartyAnalytics() {
                     <TableHead>Rank</TableHead>
                     <TableHead>Supplier Name</TableHead>
                     <TableHead className="text-right font-mono">Total Purchased (kg)</TableHead>
-                    <TableHead className="text-right">Transactions</TableHead>
+                    <TableHead className="text-right font-mono">Silver Profit (kg)</TableHead>
+                    <TableHead className="text-right font-mono">Labour Profit (₹)</TableHead>
+                    <TableHead className="text-right">Items Count</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {supplierProfit?.suppliers?.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                         No supplier data available
                       </TableCell>
                     </TableRow>
@@ -637,11 +639,17 @@ export default function PartyAnalytics() {
                           <Badge variant="outline" className="font-mono">#{idx + 1}</Badge>
                         </TableCell>
                         <TableCell className="font-medium">{supplier.supplier_name}</TableCell>
-                        <TableCell className="text-right font-mono text-primary font-semibold">
+                        <TableCell className="text-right font-mono text-blue-600">
                           {supplier.total_purchased_kg?.toFixed(3)}
                         </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {supplier.transaction_count}
+                        <TableCell className="text-right font-mono text-green-600 font-semibold">
+                          {supplier.silver_profit_kg?.toFixed(3)} kg
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-primary font-semibold">
+                          {formatIndianCurrency(supplier.labor_profit_inr || 0)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-muted-foreground">
+                          {supplier.items_count || 0}
                         </TableCell>
                       </TableRow>
                     ))
