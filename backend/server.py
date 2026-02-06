@@ -2018,58 +2018,103 @@ async def get_supplier_profit(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ):
-    """Calculate profit per supplier (based on items purchased from them)"""
+    """Calculate profit per supplier based on items they supply"""
     
     query = {}
     if start_date and end_date:
         end_date_with_time = end_date + ' 23:59:59'
         query['date'] = {'$gte': start_date, '$lte': end_date_with_time}
     
-    # Get all purchases
-    purchases = await db.transactions.find(
-        {**query, "type": {"$in": ["purchase", "purchase_return"]}},
-        {"_id": 0}
-    ).to_list(10000)
+    # Get all transactions
+    all_transactions = await db.transactions.find(query, {"_id": 0}).to_list(10000)
     
-    # Group by supplier with cumulative purchase data
+    # Get purchase ledger for cost basis
+    ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(10000)
+    ledger_map = {item['item_name']: item for item in ledger}
+    
+    # Group by supplier: track what each supplier sells us
     supplier_data = defaultdict(lambda: {
         'supplier_name': '',
+        'items': defaultdict(lambda: {'purchases': [], 'sales': []}),
         'total_purchased_kg': 0.0,
-        'transaction_count': 0,
-        'items': defaultdict(lambda: {'net_wt': 0, 'tunch': 0, 'labour': 0})
+        'silver_profit_kg': 0.0,
+        'labor_profit_inr': 0.0
     })
     
-    for purchase in purchases:
-        supplier = purchase.get('party_name', 'Unknown')
-        if not supplier:
-            continue
+    # Organize transactions
+    for trans in all_transactions:
+        item_name = trans.get('item_name', '')
         
-        item_name = purchase.get('item_name', '')
-        purchase_tunch = float(purchase.get('tunch', 0) or 0)
-        purchase_net_wt = purchase.get('net_wt', 0)
-        purchase_labour = purchase.get('labor', 0)
+        if trans['type'] in ['purchase', 'purchase_return']:
+            supplier = trans.get('party_name', 'Unknown')
+            if supplier:
+                supplier_data[supplier]['supplier_name'] = supplier
+                supplier_data[supplier]['items'][item_name]['purchases'].append(trans)
+                supplier_data[supplier]['total_purchased_kg'] += trans.get('net_wt', 0) / 1000
         
-        supplier_data[supplier]['supplier_name'] = supplier
-        supplier_data[supplier]['total_purchased_kg'] += purchase_net_wt / 1000
-        supplier_data[supplier]['transaction_count'] += 1
-        
-        # Track per-item data for this supplier
-        supplier_data[supplier]['items'][item_name]['net_wt'] += purchase_net_wt
-        supplier_data[supplier]['items'][item_name]['tunch'] += purchase_tunch * abs(purchase_net_wt)
-        supplier_data[supplier]['items'][item_name]['labour'] += purchase_labour
+        elif trans['type'] in ['sale', 'sale_return']:
+            # Track sales for all items (to calculate profit later)
+            for supplier in supplier_data.keys():
+                if item_name in supplier_data[supplier]['items']:
+                    supplier_data[supplier]['items'][item_name]['sales'].append(trans)
     
-    # Note: Supplier profit requires knowing what we sold those items for
-    # This is complex - for now just return purchase data
-    suppliers = sorted(
-        [v for v in supplier_data.values()],
-        key=lambda x: x['total_purchased_kg'],
-        reverse=True
-    )
+    # Calculate profit per supplier
+    supplier_profits = []
+    
+    for supplier, data in supplier_data.items():
+        supplier_silver_profit = 0.0
+        supplier_labor_profit = 0.0
+        total_purchased_from_supplier = 0.0
+        
+        for item_name, item_data in data['items'].items():
+            purchases = item_data['purchases']
+            sales = item_data['sales']
+            
+            # Skip if no purchases or sales
+            if not purchases or not sales:
+                continue
+            
+            # Calculate purchase weight from this supplier for this item
+            purchase_wt = sum(p.get('net_wt', 0) for p in purchases)
+            sale_wt = sum(s.get('net_wt', 0) for s in sales)
+            
+            if abs(purchase_wt) < 0.001 or abs(sale_wt) < 0.001:
+                continue
+            
+            # Calculate average tunch
+            avg_purchase_tunch = sum(float(p.get('tunch', 0) or 0) * abs(p.get('net_wt', 0)) for p in purchases) / sum(abs(p.get('net_wt', 0)) for p in purchases)
+            avg_sale_tunch = sum(float(s.get('tunch', 0) or 0) * abs(s.get('net_wt', 0)) for s in sales) / sum(abs(s.get('net_wt', 0)) for s in sales)
+            
+            # Calculate labour rates
+            purchase_labour_per_gram = sum(abs(p.get('labor', 0)) / 1000 for p in purchases) / sum(abs(p.get('net_wt', 0)) for p in purchases)
+            sale_labour_per_gram = sum(abs(s.get('labor', 0)) for s in sales) / sum(abs(s.get('net_wt', 0)) for s in sales)
+            
+            # Calculate profit for THIS ITEM based on weight purchased from THIS SUPPLIER
+            # Silver profit = (sale_tunch - purchase_tunch) * weight_purchased_from_supplier / 100
+            item_silver_profit = (avg_sale_tunch - avg_purchase_tunch) * purchase_wt / 100 / 1000  # Convert to kg
+            
+            # Labor profit = (sale_labour - purchase_labour) * weight_purchased_from_supplier
+            item_labor_profit = (sale_labour_per_gram - purchase_labour_per_gram) * purchase_wt
+            
+            supplier_silver_profit += item_silver_profit
+            supplier_labor_profit += item_labor_profit
+            total_purchased_from_supplier += purchase_wt / 1000
+        
+        if total_purchased_from_supplier > 0:
+            supplier_profits.append({
+                'supplier_name': supplier,
+                'total_purchased_kg': round(total_purchased_from_supplier, 3),
+                'silver_profit_kg': round(supplier_silver_profit, 3),
+                'labor_profit_inr': round(supplier_labor_profit, 2),
+                'items_count': len([k for k, v in data['items'].items() if v['purchases'] and v['sales']])
+            })
+    
+    # Sort by total profit (silver + labor converted to kg equivalent)
+    supplier_profits.sort(key=lambda x: x['silver_profit_kg'], reverse=True)
     
     return {
-        "suppliers": suppliers,
-        "total_suppliers": len(suppliers),
-        "note": "Supplier profit requires matching sold items - placeholder for now"
+        "suppliers": supplier_profits,
+        "total_suppliers": len(supplier_profits)
     }
 
 
