@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Users, UserPlus, Trash2, Shield } from 'lucide-react';
+import { Users, UserPlus, Trash2, Shield, Edit } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -312,13 +312,15 @@ export default function UserManagement() {
                         variant="ghost"
                         size="sm"
                         onClick={() => handleEditUser(user)}
+                        title="Edit user"
                       >
-                        <Shield className="h-4 w-4 text-primary" />
+                        <Edit className="h-4 w-4 text-primary" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => handleDeleteUser(user.username)}
+                        title="Delete user"
                       >
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
