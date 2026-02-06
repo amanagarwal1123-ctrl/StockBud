@@ -182,7 +182,7 @@ export default function StampManagement() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Tag className="h-5 w-5 text-primary" />
-            Items ({filteredInventory.length})
+            Items ({sortedInventory.length})
           </CardTitle>
           <CardDescription>
             Click on any item to view details, or modify stamps here
@@ -207,7 +207,7 @@ export default function StampManagement() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredInventory.map((item, idx) => (
+                  sortedInventory.map((item, idx) => (
                     <TableRow key={idx} className="table-row">
                       <TableCell 
                         className="font-medium text-primary hover:underline cursor-pointer"
