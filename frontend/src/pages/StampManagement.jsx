@@ -133,16 +133,27 @@ export default function StampManagement() {
             Assign or change stamps for items in bulk
           </p>
         </div>
-        <Button 
-          onClick={saveStampChanges} 
-          disabled={saving || Object.keys(stampChanges).length === 0}
-          size="lg"
-          className="shadow-md"
-          data-testid="save-stamps-button"
-        >
-          <Save className="mr-2 h-5 w-5" />
-          Save {Object.keys(stampChanges).length > 0 && `(${Object.keys(stampChanges).length})`}
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            onClick={handleNormalizeStamps}
+            variant="secondary"
+            size="lg"
+            className="shadow-md"
+          >
+            <Tag className="mr-2 h-5 w-5" />
+            Normalize All Stamps
+          </Button>
+          <Button 
+            onClick={saveStampChanges} 
+            disabled={saving || Object.keys(stampChanges).length === 0}
+            size="lg"
+            className="shadow-md"
+            data-testid="save-stamps-button"
+          >
+            <Save className="mr-2 h-5 w-5" />
+            Save {Object.keys(stampChanges).length > 0 && `(${Object.keys(stampChanges).length})`}
+          </Button>
+        </div>
       </div>
 
       {Object.keys(stampChanges).length > 0 && (
