@@ -584,7 +584,7 @@ async def upload_opening_stock(file: UploadFile = File(...)):
 
 @api_router.post("/auth/login", response_model=Token)
 async def login(request: LoginRequest):
-    """Login endpoint - Returns JWT token valid for 18 hours"""
+    """Login endpoint - Returns JWT token (18 hours for regular users, 365 days for admin)"""
     user = await db.users.find_one({"username": request.username})
     
     if not user or not verify_password(request.password, user['password_hash']):
@@ -593,8 +593,15 @@ async def login(request: LoginRequest):
     if not user.get('is_active', True):
         raise HTTPException(status_code=401, detail="User account is inactive")
     
-    # Create JWT token
-    access_token = create_access_token({"sub": user['username'], "role": user['role']})
+    # Create JWT token with different expiry for admin (perpetual - 365 days)
+    if user.get('role') == 'admin':
+        token_data = {"sub": user['username'], "role": user['role']}
+        expire = datetime.now(timezone.utc) + timedelta(days=365)
+        token_data.update({"exp": expire})
+        access_token = jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
+    else:
+        # Regular users: 18 hours
+        access_token = create_access_token({"sub": user['username'], "role": user['role']})
     
     # Remove sensitive data
     user_data = {k: v for k, v in user.items() if k not in ['_id', 'password_hash']}
