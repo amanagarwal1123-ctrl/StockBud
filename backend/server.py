@@ -2369,6 +2369,14 @@ async def calculate_profit(
     # Items to exclude from profit calculation
     EXCLUDED_ITEMS = ["SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"]
     
+    # Get all master items to check for stamps
+    master_items = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(10000)
+    master_stamps = {m['item_name']: m.get('stamp', 'Unassigned') for m in master_items}
+    
+    # Get item mappings to resolve transaction names to master names
+    mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
+    mapping_dict = {m['transaction_name']: m['master_name'] for m in mappings}
+    
     query = {}
     if start_date and end_date:
         # Add time component to end_date to include full day
@@ -2377,8 +2385,25 @@ async def calculate_profit(
     
     transactions = await db.transactions.find(query, {"_id": 0}).to_list(10000)
     
-    # Filter out excluded items
-    transactions = [t for t in transactions if t['item_name'] not in EXCLUDED_ITEMS]
+    # Filter out excluded items AND items without stamps (unmapped)
+    filtered_transactions = []
+    for t in transactions:
+        trans_name = t['item_name']
+        # Resolve to master name
+        master_name = mapping_dict.get(trans_name, trans_name)
+        
+        # Skip if in excluded list
+        if master_name in EXCLUDED_ITEMS:
+            continue
+        
+        # Skip if no stamp or Unassigned
+        item_stamp = master_stamps.get(master_name, 'Unassigned')
+        if not item_stamp or item_stamp == 'Unassigned':
+            continue
+        
+        filtered_transactions.append(t)
+    
+    transactions = filtered_transactions
     
     # Fetch ALL purchase ledger items upfront (for items sold from opening stock)
     all_ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(10000)
