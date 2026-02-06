@@ -18,11 +18,13 @@ export default function UserManagement() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
   const [formData, setFormData] = useState({
     username: '',
     password: '',
     full_name: '',
-    role: 'executive'
+    role: 'executive',
+    is_active: true
   });
 
   const { isAdmin } = useAuth();
@@ -52,12 +54,62 @@ export default function UserManagement() {
       const response = await axios.post(`${API}/users/create`, formData);
       toast.success(response.data.message);
       
-      setFormData({ username: '', password: '', full_name: '', role: 'executive' });
+      setFormData({ username: '', password: '', full_name: '', role: 'executive', is_active: true });
       setShowCreateForm(false);
       fetchUsers();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to create user');
     }
+  };
+
+  const handleEditUser = (user) => {
+    setEditingUser(user);
+    setFormData({
+      username: user.username,
+      password: '',
+      full_name: user.full_name,
+      role: user.role,
+      is_active: user.is_active
+    });
+    setShowCreateForm(true);
+  };
+
+  const handleUpdateUser = async (e) => {
+    e.preventDefault();
+    
+    try {
+      const updateData = {
+        full_name: formData.full_name,
+        role: formData.role,
+        is_active: formData.is_active
+      };
+      
+      // Only include password if it's been changed
+      if (formData.password) {
+        updateData.password = formData.password;
+      }
+      
+      // Include new username if it's different
+      if (formData.username !== editingUser.username) {
+        updateData.new_username = formData.username;
+      }
+      
+      const response = await axios.put(`${API}/users/${editingUser.username}`, updateData);
+      toast.success(response.data.message);
+      
+      setFormData({ username: '', password: '', full_name: '', role: 'executive', is_active: true });
+      setShowCreateForm(false);
+      setEditingUser(null);
+      fetchUsers();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to update user');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingUser(null);
+    setShowCreateForm(false);
+    setFormData({ username: '', password: '', full_name: '', role: 'executive', is_active: true });
   };
 
   const handleDeleteUser = async (username) => {
