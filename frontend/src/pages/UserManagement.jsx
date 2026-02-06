@@ -167,9 +167,13 @@ export default function UserManagement() {
             Manage user accounts and permissions
           </p>
         </div>
-        <Button onClick={() => setShowCreateForm(!showCreateForm)}>
+        <Button onClick={() => {
+          setEditingUser(null);
+          setFormData({ username: '', password: '', full_name: '', role: 'executive', is_active: true });
+          setShowCreateForm(!showCreateForm);
+        }}>
           <UserPlus className="h-4 w-4 mr-2" />
-          Create User
+          {showCreateForm ? 'Cancel' : 'Create User'}
         </Button>
       </div>
 
