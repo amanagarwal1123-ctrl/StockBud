@@ -241,24 +241,27 @@ export default function PhysicalStockComparison() {
               <h3 className="font-semibold text-lg mb-3">{stampComparison.stamp} Verification Result</h3>
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm text-muted-foreground mb-2">Book Stock (Calculated - Gross Weight Only)</p>
+                  <p className="text-sm text-muted-foreground mb-2">Book Stock (Calculated)</p>
                   <div className="space-y-1 text-xs bg-muted/30 p-3 rounded">
                     <p className="font-mono">
-                      <span className="text-muted-foreground">Opening Gross:</span>{' '}
-                      <span className="font-semibold">{(stampComparison.openingGross / 1000).toFixed(3)} kg</span>
+                      <span className="text-muted-foreground">Opening:</span>{' '}
+                      <span className="font-semibold">Gross: {(stampComparison.openingGross / 1000).toFixed(3)} kg, Net: {(stampComparison.openingNet / 1000).toFixed(3)} kg</span>
                     </p>
                     <p className="font-mono text-green-600">
-                      <span className="text-muted-foreground">+ Purchase Gross:</span>{' '}
-                      <span className="font-semibold">{(stampComparison.purchaseGross / 1000).toFixed(3)} kg</span>
+                      <span className="text-muted-foreground">+ Purchase:</span>{' '}
+                      <span className="font-semibold">Gross: {(stampComparison.purchaseGross / 1000).toFixed(3)} kg, Net: {(stampComparison.purchaseNet / 1000).toFixed(3)} kg</span>
                     </p>
                     <p className="font-mono text-red-600">
-                      <span className="text-muted-foreground">- Sale Gross:</span>{' '}
-                      <span className="font-semibold">{(stampComparison.saleGross / 1000).toFixed(3)} kg</span>
+                      <span className="text-muted-foreground">- Sale:</span>{' '}
+                      <span className="font-semibold">Gross: {(stampComparison.saleGross / 1000).toFixed(3)} kg, Net: {(stampComparison.saleNet / 1000).toFixed(3)} kg</span>
                     </p>
                     <div className="border-t pt-1 mt-1">
                       <p className="font-mono">
-                        <span className="text-muted-foreground">= Current Gross:</span>{' '}
-                        <span className="font-bold text-lg text-blue-600">{(stampComparison.bookGross / 1000).toFixed(3)} kg</span>
+                        <span className="text-muted-foreground">= Current:</span>{' '}
+                        <span className="font-bold text-lg text-blue-600">Gross: {(stampComparison.bookGross / 1000).toFixed(3)} kg</span>
+                      </p>
+                      <p className="font-mono text-sm">
+                        <span className="text-muted-foreground ml-11">Net: {(stampComparison.bookNet / 1000).toFixed(3)} kg</span>
                       </p>
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
@@ -268,15 +271,26 @@ export default function PhysicalStockComparison() {
                 </div>
 
                 <div>
-                  <p className="text-sm text-muted-foreground mb-2">Physical Count (Gross Weight)</p>
-                  <div className="space-y-1">
-                    <p className="font-mono">
-                      <span className="text-muted-foreground">Physical Gross:</span>{' '}
-                      <span className="font-bold text-lg">{(stampComparison.physicalGross / 1000).toFixed(3)} kg</span>
-                    </p>
-                    <p className={`font-mono text-lg font-semibold ${stampComparison.difference >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      Difference: {stampComparison.difference >= 0 ? '+' : ''}{(stampComparison.difference / 1000).toFixed(3)} kg
-                    </p>
+                  <p className="text-sm text-muted-foreground mb-2">Physical vs Book</p>
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Book Gross Stock</p>
+                      <p className="font-mono font-bold text-3xl text-blue-600">
+                        {(stampComparison.bookGross / 1000).toFixed(3)} kg
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Physical Gross Stock</p>
+                      <p className="font-mono font-bold text-2xl">
+                        {(stampComparison.physicalGross / 1000).toFixed(3)} kg
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Difference</p>
+                      <p className={`font-mono font-bold text-3xl ${stampComparison.difference >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {stampComparison.difference >= 0 ? '+' : ''}{(stampComparison.difference / 1000).toFixed(3)} kg
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -299,7 +313,7 @@ export default function PhysicalStockComparison() {
                     <AlertTriangle className="h-5 w-5 text-orange-600" />
                     <AlertDescription className="ml-2 flex items-center justify-between">
                       <span>
-                        <strong>Discrepancy Found:</strong> Difference of {Math.abs(stampComparison.difference / 1000).toFixed(3)} kg in gross weight. 
+                        <strong>Discrepancy Found:</strong> Gross weight difference of {Math.abs(stampComparison.difference / 1000).toFixed(3)} kg. 
                         {stampComparison.difference > 0 ? ' Physical count is higher than book stock.' : ' Physical count is lower than book stock.'}
                       </span>
                       <Button onClick={saveStampVerification} size="sm" variant="outline" className="ml-4">
