@@ -691,6 +691,65 @@ async def delete_user(
     
     return {"success": True, "message": f"User {username} deleted"}
 
+@api_router.put("/users/{username}")
+async def update_user(
+    username: str,
+    request: Dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update user details (Admin only)"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Only admins can update users")
+    
+    # Get existing user
+    existing_user = await db.users.find_one({"username": username})
+    if not existing_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Prepare update data
+    update_data = {}
+    
+    # Update full_name if provided
+    if 'full_name' in request and request['full_name']:
+        update_data['full_name'] = request['full_name']
+    
+    # Update role if provided
+    if 'role' in request and request['role']:
+        if request['role'] not in ['admin', 'manager', 'executive', 'polythene_executive']:
+            raise HTTPException(status_code=400, detail="Invalid role")
+        update_data['role'] = request['role']
+    
+    # Update active status if provided
+    if 'is_active' in request:
+        update_data['is_active'] = request['is_active']
+    
+    # Update password if provided
+    if 'password' in request and request['password']:
+        update_data['password_hash'] = get_password_hash(request['password'])
+    
+    # Update new username if provided and different
+    if 'new_username' in request and request['new_username'] and request['new_username'] != username:
+        # Check if new username already exists
+        existing_new = await db.users.find_one({"username": request['new_username']})
+        if existing_new:
+            raise HTTPException(status_code=400, detail="New username already exists")
+        update_data['username'] = request['new_username']
+    
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    
+    # Perform update
+    await db.users.update_one(
+        {"username": username},
+        {"$set": update_data}
+    )
+    
+    return {
+        "success": True,
+        "message": f"User {username} updated successfully",
+        "updated_fields": list(update_data.keys())
+    }
+
 @api_router.post("/users/initialize-admin")
 async def initialize_admin():
     """Create initial admin user if no users exist (one-time setup)"""
