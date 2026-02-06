@@ -215,6 +215,23 @@ class ResetRequest(BaseModel):
     password: str
 
 # Helper Functions
+def normalize_stamp(stamp_value):
+    """Normalize stamp to consistent 'Stamp X' format"""
+    if not stamp_value or pd.isna(stamp_value):
+        return 'Unassigned'
+    
+    stamp_str = str(stamp_value).strip()
+    if not stamp_str or stamp_str.lower() == 'unassigned':
+        return 'Unassigned'
+    
+    # Extract number from stamp (handles STAMP 5, Stamp 5, stamp 5, etc.)
+    import re
+    match = re.search(r'(\d+)', stamp_str)
+    if match:
+        return f'Stamp {match.group(1)}'
+    
+    return 'Unassigned'
+
 def get_column_value(row, possible_names, default=''):
     """Try multiple column name variations"""
     for name in possible_names:
