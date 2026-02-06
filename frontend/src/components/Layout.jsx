@@ -190,6 +190,17 @@ export default function Layout({ children }) {
                   Undo Upload
                 </Button>
 
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="w-full justify-start text-xs text-blue-600 border-blue-600/20"
+                  onClick={handleNormalizeStamps}
+                  data-testid="normalize-button"
+                >
+                  <Tag className="h-3.5 w-3.5 mr-2" />
+                  Fix Stamp Cases
+                </Button>
+
                 {/* Undo Dialog */}
                 <AlertDialog open={showUndoDialog} onOpenChange={setShowUndoDialog}>
               <AlertDialogContent>
