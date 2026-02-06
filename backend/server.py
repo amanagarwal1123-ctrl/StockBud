@@ -335,7 +335,7 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                         'refno': str(get_column_value(row, ['Refno', 'refno', 'Ref No'], '')),
                         'party_name': str(get_column_value(row, ['Party Name', 'party name', 'Party'], '')),
                         'item_name': item_name,
-                        'stamp': str(get_column_value(row, ['Stamp', 'stamp'], '')),
+                        'stamp': normalize_stamp(get_column_value(row, ['Stamp', 'stamp'], '')),
                         'tag_no': tag_no,
                         'gr_wt': float(get_column_value(row, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'], 0) or 0) * KG_TO_GRAMS,
                         'net_wt': float(get_column_value(row, ['Net.Wt.', 'Net Wt'], 0) or 0) * KG_TO_GRAMS,
@@ -389,7 +389,7 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                         'refno': str(get_column_value(row, ['Refno', 'refno', 'Ref No'], '')),
                         'party_name': str(get_column_value(row, ['Party Name', 'party name', 'Party'], '')),
                         'item_name': item_name,
-                        'stamp': str(get_column_value(row, ['Stamp', 'stamp'], '')),
+                        'stamp': normalize_stamp(get_column_value(row, ['Stamp', 'stamp'], '')),
                         'tag_no': tag_no,
                         'gr_wt': float(get_column_value(row, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'], 0) or 0) * KG_TO_GRAMS,
                         'net_wt': float(get_column_value(row, ['Gold Std.', 'Net.Wt.', 'Net Wt'], 0) or 0) * KG_TO_GRAMS,
@@ -484,7 +484,7 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
                     
                     record = {
                         'item_name': item_name,
-                        'stamp': str(get_column_value(row, ['Stamp', 'stamp'], '')),
+                        'stamp': normalize_stamp(get_column_value(row, ['Stamp', 'stamp'], '')),
                         'unit': str(get_column_value(row, ['Unit', 'unit'], '')),
                         'pc': int(get_column_value(row, ['Pc', 'pc', 'Pieces'], 0) or 0),
                         'gr_wt': float(get_column_value(row, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'], 0) or 0) * KG_TO_GRAMS,
