@@ -216,7 +216,7 @@ class ResetRequest(BaseModel):
 
 # Helper Functions
 def normalize_stamp(stamp_value):
-    """Normalize stamp to consistent 'Stamp X' format"""
+    """Normalize stamp to consistent 'STAMP X' format (ALL CAPS)"""
     if not stamp_value or pd.isna(stamp_value):
         return 'Unassigned'
     
@@ -228,7 +228,7 @@ def normalize_stamp(stamp_value):
     import re
     match = re.search(r'(\d+)', stamp_str)
     if match:
-        return f'Stamp {match.group(1)}'
+        return f'STAMP {match.group(1)}'
     
     return 'Unassigned'
 
@@ -2769,12 +2769,12 @@ async def get_item_detail(item_name: str):
 async def assign_stamp_to_item(item_name: str, stamp: str = Query(...)):
     """Assign stamp to all instances of an item"""
     
-    # Normalize stamp to consistent format "Stamp X"
+    # Normalize stamp to consistent format "STAMP X" (ALL CAPS)
     import re
     if stamp and stamp.lower() != 'unassigned':
         match = re.search(r'(\d+)', stamp)
         if match:
-            stamp = f'Stamp {match.group(1)}'
+            stamp = f'STAMP {match.group(1)}'
     
     # Update master_items (single source of truth)
     result_master = await db.master_items.update_many(
