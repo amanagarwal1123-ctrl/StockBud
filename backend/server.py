@@ -2752,6 +2752,13 @@ async def get_item_detail(item_name: str):
 async def assign_stamp_to_item(item_name: str, stamp: str = Query(...)):
     """Assign stamp to all instances of an item"""
     
+    # Normalize stamp to consistent format "Stamp X"
+    import re
+    if stamp and stamp.lower() != 'unassigned':
+        match = re.search(r'(\d+)', stamp)
+        if match:
+            stamp = f'Stamp {match.group(1)}'
+    
     # Update master_items (single source of truth)
     result_master = await db.master_items.update_many(
         {"item_name": item_name},
