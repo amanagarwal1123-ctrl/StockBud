@@ -2511,8 +2511,7 @@ async def calculate_profit(
         "labor_profit_inr": round(total_labor_profit_inr, 2),
         "total_sales_value": round(total_sales_value, 2),
         "total_purchase_value": round(total_purchase_value, 2),
-        "top_profitable_items": item_profits[:20],
-        "least_profitable_items": item_profits[-20:] if len(item_profits) > 20 else [],
+        "all_items": item_profits,
         "total_items_analyzed": len(item_profits)
     }
 
