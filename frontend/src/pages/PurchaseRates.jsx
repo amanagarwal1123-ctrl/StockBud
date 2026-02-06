@@ -39,10 +39,7 @@ export default function PurchaseRates() {
     const exportData = filteredLedger.map(item => ({
       'Item Name': item.item_name,
       'Purchase Tunch (%)': item.purchase_tunch.toFixed(2),
-      'Labour per kg': item.labour_per_kg.toFixed(2),
-      'Total Purchased (kg)': item.total_purchased_kg.toFixed(3),
-      'Total Fine (kg)': item.total_fine_kg.toFixed(3),
-      'Total Labour': item.total_labour
+      'Labour per kg': item.labour_per_kg.toFixed(2)
     }));
     exportToCSV(exportData, 'purchase_rate_ledger');
   };
@@ -67,33 +64,13 @@ export default function PurchaseRates() {
       </div>
 
       {/* Stats */}
-      <div className="grid gap-6 md:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-1">
         <Card className="border-border/40 shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Items</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold font-mono text-primary">{ledger.length}</div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/40 shadow-sm">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Purchased</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold font-mono text-green-600">
-              {ledger.reduce((sum, item) => sum + item.total_purchased_kg, 0).toFixed(3)} kg
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/40 shadow-sm">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Labour</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold font-mono text-blue-600">
-              {formatIndianCurrency(ledger.reduce((sum, item) => sum + item.total_labour, 0))}
-            </div>
           </CardContent>
         </Card>
       </div>
