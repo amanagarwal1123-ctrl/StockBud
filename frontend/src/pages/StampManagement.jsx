@@ -99,6 +99,43 @@ export default function StampManagement() {
     }
   };
 
+  const handleNormalizeStamps = async () => {
+    const confirmed = window.confirm(
+      '🔧 Normalize All Stamps to CAPS Format?\n\n' +
+      'This will convert all stamps to consistent "STAMP X" format:\n' +
+      '• "Stamp 1" → "STAMP 1"\n' +
+      '• "stamp 1" → "STAMP 1"\n' +
+      '• "STamp 1" → "STAMP 1"\n\n' +
+      'This will consolidate duplicate stamps and fix inconsistencies.\n\n' +
+      'Continue?'
+    );
+    
+    if (!confirmed) return;
+    
+    try {
+      setSaving(true);
+      toast.info('Normalizing all stamps... Please wait.');
+      
+      const response = await axios.post(`${API}/admin/normalize-stamps`);
+      
+      toast.success(response.data.message);
+      
+      if (response.data.total_documents > 0) {
+        toast.info(`✓ Updated ${response.data.total_documents} documents across ${response.data.stamps_updated} stamp variations`);
+      }
+      
+      // Refresh after 2 seconds
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+      
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Normalization failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const filteredInventory = inventory.filter(item =>
     item.item_name.toLowerCase().includes(searchTerm.toLowerCase())
   );
