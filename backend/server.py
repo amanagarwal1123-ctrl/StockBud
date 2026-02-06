@@ -1508,9 +1508,12 @@ async def get_current_inventory():
             inventory_map[key]['stamps_seen'].add(trans['stamp'])
         
         # Weights in Excel already include negatives for returns
-        # Purchase types (P, PR): ADD to stock
-        # Sale types (S, SR): SUBTRACT from stock
-        multiplier = 1 if trans['type'] in ['purchase', 'purchase_return'] else -1
+        # Purchase types (P, PR) and Receive: ADD to stock
+        # Sale types (S, SR) and Issue: SUBTRACT from stock
+        if trans['type'] in ['purchase', 'purchase_return', 'receive']:
+            multiplier = 1  # Add to stock
+        else:  # sale, sale_return, issue
+            multiplier = -1  # Subtract from stock
         
         inventory_map[key]['gr_wt'] += trans.get('gr_wt', 0) * multiplier
         inventory_map[key]['net_wt'] += trans.get('net_wt', 0) * multiplier
