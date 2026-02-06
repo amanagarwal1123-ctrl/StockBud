@@ -85,7 +85,7 @@ export default function ProfitAnalysis() {
   };
 
   const handleExportProfit = () => {
-    const exportData = (profitData?.top_profitable_items || []).map((item, idx) => ({
+    const exportData = (profitData?.all_items || []).map((item, idx) => ({
       'Rank': idx + 1,
       'Item Name': item.item_name,
       'Net Weight Sold (kg)': item.net_wt_sold_kg,
@@ -107,7 +107,7 @@ export default function ProfitAnalysis() {
     );
   }
 
-  const allProfitableItems = profitData?.top_profitable_items || [];
+  const allProfitableItems = profitData?.all_items || [];
   const startIdx = (currentPage - 1) * itemsPerPage;
   const endIdx = startIdx + itemsPerPage;
   const paginatedItems = allProfitableItems.slice(startIdx, endIdx);
