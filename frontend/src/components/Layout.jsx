@@ -88,6 +88,33 @@ export default function Layout({ children }) {
     }
   };
 
+  const handleNormalizeStamps = async () => {
+    const confirmed = window.confirm(
+      'Normalize all stamp names to CAPS format (STAMP 1, STAMP 2, etc.)?\n\n' +
+      'This will fix any inconsistencies like "Stamp 1" vs "STAMP 1".\n\n' +
+      'This is safe to run and will consolidate duplicate stamps.'
+    );
+    
+    if (!confirmed) return;
+    
+    try {
+      toast.info('Normalizing stamps... Please wait.');
+      const response = await axios.post(`${API}/admin/normalize-stamps`);
+      toast.success(response.data.message);
+      
+      // Show details
+      if (response.data.update_log && response.data.update_log.length > 0) {
+        console.log('Stamp normalization log:', response.data.update_log);
+        toast.info(`Updated ${response.data.total_documents} documents across ${response.data.stamps_updated} stamp variations`);
+      }
+      
+      // Refresh page after normalization
+      setTimeout(() => window.location.reload(), 2000);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Normalization failed');
+    }
+  };
+
   const undoUpload = async (batchId, description) => {
     const confirmed = window.confirm(`Undo this upload?\n\n${description}\n\nThis will delete all transactions from this file.`);
     if (!confirmed) return;
