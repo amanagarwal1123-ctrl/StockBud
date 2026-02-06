@@ -2448,7 +2448,9 @@ async def get_sales_summary(
     
     query = {"type": {"$in": ["sale", "sale_return"]}}
     if start_date and end_date:
-        query['date'] = {'$gte': start_date, '$lte': end_date}
+        # Add time component to end_date to include full day
+        end_date_with_time = end_date + ' 23:59:59'
+        query['date'] = {'$gte': start_date, '$lte': end_date_with_time}
     
     # Get ALL sale transactions (S and SR - SR have negative values already)
     sales_transactions = await db.transactions.find(query, {"_id": 0}).to_list(10000)
