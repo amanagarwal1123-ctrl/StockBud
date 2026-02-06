@@ -177,15 +177,17 @@ export default function UserManagement() {
         </Button>
       </div>
 
-      {/* Create User Form */}
+      {/* Create/Edit User Form */}
       {showCreateForm && (
         <Card className="border-primary/20">
           <CardHeader>
-            <CardTitle>Create New User</CardTitle>
-            <CardDescription>Add a new executive, manager, or admin</CardDescription>
+            <CardTitle>{editingUser ? 'Edit User' : 'Create New User'}</CardTitle>
+            <CardDescription>
+              {editingUser ? 'Update user details, role, or password' : 'Add a new executive, manager, or admin'}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleCreateUser} className="space-y-4">
+            <form onSubmit={editingUser ? handleUpdateUser : handleCreateUser} className="space-y-4">
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="username">Username *</Label>
@@ -194,7 +196,11 @@ export default function UserManagement() {
                     value={formData.username}
                     onChange={(e) => setFormData({...formData, username: e.target.value})}
                     required
+                    disabled={editingUser && formData.username === editingUser.username}
                   />
+                  {editingUser && (
+                    <p className="text-xs text-muted-foreground mt-1">Change username to rename user</p>
+                  )}
                 </div>
                 <div>
                   <Label htmlFor="full_name">Full Name *</Label>
@@ -209,13 +215,14 @@ export default function UserManagement() {
 
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="password">Password *</Label>
+                  <Label htmlFor="password">Password {editingUser ? '(leave blank to keep unchanged)' : '*'}</Label>
                   <Input
                     id="password"
                     type="password"
                     value={formData.password}
                     onChange={(e) => setFormData({...formData, password: e.target.value})}
-                    required
+                    required={!editingUser}
+                    placeholder={editingUser ? 'Enter new password to change' : ''}
                   />
                 </div>
                 <div>
@@ -234,9 +241,24 @@ export default function UserManagement() {
                 </div>
               </div>
 
+              {editingUser && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="is_active"
+                    checked={formData.is_active}
+                    onChange={(e) => setFormData({...formData, is_active: e.target.checked})}
+                    className="h-4 w-4"
+                  />
+                  <Label htmlFor="is_active" className="cursor-pointer">
+                    Active (uncheck to deactivate user)
+                  </Label>
+                </div>
+              )}
+
               <div className="flex gap-2">
-                <Button type="submit">Create User</Button>
-                <Button type="button" variant="outline" onClick={() => setShowCreateForm(false)}>
+                <Button type="submit">{editingUser ? 'Update User' : 'Create User'}</Button>
+                <Button type="button" variant="outline" onClick={handleCancelEdit}>
                   Cancel
                 </Button>
               </div>
