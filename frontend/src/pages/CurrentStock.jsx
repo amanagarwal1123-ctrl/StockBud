@@ -97,12 +97,12 @@ export default function CurrentStock() {
   }
 
   return (
-    <div className="p-6 md:p-8 space-y-6" data-testid="current-stock-page">
+    <div className="p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-6" data-testid="current-stock-page">
       <div>
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
+        <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight">
           Current Stock
         </h1>
-        <p className="text-lg text-muted-foreground mt-2">
+        <p className="text-sm sm:text-base md:text-lg text-muted-foreground mt-2">
           Real-time inventory calculated from opening stock and transactions
         </p>
       </div>
@@ -118,40 +118,40 @@ export default function CurrentStock() {
       )}
 
       {/* Stats */}
-      <div className="grid gap-6 md:grid-cols-4">
+      <div className="grid gap-4 sm:gap-6 grid-cols-2 md:grid-cols-4">
         <Card className="border-border/40 shadow-sm bg-gradient-to-br from-primary/10 to-transparent">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Items</CardTitle>
+          <CardHeader className="pb-2 sm:pb-3">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">Total Items</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold font-mono text-primary">{inventory.length}</div>
+            <div className="text-2xl sm:text-3xl font-bold font-mono text-primary">{inventory.length}</div>
           </CardContent>
         </Card>
         <Card className="border-border/40 shadow-sm bg-gradient-to-br from-accent/10 to-transparent">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Stamps</CardTitle>
+          <CardHeader className="pb-2 sm:pb-3">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">Total Stamps</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold font-mono text-accent">{Object.keys(byStamp).length}</div>
+            <div className="text-2xl sm:text-3xl font-bold font-mono text-accent">{Object.keys(byStamp).length}</div>
           </CardContent>
         </Card>
         <Card className="border-border/40 shadow-sm bg-gradient-to-br from-blue-500/10 to-transparent">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Gross Weight</CardTitle>
+          <CardHeader className="pb-2 sm:pb-3">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">Gross Weight</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold font-mono text-blue-600">
-              {(totalGrWt / 1000).toFixed(3)} kg
+            <div className="text-xl sm:text-2xl md:text-3xl font-bold font-mono text-blue-600">
+              {(totalGrWt / 1000).toFixed(1)} kg
             </div>
           </CardContent>
         </Card>
         <Card className="border-border/40 shadow-sm bg-gradient-to-br from-green-500/10 to-transparent">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Net Weight</CardTitle>
+          <CardHeader className="pb-2 sm:pb-3">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">Net Weight</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold font-mono text-green-600">
-              {(totalNetWt / 1000).toFixed(3)} kg
+            <div className="text-xl sm:text-2xl md:text-3xl font-bold font-mono text-green-600">
+              {(totalNetWt / 1000).toFixed(1)} kg
             </div>
           </CardContent>
         </Card>
