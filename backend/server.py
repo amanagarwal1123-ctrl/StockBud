@@ -1722,14 +1722,19 @@ async def compare_physical_with_book():
     
     discrepancies.sort(key=lambda x: abs(x['difference']), reverse=True)
     
-    total_book = sum(item['net_wt'] for item in book_items.values())
-    total_physical = sum(item['net_wt'] for item in physical_items.values())
+    total_book_net = sum(item['net_wt'] for item in book_items.values())
+    total_physical_net = sum(item['net_wt'] for item in physical_items.values())
+    total_book_gross = sum(item.get('gr_wt', 0) for item in book_items.values())
+    total_physical_gross = sum(item.get('gr_wt', 0) for item in physical_items.values())
     
     return {
         "summary": {
-            "total_book_kg": round(total_book/1000, 3),
-            "total_physical_kg": round(total_physical/1000, 3),
-            "total_difference_kg": round((total_physical - total_book)/1000, 3),
+            "total_book_kg": round(total_book_net/1000, 3),
+            "total_physical_kg": round(total_physical_net/1000, 3),
+            "total_difference_kg": round((total_physical_net - total_book_net)/1000, 3),
+            "total_book_gross_kg": round(total_book_gross/1000, 3),
+            "total_physical_gross_kg": round(total_physical_gross/1000, 3),
+            "total_difference_gross_kg": round((total_physical_gross - total_book_gross)/1000, 3),
             "match_count": len(matches),
             "discrepancy_count": len(discrepancies),
             "only_in_book_count": len(only_in_book),
