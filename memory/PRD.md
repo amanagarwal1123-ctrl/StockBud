@@ -46,6 +46,12 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 - **AI Smart Analytics**: Claude Opus 4.6 powered insights via Emergent LLM key
 - **Selective Reset**: Checklist-based reset (sales, purchases, issues, polythene, mappings, etc.)
 
+### Auto-Refresh Stock Alerts (Feb 7, 2026)
+- Backend `/api/stock-alerts/auto` — lightweight auto-check, throttled to every 30 min
+- Executive Stock Entry page: red stock deficit alerts with pulsing indicators, order ranges, auto-polls every 5 min
+- Notifications page: 5 category tabs (Stock, Orders, Stamps, Polythene, General), auto-refresh every 60s
+- Alerts route to stamp-assigned users; unassigned default to admin; critical also notify admin
+
 ## Key Credentials
 - Admin: admin / admin123
 - Manager: SMANAGER / manager123
