@@ -151,7 +151,7 @@ export default function CurrentStock() {
           </CardHeader>
           <CardContent>
             <div className="text-xl sm:text-2xl md:text-3xl font-bold font-mono text-green-600">
-              {(totalNetWt / 1000).toFixed(1)} kg
+              {(totalNetWt / 1000).toFixed(3)} kg
             </div>
           </CardContent>
         </Card>
