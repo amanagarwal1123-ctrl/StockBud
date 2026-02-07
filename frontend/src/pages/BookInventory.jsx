@@ -164,9 +164,9 @@ export default function BookInventory() {
                           {item.stamp || 'Unassigned'}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right font-mono">{item.gr_wt.toFixed(2)}</TableCell>
-                      <TableCell className="text-right font-mono">{item.net_wt.toFixed(2)}</TableCell>
-                      <TableCell className="text-right font-mono">{item.fine_sil.toFixed(2)}</TableCell>
+                      <TableCell className="text-right font-mono">{item.gr_wt.toFixed(3)}</TableCell>
+                      <TableCell className="text-right font-mono">{item.net_wt.toFixed(3)}</TableCell>
+                      <TableCell className="text-right font-mono">{item.fine_sil.toFixed(3)}</TableCell>
                       <TableCell className="text-right font-mono">{item.total_pc}</TableCell>
                     </TableRow>
                   ))
