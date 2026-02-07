@@ -154,7 +154,7 @@ export default function InventoryMatching() {
                               {diff.stamp}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-right font-mono">{diff.book_gr_wt.toFixed(2)}g</TableCell>
+                          <TableCell className="text-right font-mono">{diff.book_gr_wt.toFixed(3)}g</TableCell>
                           <TableCell className="text-center">
                             <ArrowRight className="h-4 w-4 text-muted-foreground mx-auto" />
                           </TableCell>
