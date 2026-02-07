@@ -2536,7 +2536,14 @@ async def get_party_analysis(
             suppliers[party]['total_gr_wt'] += gr_wt * multiplier
             suppliers[party]['transaction_count'] += 1
     
-    # Convert to lists and sort by net weight
+    # Convert to lists, round values, and sort by net weight
+    for party_data in list(customers.values()) + list(suppliers.values()):
+        party_data['total_net_wt'] = round(party_data['total_net_wt'], 3)
+        party_data['total_fine_wt'] = round(party_data['total_fine_wt'], 3)
+        party_data['total_gr_wt'] = round(party_data['total_gr_wt'], 3)
+        party_data['total_sales_value'] = round(party_data.get('total_sales_value', 0), 2)
+        party_data['total_purchases_value'] = round(party_data.get('total_purchases_value', 0), 2)
+    
     customers_list = sorted(
         [v for v in customers.values()],
         key=lambda x: x['total_net_wt'],
