@@ -2824,9 +2824,8 @@ async def get_stats():
 
 @api_router.delete("/transactions/all")
 async def clear_all_transactions():
-    """Clear all transactions"""
+    """Clear all transactions only (preserves opening stock and master data)"""
     result = await db.transactions.delete_many({})
-    await db.opening_stock.delete_many({})
     return {"success": True, "deleted_count": result.deleted_count}
 
 @api_router.get("/item/{item_name}")
