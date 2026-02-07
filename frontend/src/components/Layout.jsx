@@ -150,14 +150,36 @@ export default function Layout({ children }) {
       toast.error('Please enter password');
       return;
     }
+    if (resetCategories.length === 0) {
+      toast.error('Please select at least one category to reset');
+      return;
+    }
     
     try {
-      await axios.post(`${API}/system/reset`, { password: resetPassword });
-      toast.success('System reset successfully!');
+      const response = await axios.post(`${API}/system/reset`, { 
+        password: resetPassword,
+        categories: resetCategories
+      });
+      toast.success(response.data.message || 'Reset complete!');
       setResetPassword('');
+      setResetCategories([]);
       window.location.reload();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Reset failed');
+    }
+  };
+
+  const toggleCategory = (catId) => {
+    setResetCategories(prev => 
+      prev.includes(catId) ? prev.filter(c => c !== catId) : [...prev, catId]
+    );
+  };
+
+  const toggleAllCategories = () => {
+    if (resetCategories.length === RESET_CATEGORIES.length) {
+      setResetCategories([]);
+    } else {
+      setResetCategories(RESET_CATEGORIES.map(c => c.id));
     }
   };
 
