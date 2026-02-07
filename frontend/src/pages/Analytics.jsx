@@ -93,7 +93,7 @@ export default function Analytics() {
 
   const barData = topMovers.map((item) => ({
     name: item.item_name.substring(0, 20) + '...',
-    sales: parseFloat(item.monthly_sale_kg.toFixed(2)),
+    sales: parseFloat(item.monthly_sale_kg.toFixed(3)),
   }));
 
   if (loading) {
