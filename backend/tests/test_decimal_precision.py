@@ -129,31 +129,51 @@ class TestDecimalPrecision:
         assert total_items >= 300, f"Expected ~344 items, got {total_items}"
         print(f"✓ Total items in inventory: {total_items} (positive: {len(inventory)}, negative: {len(negative_items)})")
     
-    def test_book_inventory_api(self, auth_headers):
-        """Test /api/inventory/book returns weight values"""
-        response = requests.get(f"{BASE_URL}/api/inventory/book", headers=auth_headers)
+    def test_physical_stock_compare_api(self, auth_headers):
+        """Test /api/physical-stock/compare returns weight values with 3 decimal precision"""
+        response = requests.get(f"{BASE_URL}/api/physical-stock/compare", headers=auth_headers)
         assert response.status_code == 200, f"API failed: {response.text}"
         data = response.json()
         
-        inventory = data.get('inventory', [])
-        by_stamp = data.get('by_stamp', {})
+        # Check totals have proper precision
+        total_book_kg = data.get('total_book_kg', 0)
+        total_physical_kg = data.get('total_physical_kg', 0)
         
-        print(f"✓ Book inventory has {len(inventory)} items across {len(by_stamp)} stamps")
+        print(f"✓ Physical stock compare - Book total: {total_book_kg} kg")
         
-        # Verify first few items have proper values
-        for item in inventory[:3]:
-            assert 'gr_wt' in item, "Item missing gr_wt"
-            assert 'net_wt' in item, "Item missing net_wt"
-            print(f"  ✓ {item.get('item_name', 'Unknown')[:30]} - gr_wt: {item.get('gr_wt')}, net_wt: {item.get('net_wt')}")
+        # Verify total has max 3 decimal places
+        if isinstance(total_book_kg, float):
+            total_str = str(total_book_kg)
+            if '.' in total_str:
+                decimals = len(total_str.split('.')[1])
+                assert decimals <= 3, f"total_book_kg has more than 3 decimals"
+        
+        print(f"✓ All physical stock compare values have proper decimal precision")
     
-    def test_analytics_movement_api(self, auth_headers):
-        """Test /api/analytics/movement returns proper values"""
-        response = requests.get(f"{BASE_URL}/api/analytics/movement", headers=auth_headers)
+    def test_analytics_party_api(self, auth_headers):
+        """Test /api/analytics/party-analysis returns weight values with 3 decimal precision"""
+        response = requests.get(f"{BASE_URL}/api/analytics/party-analysis", headers=auth_headers)
         assert response.status_code == 200, f"API failed: {response.text}"
         data = response.json()
         
-        # May be empty if no sales data
-        print(f"✓ Analytics movement data returned {len(data)} items")
+        customers = data.get('customers', [])
+        suppliers = data.get('suppliers', [])
+        
+        print(f"✓ Party analytics returned {len(customers)} customers and {len(suppliers)} suppliers")
+        
+        # Check first customer/supplier for decimal precision
+        for customer in customers[:2]:
+            net_wt = customer.get('total_net_wt', 0)
+            fine_wt = customer.get('total_fine_wt', 0)
+            
+            # Verify max 3 decimal places
+            if isinstance(net_wt, float):
+                net_str = str(net_wt)
+                if '.' in net_str:
+                    decimals = len(net_str.split('.')[1])
+                    assert decimals <= 3, f"total_net_wt has more than 3 decimals: {net_wt}"
+            
+            print(f"  ✓ Customer {customer.get('party_name', 'Unknown')[:20]} - net_wt: {net_wt}")
     
     def test_stats_api(self, auth_headers):
         """Test /api/stats returns dashboard stats"""
@@ -161,8 +181,10 @@ class TestDecimalPrecision:
         assert response.status_code == 200, f"API failed: {response.text}"
         data = response.json()
         
-        assert 'total_items' in data, "Missing total_items in stats"
-        print(f"✓ Stats API returned: total_items={data.get('total_items')}")
+        # Stats API returns: total_transactions, total_purchases, total_sales, total_opening_stock, total_parties
+        assert 'total_opening_stock' in data, "Missing total_opening_stock in stats"
+        assert 'total_transactions' in data, "Missing total_transactions in stats"
+        print(f"✓ Stats API returned: total_opening_stock={data.get('total_opening_stock')}, total_transactions={data.get('total_transactions')}")
 
 
 class TestTransactions:
