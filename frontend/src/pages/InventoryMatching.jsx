@@ -161,7 +161,7 @@ export default function InventoryMatching() {
                           <TableCell className="text-right font-mono">{diff.physical_gr_wt.toFixed(3)}g</TableCell>
                           <TableCell className="text-right font-mono">
                             <span className={diff.gr_wt_diff > 0 ? 'text-emerald-600' : 'text-red-600'}>
-                              {diff.gr_wt_diff > 0 ? '+' : ''}{diff.gr_wt_diff.toFixed(2)}g
+                              {diff.gr_wt_diff > 0 ? '+' : ''}{diff.gr_wt_diff.toFixed(3)}g
                             </span>
                           </TableCell>
                         </TableRow>
