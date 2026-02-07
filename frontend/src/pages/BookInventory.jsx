@@ -91,7 +91,7 @@ export default function BookInventory() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold font-mono">
-              {inventory.reduce((sum, item) => sum + item.gr_wt, 0).toFixed(2)}g
+              {inventory.reduce((sum, item) => sum + item.gr_wt, 0).toFixed(3)}g
             </div>
           </CardContent>
         </Card>
