@@ -265,7 +265,7 @@ export default function Analytics() {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right font-mono">
-                            {item.monthly_sale_kg.toFixed(2)}
+                            {item.monthly_sale_kg.toFixed(3)}
                           </TableCell>
                         </TableRow>
                       ))
