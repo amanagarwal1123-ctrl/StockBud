@@ -1507,26 +1507,25 @@ async def get_current_inventory():
         elif trans.get('stamp'):
             inventory_map[key]['stamps_seen'].add(trans['stamp'])
         
-        # Transaction type logic (CORRECTED):
-        # Purchase (P): Positive values → ADD to stock
-        # Purchase Return (PR): Positive values → SUBTRACT from stock (we return to supplier)
-        # Sale (S): Positive values → SUBTRACT from stock  
-        # Sale Return (SR): Positive values → ADD to stock (customer returns to us)
-        # Receive (R): Positive values → ADD to stock
-        # Issue (I): Positive values → SUBTRACT from stock
+        # Transaction type logic (USER CONFIRMED):
+        # Excel files have signed values for returns (PR and SR are negative)
+        # Purchase file: P(+) and PR(-) → ADD both (PR negative naturally subtracts)
+        # Sale file: S(+) and SR(-) → SUBTRACT both (SR negative naturally adds)
+        # Issue/Receive file: I(+) and R(+) → Issue subtracts, Receive adds
         
-        # NOTE: If Excel has negative values for returns, they will naturally reverse
-        # E.g., Purchase Return with -10 kg: ADD(-10) = subtract 10 ✓
+        # Final stock = Opening + Purchase + PR + Receive - Sale - SR - Issue
+        # Since PR is negative: Adding negative = subtracting ✓
+        # Since SR is negative: Subtracting negative = adding ✓
         
-        if trans['type'] in ['purchase', 'receive', 'sale_return']:
-            # Add to stock (including sale returns from customers)
+        if trans['type'] in ['purchase', 'purchase_return', 'receive']:
+            # ADD (purchase returns are negative, so adding them subtracts naturally)
             inventory_map[key]['gr_wt'] += trans.get('gr_wt', 0)
             inventory_map[key]['net_wt'] += trans.get('net_wt', 0)
             inventory_map[key]['fine'] += trans.get('fine', 0)
             inventory_map[key]['total_pc'] += trans.get('total_pc', 0)
             inventory_map[key]['labor'] += trans.get('labor', 0)
-        else:  # sale, issue, purchase_return
-            # Subtract from stock
+        else:  # sale, sale_return, issue
+            # SUBTRACT (sale returns are negative, so subtracting them adds naturally)
             inventory_map[key]['gr_wt'] -= trans.get('gr_wt', 0)
             inventory_map[key]['net_wt'] -= trans.get('net_wt', 0)
             inventory_map[key]['fine'] -= trans.get('fine', 0)
