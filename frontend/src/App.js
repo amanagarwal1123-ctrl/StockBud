@@ -89,6 +89,10 @@ function App() {
                       <Route path="/approvals" element={<ManagerApprovals />} />
                       <Route path="/notifications" element={<Notifications />} />
                       <Route path="/activity-log" element={<ActivityLog />} />
+                      <Route path="/item-buffers" element={<ItemBufferManagement />} />
+                      <Route path="/orders" element={<OrderManagement />} />
+                      <Route path="/visualization" element={<DataVisualization />} />
+                      <Route path="/stamp-assignments" element={<StampAssignments />} />
                       <Route path="/item/:itemName" element={<ItemDetail />} />
                     </Routes>
                   </Layout>
