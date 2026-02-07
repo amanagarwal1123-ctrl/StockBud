@@ -2187,7 +2187,12 @@ async def get_customer_profit(
         customer_profit[customer]['total_sold_kg'] += sale_net_wt / 1000
         customer_profit[customer]['transaction_count'] += 1
     
-    # Convert to list and sort
+    # Convert to list, round values, and sort
+    for v in customer_profit.values():
+        v['silver_profit_kg'] = round(v['silver_profit_kg'], 3)
+        v['labour_profit_inr'] = round(v['labour_profit_inr'], 2)
+        v['total_sold_kg'] = round(v['total_sold_kg'], 3)
+    
     customers = sorted(
         [v for v in customer_profit.values()],
         key=lambda x: x['silver_profit_kg'],
