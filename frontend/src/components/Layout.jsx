@@ -18,16 +18,30 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import axios from 'axios';
 import { toast } from 'sonner';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
+const RESET_CATEGORIES = [
+  { id: 'sales', label: 'Sales Transactions', desc: 'All sale & sale return records' },
+  { id: 'purchases', label: 'Purchase Transactions', desc: 'All purchase & purchase return records' },
+  { id: 'issues', label: 'Issue / Receive', desc: 'Branch transfer records' },
+  { id: 'polythene', label: 'Polythene Adjustments', desc: 'All polythene weight entries' },
+  { id: 'mappings', label: 'Item Mappings', desc: 'Transaction-to-master name mappings' },
+  { id: 'physical_stock', label: 'Physical Stock', desc: 'Physical inventory & stock entries' },
+  { id: 'purchase_ledger', label: 'Purchase Ledger', desc: 'Cumulative purchase rates' },
+  { id: 'notifications', label: 'Notifications & Logs', desc: 'Notifications and activity log' },
+  { id: 'history', label: 'Action History', desc: 'Upload history & undo records' },
+];
+
 export default function Layout({ children }) {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [resetPassword, setResetPassword] = useState('');
+  const [resetCategories, setResetCategories] = useState([]);
   const [showUndoDialog, setShowUndoDialog] = useState(false);
   const [recentUploads, setRecentUploads] = useState([]);
   
