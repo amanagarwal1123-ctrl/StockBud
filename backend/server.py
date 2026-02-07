@@ -1607,8 +1607,8 @@ async def get_current_inventory():
         "inventory": inventory,
         "by_stamp": stamp_groups,
         "total_items": len(inventory),
-        "total_gr_wt": total_gr_wt,
-        "total_net_wt": total_net_wt,
+        "total_gr_wt": round(total_gr_wt, 3),
+        "total_net_wt": round(total_net_wt, 3),
         "negative_items": negative_items
     }
 
