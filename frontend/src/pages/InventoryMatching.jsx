@@ -205,7 +205,7 @@ export default function InventoryMatching() {
                               {item.stamp || 'None'}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-right font-mono">{item.gr_wt.toFixed(2)}</TableCell>
+                          <TableCell className="text-right font-mono">{item.gr_wt.toFixed(3)}</TableCell>
                           <TableCell className="text-right">
                             <Dialog>
                               <DialogTrigger asChild>
