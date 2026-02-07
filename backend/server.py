@@ -3416,6 +3416,90 @@ async def check_stock_alerts(current_user: dict = Depends(get_current_user)):
     
     return {"success": True, "alerts_generated": alerts}
 
+@api_router.get("/stock-alerts/auto")
+async def auto_stock_alerts(current_user: dict = Depends(get_current_user)):
+    """Lightweight auto-check: returns current stock alerts for the user without generating new notifications.
+    Only regenerates alerts if last check was > 30 minutes ago."""
+    
+    username = current_user['username']
+    role = current_user['role']
+    
+    # Check if we need to regenerate alerts (throttle to every 30 min)
+    last_check = await db.system_state.find_one({'key': 'last_stock_alert_check'}, {'_id': 0})
+    now = datetime.now(timezone.utc)
+    should_regenerate = True
+    
+    if last_check and last_check.get('timestamp'):
+        try:
+            last_ts = datetime.fromisoformat(last_check['timestamp'])
+            if (now - last_ts).total_seconds() < 1800:  # 30 minutes
+                should_regenerate = False
+        except:
+            pass
+    
+    if should_regenerate:
+        # Run the stock alert check
+        buffers = await db.item_buffers.find({}, {"_id": 0}).to_list(10000)
+        if buffers:
+            inv_response = await get_current_inventory()
+            inv_dict = {item['item_name']: item for item in inv_response['inventory']}
+            inv_dict.update({item['item_name']: item for item in inv_response.get('negative_items', [])})
+            
+            assignments = await db.stamp_assignments.find({}, {"_id": 0}).to_list(100)
+            stamp_user = {a['stamp']: a['assigned_user'] for a in assignments}
+            
+            # Clear old stock alerts (only stock category)
+            await db.notifications.delete_many({'category': 'stock', 'type': {'$in': ['stock_deficit', 'stock_excess']}})
+            
+            now_str = now.isoformat()
+            for buf in buffers:
+                inv_item = inv_dict.get(buf['item_name'])
+                current = round(inv_item['net_wt'] / 1000, 3) if inv_item else 0
+                min_stock = buf.get('minimum_stock_kg', 0)
+                lower = buf.get('lower_buffer_kg', 0)
+                upper = buf.get('upper_buffer_kg', 0)
+                stamp = buf.get('stamp', '')
+                target = stamp_user.get(stamp, 'admin')
+                
+                if min_stock > 0 and current < min_stock:
+                    deficit = round(min_stock - current, 3)
+                    severity = 'critical' if current < (min_stock - lower) else 'warning'
+                    
+                    await db.notifications.insert_one({
+                        'id': str(uuid.uuid4()), 'category': 'stock', 'type': 'stock_deficit',
+                        'severity': severity,
+                        'message': f"LOW STOCK: '{buf['item_name']}' at {current} kg (min: {min_stock} kg)",
+                        'item_name': buf['item_name'], 'stamp': stamp,
+                        'current_stock': current, 'minimum_stock': min_stock, 'deficit': deficit,
+                        'order_range_min': round(deficit, 3),
+                        'order_range_max': round(upper - current, 3) if upper > current else round(deficit, 3),
+                        'target_user': target, 'read': False, 'timestamp': now_str
+                    })
+                    
+                    if severity == 'critical' and target != 'admin':
+                        await db.notifications.insert_one({
+                            'id': str(uuid.uuid4()), 'category': 'stock', 'type': 'stock_deficit',
+                            'severity': 'critical',
+                            'message': f"CRITICAL: '{buf['item_name']}' at {current} kg (below buffer!)",
+                            'item_name': buf['item_name'], 'stamp': stamp,
+                            'target_user': 'admin', 'read': False, 'timestamp': now_str
+                        })
+            
+            await db.system_state.update_one(
+                {'key': 'last_stock_alert_check'},
+                {'$set': {'key': 'last_stock_alert_check', 'timestamp': now.isoformat()}},
+                upsert=True
+            )
+    
+    # Return alerts relevant to this user
+    query = {'category': 'stock', 'type': 'stock_deficit', 'read': False}
+    if role != 'admin':
+        query['target_user'] = username
+    
+    alerts = await db.notifications.find(query, {"_id": 0}).sort("severity", 1).to_list(100)
+    
+    return {"alerts": alerts, "count": len(alerts)}
+
 # ==================== DATA VISUALIZATION ====================
 
 @api_router.get("/analytics/visualization")
