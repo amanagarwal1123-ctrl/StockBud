@@ -327,14 +327,14 @@ export default function Layout({ children }) {
                   Reset Data
                 </Button>
               </AlertDialogTrigger>
-              <AlertDialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+              <AlertDialogContent className="max-w-md">
                 <AlertDialogHeader>
                   <AlertDialogTitle>Reset Data</AlertDialogTitle>
                   <AlertDialogDescription>
                     Select what to clear. Master stock & users are never deleted.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
-                <div className="py-2 space-y-3">
+                <div className="max-h-[50vh] overflow-y-auto py-2 space-y-3">
                   <div className="flex items-center gap-2 pb-2 border-b">
                     <Checkbox 
                       id="select-all"
