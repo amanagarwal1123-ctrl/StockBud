@@ -1579,6 +1579,12 @@ async def get_current_inventory():
         if item_name in poly_map:
             item['gr_wt'] += poly_map[item_name]
         
+        # Round all weight values to 3 decimal places (grams)
+        item['gr_wt'] = round(item['gr_wt'], 3)
+        item['net_wt'] = round(item['net_wt'], 3)
+        item['fine'] = round(item['fine'], 3)
+        item['labor'] = round(item['labor'], 3)
+        
         # Always include in total calculation (even negative items)
         total_gr_wt += item['gr_wt']
         total_net_wt += item['net_wt']
