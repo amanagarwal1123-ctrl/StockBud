@@ -189,6 +189,43 @@ export default function ExecutiveStockEntry() {
         </p>
       </div>
 
+      {/* Stock Deficit Alerts */}
+      {stockAlerts.length > 0 && (
+        <Card className="border-red-400 bg-red-50 shadow-md" data-testid="stock-alerts-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2 text-red-700">
+              <AlertTriangle className="h-5 w-5 animate-pulse" />
+              Stock Alerts ({stockAlerts.length})
+            </CardTitle>
+            <CardDescription className="text-red-600/70">Items below minimum stock — action required</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {stockAlerts.map((alert, idx) => (
+                <div key={idx} className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-red-200" data-testid={`exec-alert-${idx}`}>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${alert.severity === 'critical' ? 'bg-red-600 animate-pulse' : 'bg-amber-500'}`} />
+                      <span className="font-semibold text-sm truncate">{alert.item_name}</span>
+                      {alert.stamp && <Badge variant="outline" className="text-xs flex-shrink-0">{alert.stamp}</Badge>}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5 ml-4.5">
+                      Current: {alert.current_stock} kg | Min: {alert.minimum_stock} kg | Deficit: <span className="text-red-600 font-semibold">{alert.deficit} kg</span>
+                    </p>
+                  </div>
+                  {alert.order_range_min != null && (
+                    <div className="text-right flex-shrink-0 ml-3">
+                      <p className="text-xs text-muted-foreground">Order range</p>
+                      <p className="text-sm font-mono font-semibold text-blue-700">{alert.order_range_min} - {alert.order_range_max} kg</p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* My Entries */}
       {myEntries.length > 0 && (
         <Card className="border-primary/20">
