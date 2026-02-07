@@ -2789,18 +2789,70 @@ async def undo_last_action():
 
 @api_router.post("/system/reset")
 async def reset_system(request: ResetRequest):
-    """Reset entire system with password protection"""
+    """Selective system reset with password protection"""
     if request.password != "CLOSE":
         raise HTTPException(status_code=403, detail="Invalid password")
     
-    # Clear all collections
-    await db.transactions.delete_many({})
-    await db.opening_stock.delete_many({})
-    await db.action_history.delete_many({})
+    if not request.categories:
+        raise HTTPException(status_code=400, detail="No categories selected for reset")
+    
+    # Map category names to DB collections and transaction type filters
+    results = {}
+    
+    if 'sales' in request.categories:
+        r = await db.transactions.delete_many({"type": {"$in": ["sale", "sale_return"]}})
+        results['sales'] = r.deleted_count
+    
+    if 'purchases' in request.categories:
+        r = await db.transactions.delete_many({"type": {"$in": ["purchase", "purchase_return"]}})
+        results['purchases'] = r.deleted_count
+    
+    if 'issues' in request.categories:
+        r = await db.transactions.delete_many({"type": {"$in": ["issue", "receive"]}})
+        results['issues'] = r.deleted_count
+    
+    if 'polythene' in request.categories:
+        r = await db.polythene_adjustments.delete_many({})
+        results['polythene'] = r.deleted_count
+    
+    if 'mappings' in request.categories:
+        r = await db.item_mappings.delete_many({})
+        results['mappings'] = r.deleted_count
+    
+    if 'physical_stock' in request.categories:
+        r1 = await db.physical_inventory.delete_many({})
+        r2 = await db.stock_entries.delete_many({})
+        results['physical_stock'] = r1.deleted_count + r2.deleted_count
+    
+    if 'purchase_ledger' in request.categories:
+        r = await db.purchase_ledger.delete_many({})
+        results['purchase_ledger'] = r.deleted_count
+    
+    if 'notifications' in request.categories:
+        r1 = await db.notifications.delete_many({})
+        r2 = await db.activity_log.delete_many({})
+        results['notifications'] = r1.deleted_count + r2.deleted_count
+    
+    if 'history' in request.categories:
+        r = await db.action_history.delete_many({})
+        results['history'] = r.deleted_count
+    
+    if 'all_data' in request.categories:
+        # Nuclear option: clear everything except users and master_items
+        for coll in ['transactions', 'polythene_adjustments', 'item_mappings',
+                      'physical_inventory', 'stock_entries', 'purchase_ledger',
+                      'notifications', 'activity_log', 'action_history',
+                      'stamp_approvals', 'inventory_snapshots']:
+            await db[coll].delete_many({})
+        results['all_data'] = 'All cleared (users & master stock preserved)'
+    
+    desc = ', '.join(f"{k}: {v}" for k, v in results.items())
+    await save_action('system_reset', f"Selective reset: {desc}")
     
     return {
         "success": True,
-        "message": "System reset successfully. All data cleared."
+        "results": results,
+        "message": f"Reset complete: {desc}"
     }
 
 @api_router.get("/stats")
