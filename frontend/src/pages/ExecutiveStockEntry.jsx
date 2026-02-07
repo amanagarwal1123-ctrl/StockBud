@@ -22,13 +22,30 @@ export default function ExecutiveStockEntry() {
   const [stamps, setStamps] = useState([]);
   const [myEntries, setMyEntries] = useState([]);
   const [editingEntry, setEditingEntry] = useState(null);
+  const [stockAlerts, setStockAlerts] = useState([]);
 
   const { user } = useAuth();
+
+  const fetchStockAlerts = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get(`${API}/stock-alerts/auto`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setStockAlerts(res.data.alerts || []);
+    } catch (e) {
+      console.error('Stock alerts fetch failed:', e);
+    }
+  }, []);
 
   useEffect(() => {
     fetchStamps();
     fetchMyEntries();
-  }, []);
+    fetchStockAlerts();
+    // Auto-refresh every 5 minutes
+    const interval = setInterval(fetchStockAlerts, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [fetchStockAlerts]);
 
   const fetchStamps = async () => {
     try {
