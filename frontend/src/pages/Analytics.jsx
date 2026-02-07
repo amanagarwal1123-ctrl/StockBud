@@ -317,8 +317,8 @@ export default function Analytics() {
                               {item.stamp || 'Unassigned'}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-right font-mono">{item.gr_wt.toFixed(2)}</TableCell>
-                          <TableCell className="text-right font-mono">{item.poly_wt.toFixed(2)}</TableCell>
+                          <TableCell className="text-right font-mono">{item.gr_wt.toFixed(3)}</TableCell>
+                          <TableCell className="text-right font-mono">{item.poly_wt.toFixed(3)}</TableCell>
                           <TableCell className="text-right font-mono">
                             <span className="text-amber-600 font-semibold">
                               {item.poly_ratio.toFixed(2)}%
