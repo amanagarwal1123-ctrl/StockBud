@@ -1820,14 +1820,14 @@ async def get_stamp_breakdown(stamp: str):
     
     return {
         "stamp": stamp,
-        "opening_gross": opening_gross,
-        "opening_net": opening_net,
-        "purchase_gross": purchase_gross,
-        "purchase_net": purchase_net,
-        "sale_gross": sale_gross,
-        "sale_net": sale_net,
-        "current_gross": current_gross,
-        "current_net": current_net,
+        "opening_gross": round(opening_gross, 3),
+        "opening_net": round(opening_net, 3),
+        "purchase_gross": round(purchase_gross, 3),
+        "purchase_net": round(purchase_net, 3),
+        "sale_gross": round(sale_gross, 3),
+        "sale_net": round(sale_net, 3),
+        "current_gross": round(current_gross, 3),
+        "current_net": round(current_net, 3),
         "item_count": len(stamp_item_names),
         "mapped_count": len(mapped_names)
     }
