@@ -367,10 +367,9 @@ export default function Layout({ children }) {
                       placeholder="Type CLOSE to confirm"
                       value={resetPassword}
                       onChange={(e) => setResetPassword(e.target.value)}
-                      className="mt-1"
-                      data-testid="reset-password-input"
-                    />
-                  </div>
+                    className="mt-1"
+                    data-testid="reset-password-input"
+                  />
                 </div>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
