@@ -358,9 +358,10 @@ export default function Layout({ children }) {
                       </div>
                     </div>
                   ))}
-                  <div className="pt-3 border-t">
-                    <Label htmlFor="reset-password" className="text-sm">Password</Label>
-                    <Input
+                </div>
+                <div className="pt-3 border-t">
+                  <Label htmlFor="reset-password" className="text-sm">Password</Label>
+                  <Input
                       id="reset-password"
                       type="password"
                       placeholder="Type CLOSE to confirm"
