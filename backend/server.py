@@ -213,6 +213,7 @@ class ActionHistory(BaseModel):
 
 class ResetRequest(BaseModel):
     password: str
+    categories: List[str] = []
 
 # Helper Functions
 def normalize_stamp(stamp_value):
