@@ -216,6 +216,21 @@ class ResetRequest(BaseModel):
     password: str
     categories: List[str] = []
 
+class StampAssignment(BaseModel):
+    stamp: str
+    assigned_user: str
+
+class OrderCreate(BaseModel):
+    item_name: str
+    quantity_kg: float
+    supplier: str = ''
+    notes: str = ''
+
+class SmartInsightsRequest(BaseModel):
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    question: Optional[str] = None
+
 # Helper Functions
 def normalize_stamp(stamp_value):
     """Normalize stamp to consistent 'STAMP X' format (ALL CAPS)"""
