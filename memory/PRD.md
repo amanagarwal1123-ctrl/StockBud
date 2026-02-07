@@ -26,8 +26,13 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 
 ## What's Been Implemented (Latest Session - Feb 7, 2026)
 - **3-Decimal Rounding:** All silver weight values (gross, net, fine, labor) now display with 3 decimal places across the entire app
-  - Frontend: Updated CurrentStock, BookInventory, InventoryMatching, Analytics pages (.toFixed(1/.2) → .toFixed(3))
+  - Frontend: Updated CurrentStock, BookInventory, InventoryMatching, Analytics pages
   - Backend: Added round(value, 3) to inventory items, totals, stamp breakdown, party analysis, customer profit endpoints
+- **Selective Reset Data:** Replaced old "nuke everything" reset with a checklist dialog
+  - Categories: Sales, Purchases, Issue/Receive, Polythene, Item Mappings, Physical Stock, Purchase Ledger, Notifications & Logs, Action History
+  - Select All / individual toggle, password-protected ("CLOSE")
+  - Master stock & users are never deleted
+- **Bug Fix:** Clear Transactions endpoint no longer incorrectly deletes opening stock
 
 ## Pending Issues
 - **Issue 1 (P1):** Re-verify profit analysis calculation logic for correctness
