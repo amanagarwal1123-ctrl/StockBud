@@ -315,7 +315,7 @@ export default function Layout({ children }) {
             
             {/* Reset - Admin only */}
             {isAdmin && (
-              <AlertDialog>
+              <AlertDialog onOpenChange={() => { setResetPassword(''); setResetCategories([]); }}>
               <AlertDialogTrigger asChild>
                 <Button 
                   variant="destructive" 
@@ -324,31 +324,62 @@ export default function Layout({ children }) {
                   data-testid="reset-button"
                 >
                   <Power className="h-3.5 w-3.5 mr-2" />
-                  Reset System
+                  Reset Data
                 </Button>
               </AlertDialogTrigger>
-              <AlertDialogContent>
+              <AlertDialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Reset System</AlertDialogTitle>
+                  <AlertDialogTitle>Reset Data</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This will delete all data. Enter password to confirm.
+                    Select what to clear. Master stock & users are never deleted.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
-                <div className="py-4">
-                  <Label htmlFor="reset-password">Password</Label>
-                  <Input
-                    id="reset-password"
-                    type="password"
-                    placeholder="Enter CLOSE to reset"
-                    value={resetPassword}
-                    onChange={(e) => setResetPassword(e.target.value)}
-                    data-testid="reset-password-input"
-                  />
+                <div className="py-2 space-y-3">
+                  <div className="flex items-center gap-2 pb-2 border-b">
+                    <Checkbox 
+                      id="select-all"
+                      checked={resetCategories.length === RESET_CATEGORIES.length}
+                      onCheckedChange={toggleAllCategories}
+                      data-testid="reset-select-all"
+                    />
+                    <Label htmlFor="select-all" className="text-sm font-semibold cursor-pointer">Select All</Label>
+                  </div>
+                  {RESET_CATEGORIES.map(cat => (
+                    <div key={cat.id} className="flex items-start gap-2">
+                      <Checkbox 
+                        id={`reset-${cat.id}`}
+                        checked={resetCategories.includes(cat.id)}
+                        onCheckedChange={() => toggleCategory(cat.id)}
+                        data-testid={`reset-check-${cat.id}`}
+                      />
+                      <div className="leading-tight">
+                        <Label htmlFor={`reset-${cat.id}`} className="text-sm font-medium cursor-pointer">{cat.label}</Label>
+                        <p className="text-xs text-muted-foreground">{cat.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="pt-3 border-t">
+                    <Label htmlFor="reset-password" className="text-sm">Password</Label>
+                    <Input
+                      id="reset-password"
+                      type="password"
+                      placeholder="Type CLOSE to confirm"
+                      value={resetPassword}
+                      onChange={(e) => setResetPassword(e.target.value)}
+                      className="mt-1"
+                      data-testid="reset-password-input"
+                    />
+                  </div>
                 </div>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleReset} className="bg-destructive text-destructive-foreground">
-                    Reset System
+                  <AlertDialogAction 
+                    onClick={handleReset} 
+                    className="bg-destructive text-destructive-foreground"
+                    disabled={resetCategories.length === 0}
+                    data-testid="reset-confirm-button"
+                  >
+                    Reset ({resetCategories.length}) Selected
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
