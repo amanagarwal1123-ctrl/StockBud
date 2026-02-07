@@ -2987,6 +2987,629 @@ async def assign_stamp_to_item(item_name: str, stamp: str = Query(...)):
         "opening_stock_updated": result2.modified_count
     }
 
+# ==================== ITEM CATEGORIZATION & BUFFER MANAGEMENT ====================
+
+@api_router.post("/item-buffers/categorize")
+async def categorize_items(current_user: dict = Depends(get_current_user)):
+    """Analyze sales data and auto-categorize items into movement tiers with buffers"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    
+    # Get all sales transactions
+    sales = await db.transactions.find({"type": {"$in": ["sale", "sale_return"]}}, {"_id": 0}).to_list(50000)
+    
+    # Get all master items for the full item list
+    master_items = await db.master_items.find({}, {"_id": 0}).to_list(10000)
+    master_dict = {m['item_name']: m for m in master_items}
+    
+    # Get current inventory for stock levels
+    inv_response = await get_current_inventory()
+    inv_dict = {item['item_name']: item for item in inv_response['inventory']}
+    inv_dict.update({item['item_name']: item for item in inv_response.get('negative_items', [])})
+    
+    # Calculate sales velocity per item (net weight sold per month)
+    item_sales = defaultdict(lambda: {'total_net_wt': 0.0, 'count': 0, 'dates': []})
+    for sale in sales:
+        name = sale.get('item_name', '')
+        if not name:
+            continue
+        wt = sale.get('net_wt', 0)
+        item_sales[name]['total_net_wt'] += abs(wt)
+        item_sales[name]['count'] += 1
+        if sale.get('date'):
+            item_sales[name]['dates'].append(sale['date'])
+    
+    # Calculate date range for monthly rate
+    all_dates = []
+    for s in sales:
+        if s.get('date'):
+            all_dates.append(s['date'])
+    
+    if all_dates:
+        all_dates.sort()
+        first_date = all_dates[0][:10]
+        last_date = all_dates[-1][:10]
+        try:
+            d1 = datetime.strptime(first_date, '%Y-%m-%d')
+            d2 = datetime.strptime(last_date, '%Y-%m-%d')
+            months = max((d2 - d1).days / 30.0, 1.0)
+        except:
+            months = 1.0
+    else:
+        months = 1.0
+    
+    # Build velocity list for all master items
+    velocities = []
+    for item_name, master in master_dict.items():
+        sale_data = item_sales.get(item_name, {'total_net_wt': 0, 'count': 0})
+        monthly_velocity = (sale_data['total_net_wt'] / 1000) / months  # kg per month
+        velocities.append({
+            'item_name': item_name,
+            'stamp': master.get('stamp', 'Unassigned'),
+            'monthly_velocity_kg': monthly_velocity,
+            'total_sold_kg': sale_data['total_net_wt'] / 1000,
+            'sale_count': sale_data['count']
+        })
+    
+    # Sort by velocity and assign tiers using quartiles
+    vel_values = [v['monthly_velocity_kg'] for v in velocities if v['monthly_velocity_kg'] > 0]
+    
+    if vel_values:
+        q25 = float(np.percentile(vel_values, 25))
+        q50 = float(np.percentile(vel_values, 50))
+        q75 = float(np.percentile(vel_values, 75))
+    else:
+        q25 = q50 = q75 = 0
+    
+    # Categorize and calculate buffers
+    buffer_docs = []
+    for v in velocities:
+        vel = v['monthly_velocity_kg']
+        
+        if vel <= 0:
+            tier = 'dead'
+            tier_num = 4
+        elif vel <= q25:
+            tier = 'slow'
+            tier_num = 3
+        elif vel <= q50:
+            tier = 'medium'
+            tier_num = 2
+        elif vel <= q75:
+            tier = 'fast'
+            tier_num = 1
+        else:
+            tier = 'fastest'
+            tier_num = 0
+        
+        # Calculate buffers: based on monthly velocity
+        # Lower buffer = 2 weeks of stock for fast, 1 month for slow
+        # Upper buffer = 1 month for fast, 3 months for slow
+        if tier == 'fastest':
+            lower_buffer = round(vel * 0.5, 3)  # 2 weeks
+            upper_buffer = round(vel * 1.5, 3)  # 6 weeks
+        elif tier == 'fast':
+            lower_buffer = round(vel * 0.75, 3)  # 3 weeks
+            upper_buffer = round(vel * 2.0, 3)  # 2 months
+        elif tier == 'medium':
+            lower_buffer = round(vel * 1.0, 3)  # 1 month
+            upper_buffer = round(vel * 3.0, 3)  # 3 months
+        elif tier == 'slow':
+            lower_buffer = round(vel * 1.5, 3)  # 6 weeks
+            upper_buffer = round(vel * 4.0, 3)  # 4 months
+        else:  # dead
+            lower_buffer = 0
+            upper_buffer = 0
+        
+        # Current stock
+        inv_item = inv_dict.get(v['item_name'])
+        current_stock_kg = round(inv_item['net_wt'] / 1000, 3) if inv_item else 0
+        
+        # Default minimum = lower buffer
+        minimum_stock = lower_buffer
+        
+        # Determine status color
+        if current_stock_kg < minimum_stock - lower_buffer:
+            status = 'red'  # Below minimum - buffer
+        elif current_stock_kg < minimum_stock:
+            status = 'red'  # Below minimum
+        elif current_stock_kg >= minimum_stock and current_stock_kg <= upper_buffer:
+            status = 'green'
+        else:
+            status = 'yellow'  # Above upper buffer
+        
+        buffer_docs.append({
+            'item_name': v['item_name'],
+            'stamp': v['stamp'],
+            'tier': tier,
+            'tier_num': tier_num,
+            'monthly_velocity_kg': round(vel, 3),
+            'total_sold_kg': round(v['total_sold_kg'], 3),
+            'sale_count': v['sale_count'],
+            'lower_buffer_kg': lower_buffer,
+            'upper_buffer_kg': upper_buffer,
+            'minimum_stock_kg': minimum_stock,
+            'current_stock_kg': current_stock_kg,
+            'status': status,
+            'updated_at': datetime.now(timezone.utc).isoformat()
+        })
+    
+    # Save to database (upsert each item)
+    for doc in buffer_docs:
+        await db.item_buffers.update_one(
+            {'item_name': doc['item_name']},
+            {'$set': doc},
+            upsert=True
+        )
+    
+    tier_counts = defaultdict(int)
+    for d in buffer_docs:
+        tier_counts[d['tier']] += 1
+    
+    await save_action('categorize_items', f"Categorized {len(buffer_docs)} items into tiers", user=current_user)
+    
+    return {
+        "success": True,
+        "total_items": len(buffer_docs),
+        "tiers": dict(tier_counts),
+        "thresholds": {"q25": round(q25, 3), "q50": round(q50, 3), "q75": round(q75, 3)},
+        "months_analyzed": round(months, 1)
+    }
+
+@api_router.get("/item-buffers")
+async def get_item_buffers(
+    stamp: Optional[str] = None,
+    tier: Optional[str] = None,
+    status: Optional[str] = None
+):
+    """Get all item buffer configurations with optional filters"""
+    query = {}
+    if stamp:
+        query['stamp'] = stamp
+    if tier:
+        query['tier'] = tier
+    if status:
+        query['status'] = status
+    
+    items = await db.item_buffers.find(query, {"_id": 0}).sort("tier_num", 1).to_list(10000)
+    
+    # Refresh current stock and status
+    inv_response = await get_current_inventory()
+    inv_dict = {item['item_name']: item for item in inv_response['inventory']}
+    inv_dict.update({item['item_name']: item for item in inv_response.get('negative_items', [])})
+    
+    for item in items:
+        inv_item = inv_dict.get(item['item_name'])
+        current = round(inv_item['net_wt'] / 1000, 3) if inv_item else 0
+        item['current_stock_kg'] = current
+        min_stock = item.get('minimum_stock_kg', 0)
+        upper = item.get('upper_buffer_kg', 0)
+        
+        if current < min_stock - item.get('lower_buffer_kg', 0):
+            item['status'] = 'red'
+        elif current < min_stock:
+            item['status'] = 'red'
+        elif current >= min_stock and current <= upper:
+            item['status'] = 'green'
+        else:
+            item['status'] = 'yellow'
+    
+    return {"items": items, "total": len(items)}
+
+@api_router.put("/item-buffers/{item_name}")
+async def update_item_buffer(item_name: str, minimum_stock_kg: float = Query(...)):
+    """Update minimum stock for an item"""
+    result = await db.item_buffers.update_one(
+        {'item_name': item_name},
+        {'$set': {'minimum_stock_kg': round(minimum_stock_kg, 3), 'updated_at': datetime.now(timezone.utc).isoformat()}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Item not found in buffers")
+    return {"success": True, "message": f"Minimum stock for '{item_name}' set to {minimum_stock_kg} kg"}
+
+# ==================== STAMP-USER ASSIGNMENT ====================
+
+@api_router.get("/stamp-assignments")
+async def get_stamp_assignments():
+    """Get all stamp-to-user assignments"""
+    assignments = await db.stamp_assignments.find({}, {"_id": 0}).to_list(100)
+    return {"assignments": assignments}
+
+@api_router.post("/stamp-assignments")
+async def save_stamp_assignment(assignment: StampAssignment, current_user: dict = Depends(get_current_user)):
+    """Assign a user to a stamp for notifications"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    
+    await db.stamp_assignments.update_one(
+        {'stamp': assignment.stamp},
+        {'$set': {'stamp': assignment.stamp, 'assigned_user': assignment.assigned_user, 'updated_at': datetime.now(timezone.utc).isoformat()}},
+        upsert=True
+    )
+    return {"success": True, "message": f"User '{assignment.assigned_user}' assigned to '{assignment.stamp}'"}
+
+@api_router.delete("/stamp-assignments/{stamp}")
+async def delete_stamp_assignment(stamp: str, current_user: dict = Depends(get_current_user)):
+    """Remove stamp assignment"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    await db.stamp_assignments.delete_one({'stamp': stamp})
+    return {"success": True}
+
+# ==================== ORDER MANAGEMENT ====================
+
+@api_router.post("/orders/create")
+async def create_order(order: OrderCreate, current_user: dict = Depends(get_current_user)):
+    """Create a restock order"""
+    # Get buffer info
+    buffer_info = await db.item_buffers.find_one({'item_name': order.item_name}, {"_id": 0})
+    
+    order_doc = {
+        'id': str(uuid.uuid4()),
+        'item_name': order.item_name,
+        'quantity_kg': round(order.quantity_kg, 3),
+        'supplier': order.supplier,
+        'notes': order.notes,
+        'status': 'ordered',
+        'ordered_by': current_user['username'],
+        'ordered_at': datetime.now(timezone.utc).isoformat(),
+        'received_at': None,
+        'verified': False,
+        'stamp': buffer_info.get('stamp', '') if buffer_info else '',
+        'tier': buffer_info.get('tier', '') if buffer_info else ''
+    }
+    
+    await db.orders.insert_one(order_doc)
+    
+    # Notify admin
+    await db.notifications.insert_one({
+        'id': str(uuid.uuid4()),
+        'category': 'order',
+        'type': 'order_placed',
+        'message': f"Order placed: {order.quantity_kg} kg of '{order.item_name}' by {current_user['username']}",
+        'item_name': order.item_name,
+        'target_user': 'admin',
+        'read': False,
+        'timestamp': datetime.now(timezone.utc).isoformat()
+    })
+    
+    return {"success": True, "order_id": order_doc['id'], "message": "Order created"}
+
+@api_router.get("/orders")
+async def get_orders(status: Optional[str] = None):
+    """Get all orders"""
+    query = {}
+    if status:
+        query['status'] = status
+    orders = await db.orders.find(query, {"_id": 0}).sort("ordered_at", -1).to_list(1000)
+    return {"orders": orders}
+
+@api_router.put("/orders/{order_id}/received")
+async def mark_order_received(order_id: str, current_user: dict = Depends(get_current_user)):
+    """Mark order as received"""
+    result = await db.orders.update_one(
+        {'id': order_id},
+        {'$set': {
+            'status': 'received',
+            'received_at': datetime.now(timezone.utc).isoformat(),
+            'received_by': current_user['username'],
+            'verified': True
+        }}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return {"success": True, "message": "Order marked as received"}
+
+# ==================== ENHANCED NOTIFICATIONS ====================
+
+@api_router.get("/notifications/categorized")
+async def get_categorized_notifications(current_user: dict = Depends(get_current_user)):
+    """Get notifications organized by category"""
+    query = {"$or": [
+        {"target_user": current_user['username']},
+        {"target_user": "admin", "category": {"$exists": True}} if current_user['role'] == 'admin' else {"target_user": current_user['username']},
+        {"target_user": "all"}
+    ]}
+    
+    all_notifs = await db.notifications.find(query, {"_id": 0}).sort("timestamp", -1).to_list(500)
+    
+    categorized = {
+        'stock': [n for n in all_notifs if n.get('category') == 'stock'],
+        'order': [n for n in all_notifs if n.get('category') == 'order'],
+        'stamp': [n for n in all_notifs if n.get('category') == 'stamp'],
+        'polythene': [n for n in all_notifs if n.get('category') == 'polythene'],
+        'general': [n for n in all_notifs if n.get('category', 'general') == 'general' or not n.get('category')]
+    }
+    
+    unread = sum(1 for n in all_notifs if not n.get('read'))
+    
+    return {"notifications": categorized, "total_unread": unread}
+
+@api_router.post("/notifications/check-stock-alerts")
+async def check_stock_alerts(current_user: dict = Depends(get_current_user)):
+    """Check all items and generate stock deficit/excess notifications"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    
+    buffers = await db.item_buffers.find({}, {"_id": 0}).to_list(10000)
+    if not buffers:
+        return {"success": True, "alerts_generated": 0, "message": "No buffer data. Run categorization first."}
+    
+    inv_response = await get_current_inventory()
+    inv_dict = {item['item_name']: item for item in inv_response['inventory']}
+    inv_dict.update({item['item_name']: item for item in inv_response.get('negative_items', [])})
+    
+    # Get stamp assignments
+    assignments = await db.stamp_assignments.find({}, {"_id": 0}).to_list(100)
+    stamp_user = {a['stamp']: a['assigned_user'] for a in assignments}
+    
+    alerts = 0
+    now = datetime.now(timezone.utc).isoformat()
+    
+    for buf in buffers:
+        inv_item = inv_dict.get(buf['item_name'])
+        current = round(inv_item['net_wt'] / 1000, 3) if inv_item else 0
+        min_stock = buf.get('minimum_stock_kg', 0)
+        lower = buf.get('lower_buffer_kg', 0)
+        upper = buf.get('upper_buffer_kg', 0)
+        stamp = buf.get('stamp', '')
+        
+        target = stamp_user.get(stamp, 'admin')
+        
+        if min_stock > 0 and current < min_stock:
+            deficit = round(min_stock - current, 3)
+            severity = 'critical' if current < (min_stock - lower) else 'warning'
+            
+            # Notify assigned SEE
+            await db.notifications.insert_one({
+                'id': str(uuid.uuid4()),
+                'category': 'stock',
+                'type': 'stock_deficit',
+                'severity': severity,
+                'message': f"LOW STOCK: '{buf['item_name']}' at {current} kg (min: {min_stock} kg, deficit: {deficit} kg)",
+                'item_name': buf['item_name'],
+                'stamp': stamp,
+                'current_stock': current,
+                'minimum_stock': min_stock,
+                'deficit': deficit,
+                'order_range_min': round(deficit, 3),
+                'order_range_max': round(upper - current, 3) if upper > current else round(deficit, 3),
+                'target_user': target,
+                'read': False,
+                'timestamp': now
+            })
+            
+            # If critical, also notify admin
+            if severity == 'critical' and target != 'admin':
+                await db.notifications.insert_one({
+                    'id': str(uuid.uuid4()),
+                    'category': 'stock',
+                    'type': 'stock_deficit',
+                    'severity': 'critical',
+                    'message': f"CRITICAL: '{buf['item_name']}' at {current} kg (below buffer!)",
+                    'item_name': buf['item_name'],
+                    'stamp': stamp,
+                    'target_user': 'admin',
+                    'read': False,
+                    'timestamp': now
+                })
+            
+            alerts += 1
+        
+        elif upper > 0 and current > upper:
+            excess = round(current - upper, 3)
+            await db.notifications.insert_one({
+                'id': str(uuid.uuid4()),
+                'category': 'stock',
+                'type': 'stock_excess',
+                'severity': 'info',
+                'message': f"EXCESS: '{buf['item_name']}' at {current} kg (upper: {upper} kg, excess: {excess} kg)",
+                'item_name': buf['item_name'],
+                'stamp': stamp,
+                'target_user': target,
+                'read': False,
+                'timestamp': now
+            })
+            alerts += 1
+    
+    return {"success": True, "alerts_generated": alerts}
+
+# ==================== DATA VISUALIZATION ====================
+
+@api_router.get("/analytics/visualization")
+async def get_visualization_data(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+):
+    """Get aggregated data for charts and visualizations"""
+    query = {}
+    if start_date and end_date:
+        query['date'] = {'$gte': start_date, '$lte': end_date + ' 23:59:59'}
+    
+    transactions = await db.transactions.find(query, {"_id": 0}).to_list(50000)
+    
+    # Get buffer info for tier colors
+    buffers = await db.item_buffers.find({}, {"_id": 0}).to_list(10000)
+    tier_map = {b['item_name']: b.get('tier', 'unknown') for b in buffers}
+    
+    # 1. Sales by item (top 20)
+    item_sales = defaultdict(lambda: {'net_wt': 0, 'amount': 0, 'count': 0})
+    for t in transactions:
+        if t['type'] in ['sale', 'sale_return']:
+            name = t.get('item_name', '')
+            item_sales[name]['net_wt'] += t.get('net_wt', 0)
+            item_sales[name]['amount'] += t.get('total_amount', 0)
+            item_sales[name]['count'] += 1
+    
+    sales_by_item = sorted([
+        {'item_name': k, 'net_wt_kg': round(v['net_wt']/1000, 3), 'amount': round(v['amount'], 2), 'count': v['count'], 'tier': tier_map.get(k, 'unknown')}
+        for k, v in item_sales.items() if v['net_wt'] > 0
+    ], key=lambda x: x['net_wt_kg'], reverse=True)[:30]
+    
+    # 2. Sales by party (top 20)
+    party_sales = defaultdict(lambda: {'net_wt': 0, 'amount': 0, 'count': 0})
+    for t in transactions:
+        if t['type'] in ['sale', 'sale_return']:
+            party = t.get('party_name', 'Unknown')
+            party_sales[party]['net_wt'] += t.get('net_wt', 0)
+            party_sales[party]['amount'] += t.get('total_amount', 0)
+            party_sales[party]['count'] += 1
+    
+    sales_by_party = sorted([
+        {'party_name': k, 'net_wt_kg': round(v['net_wt']/1000, 3), 'amount': round(v['amount'], 2), 'count': v['count']}
+        for k, v in party_sales.items() if v['net_wt'] > 0
+    ], key=lambda x: x['net_wt_kg'], reverse=True)[:20]
+    
+    # 3. Purchases by supplier (top 20)
+    supplier_purchases = defaultdict(lambda: {'net_wt': 0, 'amount': 0, 'count': 0})
+    for t in transactions:
+        if t['type'] in ['purchase', 'purchase_return']:
+            party = t.get('party_name', 'Unknown')
+            supplier_purchases[party]['net_wt'] += t.get('net_wt', 0)
+            supplier_purchases[party]['amount'] += t.get('total_amount', 0)
+            supplier_purchases[party]['count'] += 1
+    
+    purchases_by_supplier = sorted([
+        {'party_name': k, 'net_wt_kg': round(v['net_wt']/1000, 3), 'amount': round(v['amount'], 2), 'count': v['count']}
+        for k, v in supplier_purchases.items() if v['net_wt'] > 0
+    ], key=lambda x: x['net_wt_kg'], reverse=True)[:20]
+    
+    # 4. Tier distribution
+    tier_dist = defaultdict(lambda: {'count': 0, 'total_stock_kg': 0})
+    for b in buffers:
+        t = b.get('tier', 'unknown')
+        tier_dist[t]['count'] += 1
+        tier_dist[t]['total_stock_kg'] += b.get('current_stock_kg', 0)
+    
+    tier_distribution = [{'tier': k, 'count': v['count'], 'total_stock_kg': round(v['total_stock_kg'], 3)} for k, v in tier_dist.items()]
+    
+    # 5. Monthly sales trend
+    monthly_sales = defaultdict(lambda: {'net_wt': 0, 'amount': 0})
+    for t in transactions:
+        if t['type'] in ['sale', 'sale_return'] and t.get('date'):
+            month = t['date'][:7]  # YYYY-MM
+            monthly_sales[month]['net_wt'] += t.get('net_wt', 0)
+            monthly_sales[month]['amount'] += t.get('total_amount', 0)
+    
+    sales_trend = sorted([
+        {'month': k, 'net_wt_kg': round(v['net_wt']/1000, 3), 'amount': round(v['amount'], 2)}
+        for k, v in monthly_sales.items()
+    ], key=lambda x: x['month'])
+    
+    # 6. Stock health summary
+    status_counts = {'red': 0, 'green': 0, 'yellow': 0}
+    for b in buffers:
+        s = b.get('status', 'green')
+        if s in status_counts:
+            status_counts[s] += 1
+    
+    return {
+        "sales_by_item": sales_by_item,
+        "sales_by_party": sales_by_party,
+        "purchases_by_supplier": purchases_by_supplier,
+        "tier_distribution": tier_distribution,
+        "sales_trend": sales_trend,
+        "stock_health": status_counts
+    }
+
+# ==================== AI SMART ANALYTICS ====================
+
+@api_router.post("/analytics/smart-insights")
+async def get_smart_insights(request: SmartInsightsRequest):
+    """Generate AI-powered analytics insights using Claude"""
+    
+    llm_key = os.environ.get('EMERGENT_LLM_KEY')
+    if not llm_key:
+        raise HTTPException(status_code=500, detail="LLM key not configured")
+    
+    # Gather data for context
+    query = {}
+    if request.start_date and request.end_date:
+        query['date'] = {'$gte': request.start_date, '$lte': request.end_date + ' 23:59:59'}
+    
+    transactions = await db.transactions.find(query, {"_id": 0}).to_list(50000)
+    buffers = await db.item_buffers.find({}, {"_id": 0}).to_list(10000)
+    
+    # Summarize data for the LLM
+    sale_count = sum(1 for t in transactions if t['type'] in ['sale', 'sale_return'])
+    purchase_count = sum(1 for t in transactions if t['type'] in ['purchase', 'purchase_return'])
+    total_sale_wt = sum(t.get('net_wt', 0) for t in transactions if t['type'] == 'sale') / 1000
+    total_purchase_wt = sum(t.get('net_wt', 0) for t in transactions if t['type'] == 'purchase') / 1000
+    
+    # Top items by sales
+    item_sales = defaultdict(float)
+    for t in transactions:
+        if t['type'] == 'sale':
+            item_sales[t.get('item_name', '')] += t.get('net_wt', 0) / 1000
+    top_items = sorted(item_sales.items(), key=lambda x: x[1], reverse=True)[:15]
+    
+    # Top customers
+    cust_sales = defaultdict(float)
+    for t in transactions:
+        if t['type'] == 'sale':
+            cust_sales[t.get('party_name', '')] += t.get('net_wt', 0) / 1000
+    top_customers = sorted(cust_sales.items(), key=lambda x: x[1], reverse=True)[:10]
+    
+    # Buffer status
+    red_items = [b['item_name'] for b in buffers if b.get('status') == 'red'][:10]
+    yellow_items = [b['item_name'] for b in buffers if b.get('status') == 'yellow'][:10]
+    tier_counts = defaultdict(int)
+    for b in buffers:
+        tier_counts[b.get('tier', 'unknown')] += 1
+    
+    data_summary = f"""Silver Jewelry Wholesale Inventory Data:
+- Period: {request.start_date or 'all time'} to {request.end_date or 'present'}
+- Sales: {sale_count} transactions, {total_sale_wt:.1f} kg total
+- Purchases: {purchase_count} transactions, {total_purchase_wt:.1f} kg total
+- Top selling items: {', '.join(f'{n}({w:.1f}kg)' for n,w in top_items[:10])}
+- Top customers: {', '.join(f'{n}({w:.1f}kg)' for n,w in top_customers[:7])}
+- Movement tiers: {dict(tier_counts)}
+- Items needing restock (red): {', '.join(red_items[:5]) or 'None'}
+- Overstocked items (yellow): {', '.join(yellow_items[:5]) or 'None'}"""
+
+    user_question = request.question or "Provide key business insights, trends, recommendations for inventory optimization, and any risks you see."
+    
+    prompt = f"""{data_summary}
+
+Based on this data, {user_question}
+
+Provide your analysis in a clear, actionable format with specific numbers. Use bullet points. Keep it concise but insightful. Focus on: 1) Key trends 2) Items needing attention 3) Customer patterns 4) Actionable recommendations."""
+
+    try:
+        chat = LlmChat(
+            api_key=llm_key,
+            session_id=f"insights-{datetime.now().strftime('%Y%m%d%H%M')}",
+            system_message="You are a silver jewelry wholesale business analyst. Provide concise, data-driven insights. Use specific numbers from the data. Be direct and actionable."
+        ).with_model("anthropic", "claude-opus-4-6")
+        
+        response = await chat.send_message(UserMessage(text=prompt))
+        
+        return {
+            "insights": response,
+            "data_summary": {
+                "sales_count": sale_count,
+                "purchase_count": purchase_count,
+                "total_sale_kg": round(total_sale_wt, 3),
+                "total_purchase_kg": round(total_purchase_wt, 3),
+                "tier_distribution": dict(tier_counts),
+                "red_items_count": len(red_items),
+                "yellow_items_count": len(yellow_items)
+            }
+        }
+    except Exception as e:
+        # Fallback if Claude Opus 4.6 not available
+        try:
+            chat = LlmChat(
+                api_key=llm_key,
+                session_id=f"insights-{datetime.now().strftime('%Y%m%d%H%M')}",
+                system_message="You are a silver jewelry wholesale business analyst."
+            ).with_model("anthropic", "claude-4-opus-20250514")
+            
+            response = await chat.send_message(UserMessage(text=prompt))
+            return {"insights": response, "data_summary": {"sales_count": sale_count, "purchase_count": purchase_count, "total_sale_kg": round(total_sale_wt, 3), "total_purchase_kg": round(total_purchase_wt, 3)}}
+        except:
+            raise HTTPException(status_code=500, detail=f"AI analysis failed: {str(e)}")
+
 app.include_router(api_router)
 
 app.add_middleware(
