@@ -1507,19 +1507,47 @@ async def get_current_inventory():
         elif trans.get('stamp'):
             inventory_map[key]['stamps_seen'].add(trans['stamp'])
         
-        # Weights in Excel already include negatives for returns
-        # Purchase types (P, PR) and Receive: ADD to stock
-        # Sale types (S, SR) and Issue: SUBTRACT from stock
-        if trans['type'] in ['purchase', 'purchase_return', 'receive']:
-            multiplier = 1  # Add to stock
-        else:  # sale, sale_return, issue
-            multiplier = -1  # Subtract from stock
+        # Transaction type logic:
+        # - Purchase (P): ADD to stock
+        # - Purchase Return (PR): Excel has NEGATIVE values → ADD as-is (negative + positive = subtract)
+        # - Sale (S): SUBTRACT from stock
+        # - Sale Return (SR): Excel has NEGATIVE values → SUBTRACT (negative - negative = add)
+        # - Receive (R): ADD to stock
+        # - Issue (I): SUBTRACT from stock
         
-        inventory_map[key]['gr_wt'] += trans.get('gr_wt', 0) * multiplier
-        inventory_map[key]['net_wt'] += trans.get('net_wt', 0) * multiplier
-        inventory_map[key]['fine'] += trans.get('fine', 0) * multiplier
-        inventory_map[key]['total_pc'] += trans.get('total_pc', 0) * multiplier
-        inventory_map[key]['labor'] += trans.get('labor', 0) * multiplier
+        # Since Excel returns already have negative values, we apply them directly:
+        # Purchase/Receive: weights are positive → ADD
+        # Sale/Issue: weights are positive → SUBTRACT
+        # Returns (PR/SR): weights are negative → will naturally reverse the operation
+        
+        if trans['type'] in ['purchase', 'receive']:
+            # Always add (positive values add, negative values subtract naturally)
+            inventory_map[key]['gr_wt'] += trans.get('gr_wt', 0)
+            inventory_map[key]['net_wt'] += trans.get('net_wt', 0)
+            inventory_map[key]['fine'] += trans.get('fine', 0)
+            inventory_map[key]['total_pc'] += trans.get('total_pc', 0)
+            inventory_map[key]['labor'] += trans.get('labor', 0)
+        elif trans['type'] in ['sale', 'issue']:
+            # Always subtract (positive values subtract, negative values add naturally)
+            inventory_map[key]['gr_wt'] -= trans.get('gr_wt', 0)
+            inventory_map[key]['net_wt'] -= trans.get('net_wt', 0)
+            inventory_map[key]['fine'] -= trans.get('fine', 0)
+            inventory_map[key]['total_pc'] -= trans.get('total_pc', 0)
+            inventory_map[key]['labor'] -= trans.get('labor', 0)
+        elif trans['type'] in ['purchase_return']:
+            # Purchase returns: Excel has negative values, ADD them (negative + positive = subtract)
+            inventory_map[key]['gr_wt'] += trans.get('gr_wt', 0)
+            inventory_map[key]['net_wt'] += trans.get('net_wt', 0)
+            inventory_map[key]['fine'] += trans.get('fine', 0)
+            inventory_map[key]['total_pc'] += trans.get('total_pc', 0)
+            inventory_map[key]['labor'] += trans.get('labor', 0)
+        elif trans['type'] in ['sale_return']:
+            # Sale returns: Excel has negative values, SUBTRACT them (positive - negative = add)
+            inventory_map[key]['gr_wt'] -= trans.get('gr_wt', 0)
+            inventory_map[key]['net_wt'] -= trans.get('net_wt', 0)
+            inventory_map[key]['fine'] -= trans.get('fine', 0)
+            inventory_map[key]['total_pc'] -= trans.get('total_pc', 0)
+            inventory_map[key]['labor'] -= trans.get('labor', 0)
     
     # Convert to list and separate negative items
     inventory = []
