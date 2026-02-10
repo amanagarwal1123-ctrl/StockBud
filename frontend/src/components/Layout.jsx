@@ -210,23 +210,67 @@ export default function Layout({ children }) {
 
   const NavLinks = ({ mobile = false }) => (
     <nav className="space-y-1">
-      {allNavigation.map((item) => {
-        const isActive = location.pathname === item.href;
+      {navGroups.map((group) => {
+        // Filter items by user role
+        const visibleItems = group.items.filter(item => user && item.roles.includes(user.role));
+        if (visibleItems.length === 0) return null;
+
+        // Ungrouped items (main group)
+        if (!group.label) {
+          return visibleItems.map((item) => {
+            const isActive = location.pathname === item.href;
+            return (
+              <Link key={item.name} to={item.href} onClick={() => mobile && setMobileOpen(false)}
+                data-testid={`nav-link-${item.name.toLowerCase().replace(/\s+/g, '-')}`}
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+                  isActive ? 'bg-primary text-primary-foreground shadow-sm' : 'text-foreground hover:bg-muted'
+                }`}>
+                <item.icon className="h-4 w-4" />
+                {item.name}
+              </Link>
+            );
+          });
+        }
+
+        // Check if group is visible for this role
+        if (group.roles && !group.roles.includes(user?.role)) return null;
+
+        const isExpanded = expandedGroups[group.id];
+        const hasActiveChild = visibleItems.some(item => location.pathname === item.href);
+
         return (
-          <Link
-            key={item.name}
-            to={item.href}
-            onClick={() => mobile && setMobileOpen(false)}
-            data-testid={`nav-link-${item.name.toLowerCase().replace(' ', '-')}`}
-            className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
-              isActive
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'text-foreground hover:bg-muted hover:text-foreground'
-            }`}
-          >
-            <item.icon className="h-5 w-5" />
-            {item.name}
-          </Link>
+          <div key={group.id} className="pt-2">
+            <button
+              onClick={() => toggleGroup(group.id)}
+              className={`flex items-center justify-between w-full rounded-lg px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-colors ${
+                hasActiveChild ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+              }`}
+              data-testid={`nav-group-${group.id}`}
+            >
+              <div className="flex items-center gap-2">
+                <group.icon className="h-3.5 w-3.5" />
+                {group.label}
+              </div>
+              {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            </button>
+            {isExpanded && (
+              <div className="mt-0.5 space-y-0.5 ml-2 border-l border-border/40 pl-2">
+                {visibleItems.map((item) => {
+                  const isActive = location.pathname === item.href;
+                  return (
+                    <Link key={item.name} to={item.href} onClick={() => mobile && setMobileOpen(false)}
+                      data-testid={`nav-link-${item.name.toLowerCase().replace(/\s+/g, '-')}`}
+                      className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm transition-all ${
+                        isActive ? 'bg-primary text-primary-foreground shadow-sm font-medium' : 'text-foreground hover:bg-muted'
+                      }`}>
+                      <item.icon className="h-3.5 w-3.5" />
+                      {item.name}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         );
       })}
     </nav>
