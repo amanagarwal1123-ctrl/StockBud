@@ -1968,7 +1968,33 @@ async def normalize_all_stamps(current_user: dict = Depends(get_current_user)):
             {'$set': {'stamp': new_stamp}}
         )
         
-        count = result1.modified_count + result2.modified_count + result3.modified_count
+        # Update stock_entries (executive entries for approval)
+        result4 = await db.stock_entries.update_many(
+            {'stamp': old_stamp},
+            {'$set': {'stamp': new_stamp}}
+        )
+        
+        # Update stamp_approvals
+        result5 = await db.stamp_approvals.update_many(
+            {'stamp': old_stamp},
+            {'$set': {'stamp': new_stamp}}
+        )
+        
+        # Update stamp_verifications
+        result6 = await db.stamp_verifications.update_many(
+            {'stamp': old_stamp},
+            {'$set': {'stamp': new_stamp}}
+        )
+        
+        # Update physical_inventory
+        result7 = await db.physical_inventory.update_many(
+            {'stamp': old_stamp},
+            {'$set': {'stamp': new_stamp}}
+        )
+        
+        count = (result1.modified_count + result2.modified_count + result3.modified_count +
+                 result4.modified_count + result5.modified_count + result6.modified_count +
+                 result7.modified_count)
         total_updated += count
         
         if count > 0:
