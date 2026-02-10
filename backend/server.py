@@ -548,6 +548,45 @@ async def save_action(action_type: str, description: str, data_snapshot: dict = 
         if oldest:
             await db.action_history.delete_many({"_id": {"$in": [doc["_id"] for doc in oldest]}})
 
+async def _auto_normalize_stamps():
+    """Internal helper: auto-normalize stamps across all collections after upload"""
+    import re
+    
+    all_stamps = set()
+    all_stamps.update(await db.master_items.distinct('stamp'))
+    all_stamps.update(await db.transactions.distinct('stamp'))
+    all_stamps.update(await db.opening_stock.distinct('stamp'))
+    
+    stamp_mapping = {}
+    for stamp in all_stamps:
+        if not stamp or stamp == 'Unassigned':
+            continue
+        match = re.search(r'(\d+)', stamp)
+        if match:
+            normalized = f'STAMP {match.group(1)}'
+            if stamp != normalized:
+                stamp_mapping[stamp] = normalized
+    if '' in all_stamps:
+        stamp_mapping[''] = 'Unassigned'
+    
+    if not stamp_mapping:
+        return 0
+    
+    total_updated = 0
+    collections_to_update = [
+        'master_items', 'transactions', 'opening_stock', 'stock_entries',
+        'stamp_approvals', 'stamp_verifications', 'physical_inventory'
+    ]
+    for old_stamp, new_stamp in stamp_mapping.items():
+        for coll_name in collections_to_update:
+            result = await db[coll_name].update_many(
+                {'stamp': old_stamp},
+                {'$set': {'stamp': new_stamp}}
+            )
+            total_updated += result.modified_count
+    
+    return total_updated
+
 @api_router.post("/opening-stock/upload")
 async def upload_opening_stock(file: UploadFile = File(...)):
     """Upload opening stock - Parse and MERGE items by name (sum weights regardless of stamp)"""
