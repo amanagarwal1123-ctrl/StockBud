@@ -1003,7 +1003,9 @@ async def get_stamp_verification_history():
         if latest:
             verified_date = latest.get('verification_date')
             is_match = latest.get('is_match')
-            difference = latest.get('difference')
+            raw_diff = latest.get('difference', 0)
+            # Normalize difference to kg (could be stored as grams or kg)
+            difference = round(raw_diff / 1000, 3) if abs(raw_diff) > 100 else round(raw_diff, 3)
         
         if approval:
             approval_date = approval.get('approved_at', '')
@@ -1012,7 +1014,7 @@ async def get_stamp_verification_history():
                 verified_date = approval_date[:10] if approval_date else None
                 diff_kg = approval.get('total_difference', 0) / 1000 if approval.get('total_difference') else 0
                 is_match = abs(diff_kg) < 0.05
-                difference = diff_kg
+                difference = round(diff_kg, 3)
         
         history.append({
             'stamp': stamp,
