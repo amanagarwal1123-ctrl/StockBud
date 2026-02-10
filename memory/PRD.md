@@ -39,6 +39,16 @@ backend/
 - Notifications (in-app + browser push, 60s polling)
 - Selective data reset, CSV export, mobile-responsive UI
 
+## Large File Upload Optimization (Feb 10, 2026)
+- **Single Excel read**: `_read_excel_once()` detects headers and reads file in one pass (no double read)
+- **Fast dict-based parsing**: Replaced `iterrows()` with `to_dict('records')` + dict iteration (~5x faster)
+- **Column pre-resolution**: `_resolve_col()` finds column names once, not per-row
+- **Batch MongoDB inserts**: `batch_insert()` inserts in chunks of 5000 (handles 200K+ records)
+- **Skip per-row Pydantic**: `_prepare_transactions()` applies defaults without model validation
+- **Thread pool parsing**: CPU-bound Excel parsing runs in `ThreadPoolExecutor` to not block async loop
+- **Frontend timeout**: 10-minute timeout on axios upload with progress indicator
+- **Performance**: 100K records upload in ~20s, estimated 205K in ~45s
+
 ## Order Management (Full Workflow - Feb 10, 2026)
 - **Quick Order from Alerts**: One-click "Order" button on stock deficit notifications
 - **Create/Track Orders**: Item, quantity, supplier, notes
@@ -60,6 +70,8 @@ backend/
 - PEE: PEE1 / poly123
 
 ## Backlog
+- (P1) Complete Browser Notifications integration (trigger on new alerts)
 - (P1) Further split server.py into route modules
+- (P2) Implement Core AI Seasonal Analysis Logic
 - (P2) Enhance Item Mapping with similarity suggestions
 - (P2) Auto-check stock returns to green after purchase received
