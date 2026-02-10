@@ -227,6 +227,13 @@ export default function UploadManager() {
         </p>
       </div>
 
+      {uploading && uploadProgress && (
+        <div className="flex items-center gap-3 p-4 rounded-lg bg-primary/10 border border-primary/20" data-testid="upload-progress">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <span className="text-sm font-medium">{uploadProgress}</span>
+        </div>
+      )}
+
       <Tabs defaultValue="transactions" className="space-y-6">
         <TabsList>
           <TabsTrigger value="master">Master Stock</TabsTrigger>
