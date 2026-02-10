@@ -631,6 +631,175 @@ def _prepare_transactions(records: list, batch_id: str) -> list:
     return docs
 
 
+# ==================== CHUNKED UPLOAD ====================
+UPLOAD_TEMP_DIR = Path(tempfile.gettempdir()) / "stockbud_uploads"
+UPLOAD_TEMP_DIR.mkdir(exist_ok=True)
+# Track active uploads {upload_id: {file_type, start_date, end_date, total_chunks, received}}
+_active_uploads: Dict[str, Dict] = {}
+
+
+@api_router.post("/upload/init")
+async def init_chunked_upload(request: Dict):
+    """Initialize a chunked file upload"""
+    file_type = request.get('file_type')
+    if file_type not in ['purchase', 'sale', 'branch_transfer', 'opening_stock', 'physical_stock', 'master_stock']:
+        raise HTTPException(status_code=400, detail="Invalid file_type")
+
+    upload_id = str(uuid.uuid4())
+    upload_dir = UPLOAD_TEMP_DIR / upload_id
+    upload_dir.mkdir(exist_ok=True)
+
+    _active_uploads[upload_id] = {
+        'file_type': file_type,
+        'start_date': request.get('start_date'),
+        'end_date': request.get('end_date'),
+        'verification_date': request.get('verification_date'),
+        'total_chunks': request.get('total_chunks', 0),
+        'received': 0,
+        'created_at': datetime.now(timezone.utc).isoformat(),
+    }
+
+    return {"upload_id": upload_id}
+
+
+@api_router.post("/upload/chunk/{upload_id}")
+async def upload_chunk(upload_id: str, chunk_index: int, file: UploadFile = File(...)):
+    """Receive a single chunk of a large file"""
+    if upload_id not in _active_uploads:
+        raise HTTPException(status_code=404, detail="Upload session not found")
+
+    upload_dir = UPLOAD_TEMP_DIR / upload_id
+    chunk_path = upload_dir / f"chunk_{chunk_index:05d}"
+    content = await file.read()
+    chunk_path.write_bytes(content)
+
+    _active_uploads[upload_id]['received'] += 1
+
+    return {"received": _active_uploads[upload_id]['received'], "chunk_index": chunk_index}
+
+
+@api_router.post("/upload/finalize/{upload_id}")
+async def finalize_chunked_upload(upload_id: str):
+    """Reassemble chunks and process the complete file"""
+    if upload_id not in _active_uploads:
+        raise HTTPException(status_code=404, detail="Upload session not found")
+
+    meta = _active_uploads[upload_id]
+    upload_dir = UPLOAD_TEMP_DIR / upload_id
+
+    try:
+        # Reassemble chunks in order
+        chunks = sorted(upload_dir.glob("chunk_*"))
+        if not chunks:
+            raise HTTPException(status_code=400, detail="No chunks received")
+
+        assembled = bytearray()
+        for chunk_path in chunks:
+            assembled.extend(chunk_path.read_bytes())
+
+        file_content = bytes(assembled)
+        file_type = meta['file_type']
+
+        # Map to internal file_type for parser
+        parse_type = file_type
+        if file_type in ('opening_stock', 'physical_stock', 'master_stock'):
+            parse_type = 'opening_stock'
+
+        # Parse in thread pool
+        loop = asyncio.get_event_loop()
+        records = await loop.run_in_executor(_parse_executor, parse_excel_file, file_content, parse_type)
+
+        if not records:
+            raise HTTPException(status_code=400, detail="No valid records found in file")
+
+        batch_id = str(uuid.uuid4())
+        start_date = meta.get('start_date')
+        end_date = meta.get('end_date')
+
+        # Route to appropriate handler based on file_type
+        if file_type in ('purchase', 'sale', 'branch_transfer'):
+            deleted_count = 0
+            if start_date and end_date:
+                delete_query = {
+                    "type": {"$in": [file_type, f"{file_type}_return"]},
+                    "date": {"$gte": start_date, "$lte": end_date}
+                }
+                delete_result = await db.transactions.delete_many(delete_query)
+                deleted_count = delete_result.deleted_count
+
+            transactions = _prepare_transactions(records, batch_id)
+            await batch_insert(db.transactions, transactions)
+
+            message = f"Uploaded {len(transactions)} {file_type} records"
+            if deleted_count > 0:
+                message += f" (replaced {deleted_count} existing records from {start_date} to {end_date})"
+
+            await save_action(f'upload_{file_type}', message, {
+                'batch_id': batch_id, 'file_type': file_type,
+                'count': len(transactions), 'start_date': start_date, 'end_date': end_date
+            })
+            await auto_normalize_stamps()
+
+            return {"success": True, "count": len(transactions), "replaced_count": deleted_count,
+                    "batch_id": batch_id, "message": message}
+
+        elif file_type == 'opening_stock':
+            merged_items = {}
+            for record in records:
+                key = record['item_name'].strip().lower()
+                if key not in merged_items:
+                    merged_items[key] = {'item_name': record['item_name'], 'stamp': record.get('stamp', ''),
+                        'unit': record.get('unit', ''), 'pc': 0, 'gr_wt': 0.0, 'net_wt': 0.0,
+                        'fine': 0.0, 'labor_wt': 0.0, 'labor_rs': 0.0, 'rate': record.get('rate', 0.0), 'total': 0.0}
+                merged_items[key]['gr_wt'] += record.get('gr_wt', 0)
+                merged_items[key]['net_wt'] += record.get('net_wt', 0)
+                merged_items[key]['fine'] += record.get('fine', 0)
+                merged_items[key]['pc'] += record.get('pc', 0)
+                merged_items[key]['total'] += record.get('total', 0)
+                if record.get('stamp') and not merged_items[key]['stamp']:
+                    merged_items[key]['stamp'] = record['stamp']
+
+            await db.opening_stock.delete_many({})
+            stock_items = [OpeningStock(**item).model_dump() for item in merged_items.values()]
+            await db.opening_stock.insert_many(stock_items)
+            total_net_wt = sum(i['net_wt'] for i in stock_items)
+            await save_action('upload_opening_stock', f"Uploaded {len(stock_items)} merged opening stock items")
+            await auto_normalize_stamps()
+            return {"success": True, "count": len(stock_items), "message": f"Opening stock uploaded: {len(stock_items)} items, {total_net_wt/1000:.3f} kg"}
+
+        elif file_type == 'physical_stock':
+            verification_date = meta.get('verification_date')
+            merged_items = {}
+            for record in records:
+                key = record['item_name'].strip().lower()
+                if key not in merged_items:
+                    merged_items[key] = {'item_name': record['item_name'], 'stamp': record.get('stamp', ''),
+                        'pc': 0, 'gr_wt': 0.0, 'net_wt': 0.0, 'fine': 0.0,
+                        'verification_date': verification_date or datetime.now(timezone.utc).isoformat()}
+                merged_items[key]['gr_wt'] += record.get('gr_wt', 0)
+                merged_items[key]['net_wt'] += record.get('net_wt', 0)
+                merged_items[key]['fine'] += record.get('fine', 0)
+                merged_items[key]['pc'] += record.get('pc', 0)
+                if record.get('stamp') and not merged_items[key]['stamp']:
+                    merged_items[key]['stamp'] = record['stamp']
+
+            await db.physical_stock.delete_many({})
+            stock_items = [PhysicalStock(**item).model_dump() for item in merged_items.values()]
+            await db.physical_stock.insert_many(stock_items)
+            total_net_wt = sum(i['net_wt'] for i in stock_items)
+            await auto_normalize_stamps()
+            return {"success": True, "count": len(stock_items),
+                    "message": f"Physical stock uploaded: {len(stock_items)} items, {total_net_wt/1000:.3f} kg"}
+
+        else:
+            raise HTTPException(status_code=400, detail=f"Chunked upload not supported for {file_type}")
+
+    finally:
+        # Cleanup temp files
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        _active_uploads.pop(upload_id, None)
+
+
 @api_router.post("/transactions/upload/{file_type}")
 async def upload_transaction_file(
     file_type: str, 
