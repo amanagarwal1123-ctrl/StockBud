@@ -72,6 +72,7 @@ export default function UploadManager() {
     if (!confirmed) return;
 
     setUploading(true);
+    setUploadProgress('Uploading file...');
     const formData = new FormData();
     formData.append('file', file);
 
@@ -90,14 +91,23 @@ export default function UploadManager() {
 
       const response = await axios.post(endpoint, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 600000,
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const pct = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            setUploadProgress(pct < 100 ? `Uploading: ${pct}%` : 'Processing file on server... This may take a minute for large files.');
+          }
+        },
       });
 
       setUploadedFiles((prev) => ({ ...prev, [fileType]: file.name }));
       toast.success(response.data.message || 'File uploaded successfully!');
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Upload failed');
+      const msg = error.code === 'ECONNABORTED' ? 'Upload timed out. Try a smaller date range or split the file.' : (error.response?.data?.detail || 'Upload failed');
+      toast.error(msg);
     } finally {
       setUploading(false);
+      setUploadProgress('');
     }
   };
 
