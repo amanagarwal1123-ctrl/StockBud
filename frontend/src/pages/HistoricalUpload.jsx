@@ -69,6 +69,7 @@ export default function HistoricalUpload() {
           });
         }
 
+        setUploadProgress('Processing file on server...');
         const finalRes = await axios.post(`${API}/upload/finalize/${uploadId}`, {}, { timeout: 600000 });
         toast.success(finalRes.data.message);
       } else {
