@@ -12,6 +12,7 @@ const API = `${BACKEND_URL}/api`;
 
 export default function UploadManager() {
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
   const [uploadedFiles, setUploadedFiles] = useState({
     purchase: null,
     sale: null,
