@@ -39,29 +39,30 @@ backend/
 - Notifications (in-app + browser push, 60s polling)
 - Selective data reset, CSV export, mobile-responsive UI
 
-## Large File Upload Optimization (Feb 10, 2026)
-- **Single Excel read**: `_read_excel_once()` detects headers and reads file in one pass (no double read)
-- **Fast dict-based parsing**: Replaced `iterrows()` with `to_dict('records')` + dict iteration (~5x faster)
-- **Column pre-resolution**: `_resolve_col()` finds column names once, not per-row
-- **Batch MongoDB inserts**: `batch_insert()` inserts in chunks of 5000 (handles 200K+ records)
-- **Skip per-row Pydantic**: `_prepare_transactions()` applies defaults without model validation
-- **Thread pool parsing**: CPU-bound Excel parsing runs in `ThreadPoolExecutor` to not block async loop
-- **Frontend timeout**: 10-minute timeout on axios upload with progress indicator
-- **Performance**: 100K records upload in ~20s, estimated 205K in ~45s
+## Large File Upload - Chunked Upload (Feb 10, 2026)
+- **Problem**: 205K row Excel files (24MB) fail in deployed environment due to proxy body size limits
+- **Solution**: Automatic chunked upload for files > 4MB
+  - Frontend splits file into 4MB binary chunks
+  - 3-step API: `/api/upload/init` → `/api/upload/chunk/{id}` → `/api/upload/finalize/{id}`
+  - Backend reassembles chunks and processes with EXACT same `parse_excel_file` logic
+  - Progress indicator shows "Uploading chunk X of Y..." then "Processing on server..."
+- **Optimized parsing**: Single Excel read, dict-based iteration (not iterrows), batch MongoDB inserts (5K chunks), thread pool for CPU-bound parsing
+- **Performance**: 100K records in ~20s
+
+## Stamp Re-submission Fix (Feb 10, 2026)
+- **Problem**: Approved stamps blocked new stock entries ("already approved. Cannot modify.")
+- **Fix**: New submission clears old approval, marks old entry as 'superseded', resets to 'pending' for re-approval
+- **Flow**: Executive submits → old approval cleared → new pending entry → manager re-approves
 
 ## Order Management (Full Workflow - Feb 10, 2026)
-- **Quick Order from Alerts**: One-click "Order" button on stock deficit notifications
-- **Create/Track Orders**: Item, quantity, supplier, notes
-- **Mark as Received**: Updates status, notifies admin
-- **Cancel Orders**: Admin/Manager can cancel pending orders
-- **Overdue Detection**: Orders >7 days old flagged as overdue, admin notified
-- **Status Filter**: All/Pending/Received views
+- Quick Order from Alerts, Create/Track Orders
+- Mark as Received, Cancel Orders, Overdue Detection
+- Status Filter: All/Pending/Received views
 
-## AI Seasonal Analysis (Hindu Calendar)
-- **Historical Data Upload**: Dedicated page, separate collection (doesn't affect stock)
-- **Festival Analysis**: Sankrant, Holi, Akshaya Tritiya, Salakh, Karva Chauth, Dhanteras/Diwali
-- **Seasonal Ordering Recommendations**: Boost-adjusted demand forecasts
-- **Claude AI Insights**: Festival-aware analysis and recommendations
+## AI Seasonal Analysis (Hindu Calendar) - PLACEHOLDER
+- Historical Data Upload page exists
+- Festival Analysis endpoint is a stub
+- Core LLM logic NOT yet implemented
 
 ## Key Credentials
 - Admin: admin / admin123
