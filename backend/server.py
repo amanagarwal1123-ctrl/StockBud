@@ -368,10 +368,7 @@ async def login(request: LoginRequest):
     
     # Create JWT token with different expiry for admin (perpetual - 365 days)
     if user.get('role') == 'admin':
-        token_data = {"sub": user['username'], "role": user['role']}
-        expire = datetime.now(timezone.utc) + timedelta(days=365)
-        token_data.update({"exp": expire})
-        access_token = jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
+        access_token = create_access_token({"sub": user['username'], "role": user['role']}, expire_hours=365*24)
     else:
         # Regular users: 18 hours
         access_token = create_access_token({"sub": user['username'], "role": user['role']})
