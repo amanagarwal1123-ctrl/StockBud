@@ -642,7 +642,7 @@ _active_uploads: Dict[str, Dict] = {}
 async def init_chunked_upload(request: Dict):
     """Initialize a chunked file upload"""
     file_type = request.get('file_type')
-    if file_type not in ['purchase', 'sale', 'branch_transfer', 'opening_stock', 'physical_stock', 'master_stock']:
+    if file_type not in ['purchase', 'sale', 'branch_transfer', 'opening_stock', 'physical_stock', 'master_stock', 'historical_sale', 'historical_purchase']:
         raise HTTPException(status_code=400, detail="Invalid file_type")
 
     upload_id = str(uuid.uuid4())
@@ -654,6 +654,7 @@ async def init_chunked_upload(request: Dict):
         'start_date': request.get('start_date'),
         'end_date': request.get('end_date'),
         'verification_date': request.get('verification_date'),
+        'year': request.get('year'),
         'total_chunks': request.get('total_chunks', 0),
         'received': 0,
         'created_at': datetime.now(timezone.utc).isoformat(),
