@@ -1939,6 +1939,32 @@ async def save_stamp_verification(request: Dict):
         'total_stamps': len(total_stamps)
     }
 
+@api_router.get("/stamp-verification/all")
+async def get_all_verifications():
+    """Get all saved stamp verifications with details"""
+    verifications = await db.stamp_verifications.find({}, {"_id": 0}).sort("verified_at", -1).to_list(500)
+    for v in verifications:
+        v['difference_kg'] = round(v.get('difference', 0) / 1000, 3) if abs(v.get('difference', 0)) > 1 else round(v.get('difference', 0), 3)
+    return {"verifications": verifications}
+
+@api_router.delete("/stamp-verification/{stamp}/{verification_date}")
+async def delete_stamp_verification(stamp: str, verification_date: str, current_user: dict = Depends(get_current_user)):
+    """Delete a stamp verification record (admin/manager only)"""
+    if current_user['role'] not in ['admin', 'manager']:
+        raise HTTPException(status_code=403, detail="Admin or Manager only")
+    
+    # Normalize stamp
+    _match = re.search(r'(\d+)', stamp)
+    if _match:
+        stamp = f'STAMP {_match.group(1)}'
+    
+    result = await db.stamp_verifications.delete_one({'stamp': stamp, 'verification_date': verification_date})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Verification not found")
+    
+    await save_action('delete_verification', f"Deleted verification for {stamp} on {verification_date}", user=current_user)
+    return {"success": True, "message": f"Verification for {stamp} on {verification_date} deleted"}
+
 @api_router.get("/mappings/all")
 async def get_all_mappings():
     """Get all item mappings"""
