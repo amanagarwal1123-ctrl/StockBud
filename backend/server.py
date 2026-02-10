@@ -1778,6 +1778,9 @@ async def upload_physical_stock(
         stock_items = [PhysicalStock(**item).model_dump() for item in merged_items.values()]
         await db.physical_stock.insert_many(stock_items)
         
+        # Auto-normalize stamps after upload
+        await _auto_normalize_stamps()
+        
         # Calculate totals
         total_net_wt = sum(item['net_wt'] for item in stock_items)
         total_gr_wt = sum(item['gr_wt'] for item in stock_items)
