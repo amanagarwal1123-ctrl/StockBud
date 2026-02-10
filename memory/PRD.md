@@ -40,34 +40,30 @@ backend/
 - Selective data reset, CSV export, mobile-responsive UI
 
 ## Large File Upload - Chunked Upload (Feb 10, 2026)
-- **Problem**: 205K row Excel files (24MB) fail in deployed environment due to proxy body size limits
-- **Solution**: Automatic chunked upload for files > 4MB
-  - Frontend splits file into 4MB binary chunks
-  - 3-step API: `/api/upload/init` -> `/api/upload/chunk/{id}` -> `/api/upload/finalize/{id}`
-  - Backend reassembles chunks and processes with EXACT same parse_excel_file logic
-  - Progress indicator shows chunk-by-chunk progress
-- **Optimized parsing**: Single Excel read, dict-based iteration, batch MongoDB inserts (5K chunks), thread pool
+- Auto chunked upload for files > 4MB (4MB binary chunks)
+- 3-step API: init -> chunk -> finalize with same parse_excel_file logic
+- Optimized: single Excel read, dict iteration, batch MongoDB inserts, thread pool
 
 ## Date-Based Stock Entry Model (Feb 10, 2026)
-- **Problem**: Approved stamps blocked new stock entries. Old approach: single entry per stamp, approval blocks re-submission
-- **New Model**:
-  - Entries keyed by `{stamp, entered_by, entry_day}` (YYYY-MM-DD)
-  - Same stamp + same day = UPDATE existing (overwrite values, reset to pending)
-  - Different day = INSERT new entry (old entries locked/historical)
-  - Approved entries from previous days remain untouched forever
-  - `stamp_approvals` includes `approval_day` to track per-day approval
-  - `my-entries` returns latest entry per stamp (deduped)
-  - Frontend shows date label and "Re-submit" button for approved entries
+- Entries keyed by {stamp, entered_by, entry_day}
+- Same stamp + same day = UPDATE (overwrite, reset to pending)
+- Different day = INSERT new (old entries locked/historical)
+- Approved entries from previous days remain untouched
+- stamp_approvals includes approval_day for per-day tracking
+- my-entries returns latest per stamp (deduped)
+- Frontend: date label, Re-submit for approved entries
+
+## Approval View Details & Rejection Fix (Feb 10, 2026)
+- Approved stamps now show full "View Details" panel with comparison table
+- Rejection message textarea inside details panel (required for rejection)
+- Reject button placed alongside the message input
 
 ## Order Management (Full Workflow)
 - Quick Order from Alerts, Create/Track Orders
 - Mark as Received, Cancel Orders, Overdue Detection
-- Status Filter: All/Pending/Received views
 
 ## AI Seasonal Analysis (Hindu Calendar) - PLACEHOLDER
-- Historical Data Upload page exists
-- Festival Analysis endpoint is a stub
-- Core LLM logic NOT yet implemented
+- Historical Data Upload page exists, core LLM logic NOT implemented
 
 ## Key Credentials
 - Admin: admin / admin123
@@ -76,7 +72,7 @@ backend/
 - PEE: PEE1 / poly123
 
 ## Backlog
-- (P1) Complete Browser Notifications integration (trigger on new alerts)
+- (P1) Complete Browser Notifications integration
 - (P1) Further split server.py into route modules
 - (P2) Implement Core AI Seasonal Analysis Logic
 - (P2) Enhance Item Mapping with similarity suggestions
