@@ -24,10 +24,13 @@ export default function PhysicalStockComparison() {
   const [selectedStamp, setSelectedStamp] = useState('');
   const [stampGrossWeight, setStampGrossWeight] = useState('');
   const [stampComparison, setStampComparison] = useState(null);
+  const [verificationHistory, setVerificationHistory] = useState([]);
+  const { isAdmin, isManager } = useAuth();
 
   useEffect(() => {
     fetchComparison();
     fetchStampWeights();
+    fetchVerificationHistory();
   }, []);
 
   const fetchComparison = async () => {
