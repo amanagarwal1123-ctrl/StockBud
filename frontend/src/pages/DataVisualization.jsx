@@ -367,6 +367,205 @@ export default function DataVisualization() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Seasonal Analysis Tab */}
+        <TabsContent value="seasonal" className="space-y-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Sun className="h-5 w-5 text-amber-500" />Seasonal AI Analysis
+              </CardTitle>
+              <CardDescription>
+                Analyzes sales patterns by Hindu calendar festivals (Diwali, Holi, Salakh, Dhanteras, Karva Chauth, Sankrant) and recommends optimal ordering
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Button onClick={handleSeasonalAnalysis} disabled={seasonalLoading} data-testid="seasonal-run-btn" className="w-full sm:w-auto">
+                {seasonalLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sun className="h-4 w-4 mr-2" />}
+                {seasonalLoading ? 'Analyzing (may take a minute)...' : 'Run Seasonal Analysis'}
+              </Button>
+
+              {seasonalData && (
+                <>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-center">
+                      <p className="text-xs text-amber-600">Current Season</p>
+                      <p className="font-semibold text-sm mt-1">{seasonalData.current_season?.join(', ') || 'Off-season'}</p>
+                    </div>
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
+                      <p className="text-xs text-blue-600">Items Analyzed</p>
+                      <p className="font-semibold text-sm mt-1">{seasonalData.total_items_analyzed}</p>
+                    </div>
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
+                      <p className="text-xs text-green-600">Transactions Analyzed</p>
+                      <p className="font-semibold text-sm mt-1">{seasonalData.total_transactions_analyzed?.toLocaleString()}</p>
+                    </div>
+                  </div>
+
+                  {/* Ordering Recommendations */}
+                  {seasonalData.recommendations?.length > 0 && (
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm">Ordering Recommendations</CardTitle>
+                        <CardDescription className="text-xs">Based on seasonal demand + current stock</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="overflow-x-auto max-h-72">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="text-xs">Item</TableHead>
+                                <TableHead className="text-xs text-right">Stock</TableHead>
+                                <TableHead className="text-xs text-right">Avg/Mo</TableHead>
+                                <TableHead className="text-xs text-right">Boost</TableHead>
+                                <TableHead className="text-xs">Season</TableHead>
+                                <TableHead className="text-xs text-right">Order (kg)</TableHead>
+                                <TableHead className="text-xs">Urgency</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {seasonalData.recommendations.slice(0, 20).map((r, i) => (
+                                <TableRow key={i}>
+                                  <TableCell className="text-xs font-medium max-w-[120px] truncate">{r.item_name}</TableCell>
+                                  <TableCell className="text-xs text-right font-mono">{r.current_stock_kg}</TableCell>
+                                  <TableCell className="text-xs text-right font-mono">{r.avg_monthly_kg}</TableCell>
+                                  <TableCell className="text-xs text-right font-mono">{r.seasonal_boost}x</TableCell>
+                                  <TableCell className="text-xs max-w-[100px] truncate">{r.upcoming_season || '-'}</TableCell>
+                                  <TableCell className="text-xs text-right font-mono font-bold">{r.recommended_order_kg}</TableCell>
+                                  <TableCell>
+                                    <Badge className={`text-xs ${r.urgency === 'high' ? 'bg-red-500' : r.urgency === 'medium' ? 'bg-amber-500' : 'bg-gray-400'}`}>
+                                      {r.urgency}
+                                    </Badge>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* AI Insights */}
+                  {seasonalData.ai_insights && (
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <Sparkles className="h-4 w-4 text-purple-500" />AI Festival-Aware Insights
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-100 rounded-lg p-4" data-testid="seasonal-ai-result">
+                          <pre className="whitespace-pre-wrap text-sm font-sans leading-relaxed">{seasonalData.ai_insights}</pre>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Historical Data Upload Tab */}
+        <TabsContent value="historical" className="space-y-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Upload className="h-5 w-5 text-blue-500" />Historical Data Upload
+              </CardTitle>
+              <CardDescription>
+                Upload previous years' sales/purchase files here for AI training. This data does NOT affect current stock calculations.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col sm:flex-row gap-3 items-end">
+                <div>
+                  <Label className="text-xs">Year</Label>
+                  <Select value={histYear} onValueChange={setHistYear}>
+                    <SelectTrigger className="w-28" data-testid="hist-year-select"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {['2020','2021','2022','2023','2024','2025'].map(y => (
+                        <SelectItem key={y} value={y}>{y}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">Type</Label>
+                  <Select value={histType} onValueChange={setHistType}>
+                    <SelectTrigger className="w-32" data-testid="hist-type-select"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sale">Sales</SelectItem>
+                      <SelectItem value="purchase">Purchases</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">Excel File</Label>
+                  <Input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleHistoricalUpload}
+                    disabled={histUploading}
+                    data-testid="hist-file-input"
+                  />
+                </div>
+                {histUploading && <Loader2 className="h-5 w-5 animate-spin text-blue-500" />}
+              </div>
+
+              {/* Uploaded Historical Data Summary */}
+              {historicalSummary?.years?.length > 0 ? (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Uploaded Historical Data</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Year</TableHead>
+                          <TableHead>Sales</TableHead>
+                          <TableHead>Purchases</TableHead>
+                          <TableHead className="text-right">Action</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {historicalSummary.years.map(year => {
+                          const yearData = historicalSummary.summary[year] || {};
+                          return (
+                            <TableRow key={year}>
+                              <TableCell className="font-medium">{year}</TableCell>
+                              <TableCell>
+                                {yearData.sale ? (
+                                  <span className="text-sm">{yearData.sale.count} txns ({yearData.sale.total_kg} kg)</span>
+                                ) : <span className="text-muted-foreground text-xs">-</span>}
+                              </TableCell>
+                              <TableCell>
+                                {yearData.purchase ? (
+                                  <span className="text-sm">{yearData.purchase.count} txns ({yearData.purchase.total_kg} kg)</span>
+                                ) : <span className="text-muted-foreground text-xs">-</span>}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <Button variant="ghost" size="sm" onClick={() => handleDeleteHistorical(year)}>
+                                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  No historical data uploaded yet. Upload previous years' sales/purchase Excel files to enable seasonal AI analysis.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
     </div>
   );
