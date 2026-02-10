@@ -911,6 +911,9 @@ async def upload_transaction_file(
         }
     )
     
+    # Auto-normalize stamps after upload
+    await _auto_normalize_stamps()
+    
     return {
         "success": True,
         "count": len(transactions),
