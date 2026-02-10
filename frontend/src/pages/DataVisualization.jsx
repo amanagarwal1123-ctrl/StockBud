@@ -186,11 +186,17 @@ export default function DataVisualization() {
       </Card>
 
       <Tabs defaultValue="sales" className="space-y-4">
-        <TabsList className="grid grid-cols-4 w-full max-w-lg">
+        <TabsList className="grid grid-cols-3 sm:grid-cols-6 w-full">
           <TabsTrigger value="sales" data-testid="tab-sales">Sales</TabsTrigger>
           <TabsTrigger value="purchases" data-testid="tab-purchases">Purchases</TabsTrigger>
-          <TabsTrigger value="health" data-testid="tab-health">Stock Health</TabsTrigger>
-          <TabsTrigger value="ai" data-testid="tab-ai">Smart AI</TabsTrigger>
+          <TabsTrigger value="health" data-testid="tab-health">Health</TabsTrigger>
+          <TabsTrigger value="seasonal" data-testid="tab-seasonal">
+            <Sun className="h-3.5 w-3.5 mr-1" />Seasonal
+          </TabsTrigger>
+          <TabsTrigger value="historical" data-testid="tab-historical">
+            <Upload className="h-3.5 w-3.5 mr-1" />History
+          </TabsTrigger>
+          <TabsTrigger value="ai" data-testid="tab-ai">AI</TabsTrigger>
         </TabsList>
 
         {/* Sales Tab */}
