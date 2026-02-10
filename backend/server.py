@@ -866,12 +866,20 @@ async def upload_transaction_file(
 
 @api_router.get("/executive/my-entries/{username}")
 async def get_executive_entries(username: str, current_user: dict = Depends(get_current_user)):
-    """Get all stock entries by an executive (for editing rejected ones)"""
+    """Get stock entries by an executive — latest per stamp shown first"""
     entries = await db.stock_entries.find(
         {'entered_by': username},
         {"_id": 0}
-    ).sort('entry_date', -1).to_list(100)
-    return entries
+    ).sort('entry_date', -1).to_list(500)
+    
+    # Return latest entry per stamp (deduplicate by stamp, keep most recent)
+    seen_stamps = set()
+    latest_entries = []
+    for e in entries:
+        if e['stamp'] not in seen_stamps:
+            seen_stamps.add(e['stamp'])
+            latest_entries.append(e)
+    return latest_entries
 
 @api_router.put("/executive/update-entry/{stamp}")
 async def update_stock_entry(
