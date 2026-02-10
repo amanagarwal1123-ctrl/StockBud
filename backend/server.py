@@ -761,10 +761,16 @@ async def save_executive_stock_entry(
     entries = request.get('entries', [])
     entered_by = request.get('entered_by')
     
-    # Check if stamp is already approved
+    # Check if stamp is already approved — allow re-submission by resetting approval
     approval = await db.stamp_approvals.find_one({"stamp": stamp, "is_approved": True})
     if approval:
-        raise HTTPException(status_code=400, detail=f"{stamp} is already approved. Cannot modify.")
+        # Clear old approval so new physical stock can be submitted and re-verified
+        await db.stamp_approvals.delete_one({"stamp": stamp})
+        # Reset existing stock entry status so it can be overwritten
+        await db.stock_entries.update_many(
+            {'stamp': stamp, 'status': 'approved'},
+            {'$set': {'status': 'superseded'}}
+        )
     
     # Save stock entry
     entry_record = {
