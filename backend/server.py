@@ -923,7 +923,13 @@ async def save_executive_stock_entry(
     request: Dict,
     current_user: dict = Depends(get_current_user)
 ):
-    """Save stock entry from executive (for manager approval)"""
+    """Save stock entry from executive (for manager approval).
+    Rules:
+    - Same stamp + same day = update existing (overwrite)
+    - Different day = new entry (previous day's entry is locked/historical)
+    - Approved entries from previous days remain untouched
+    - Each stamp shown by its last submission timestamp
+    """
     
     if current_user['role'] not in ['executive', 'manager', 'admin']:
         raise HTTPException(status_code=403, detail="Access denied")
@@ -931,41 +937,39 @@ async def save_executive_stock_entry(
     stamp = request.get('stamp')
     entries = request.get('entries', [])
     entered_by = request.get('entered_by')
+    today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
     
-    # Check if stamp is already approved — allow re-submission by resetting approval
-    approval = await db.stamp_approvals.find_one({"stamp": stamp, "is_approved": True})
-    if approval:
-        # Clear old approval so new physical stock can be submitted and re-verified
-        await db.stamp_approvals.delete_one({"stamp": stamp})
-        # Reset existing stock entry status so it can be overwritten
-        await db.stock_entries.update_many(
-            {'stamp': stamp, 'status': 'approved'},
-            {'$set': {'status': 'superseded'}}
-        )
-    
-    # Save stock entry
+    # Save stock entry keyed by stamp + user + today's date
     entry_record = {
         'stamp': stamp,
         'entries': entries,
         'entered_by': entered_by,
         'entry_date': datetime.now(timezone.utc).isoformat(),
+        'entry_day': today,
         'status': 'pending',
         'approved_by': None,
         'approved_at': None,
-        'iteration': 1  # Track how many times resubmitted
     }
     
-    # Check if entry exists (resubmission)
-    existing = await db.stock_entries.find_one({'stamp': stamp, 'entered_by': entered_by})
-    if existing:
-        entry_record['iteration'] = existing.get('iteration', 1) + 1
+    # Check if an entry exists for this stamp + user + today
+    existing_today = await db.stock_entries.find_one({
+        'stamp': stamp, 'entered_by': entered_by, 'entry_day': today
+    })
     
-    # CRITICAL: Save to database
-    await db.stock_entries.update_one(
-        {'stamp': stamp, 'entered_by': entered_by},
-        {'$set': entry_record},
-        upsert=True
-    )
+    if existing_today:
+        # Same day — overwrite (update values, reset status to pending)
+        entry_record['iteration'] = existing_today.get('iteration', 0) + 1
+        await db.stock_entries.update_one(
+            {'stamp': stamp, 'entered_by': entered_by, 'entry_day': today},
+            {'$set': entry_record}
+        )
+    else:
+        # New day — insert new entry (old entries remain as history)
+        entry_record['iteration'] = 1
+        await db.stock_entries.insert_one(entry_record)
+    
+    # If there was a same-day approval in stamp_approvals, clear it so manager can re-approve
+    await db.stamp_approvals.delete_one({'stamp': stamp, 'approval_day': today})
     
     # Create notification for manager
     await db.notifications.insert_one({
