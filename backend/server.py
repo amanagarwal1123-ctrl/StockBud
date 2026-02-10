@@ -1138,10 +1138,6 @@ async def get_item_polythene_history(item_name: str):
     return entries
 
 
-    
-    entries = await db.stock_entries.find({'status': 'pending'}, {"_id": 0}).to_list(100)
-    return entries
-
 @api_router.post("/manager/approve-stamp")
 async def approve_stamp(
     request: Dict,
