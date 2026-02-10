@@ -918,11 +918,11 @@ async def update_stock_entry(
 
 @api_router.get("/manager/all-entries")
 async def get_all_entries(current_user: dict = Depends(get_current_user)):
-    """Get all stock entries for manager (pending, approved, rejected)"""
+    """Get all stock entries for manager — latest per stamp, sorted by entry_date desc"""
     if current_user['role'] not in ['manager', 'admin']:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    entries = await db.stock_entries.find({}, {"_id": 0}).sort('entry_date', -1).to_list(200)
+    entries = await db.stock_entries.find({}, {"_id": 0}).sort('entry_date', -1).to_list(1000)
     return entries
 
 @api_router.delete("/executive/delete-entry/{stamp}/{username}")
