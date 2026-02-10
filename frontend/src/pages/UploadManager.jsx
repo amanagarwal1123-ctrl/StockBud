@@ -28,6 +28,42 @@ export default function UploadManager() {
     physical_stock: { date: '' }
   });
 
+  const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB per chunk
+
+  const uploadChunked = async (fileType, file) => {
+    const range = dateRanges[fileType] || {};
+    // 1. Init upload session
+    setUploadProgress('Initializing chunked upload...');
+    const initRes = await axios.post(`${API}/upload/init`, {
+      file_type: fileType,
+      start_date: range.start || null,
+      end_date: range.end || null,
+      verification_date: fileType === 'physical_stock' ? dateRanges.physical_stock?.date : null,
+      total_chunks: Math.ceil(file.size / CHUNK_SIZE),
+    }, { timeout: 30000 });
+    const uploadId = initRes.data.upload_id;
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
+    // 2. Send chunks
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, file.size);
+      const chunk = file.slice(start, end);
+      const fd = new FormData();
+      fd.append('file', chunk, `chunk_${i}`);
+      setUploadProgress(`Uploading chunk ${i + 1} of ${totalChunks}...`);
+      await axios.post(`${API}/upload/chunk/${uploadId}?chunk_index=${i}`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120000,
+      });
+    }
+
+    // 3. Finalize — server reassembles and processes
+    setUploadProgress('Processing file on server... This may take a minute for large files.');
+    const finalRes = await axios.post(`${API}/upload/finalize/${uploadId}`, {}, { timeout: 600000 });
+    return finalRes;
+  };
+
   const handleFileUpload = async (fileType, file) => {
     if (!file) return;
 
@@ -72,33 +108,41 @@ export default function UploadManager() {
     if (!confirmed) return;
 
     setUploading(true);
-    setUploadProgress('Uploading file...');
-    const formData = new FormData();
-    formData.append('file', file);
+    setUploadProgress('Preparing upload...');
 
     try {
-      let endpoint;
-      if (fileType === 'opening_stock') {
-        endpoint = `${API}/opening-stock/upload`;
-      } else if (fileType === 'physical_stock') {
-        endpoint = `${API}/physical-stock/upload?verification_date=${dateRanges.physical_stock.date}`;
-      } else if (fileType === 'master_stock') {
-        endpoint = `${API}/master-stock/upload`;
-      } else {
-        const range = dateRanges[fileType];
-        endpoint = `${API}/transactions/upload/${fileType}?start_date=${range.start}&end_date=${range.end}`;
-      }
+      let response;
+      const useChunked = file.size > CHUNK_SIZE && fileType !== 'master_stock';
 
-      const response = await axios.post(endpoint, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 600000,
-        onUploadProgress: (progressEvent) => {
-          if (progressEvent.total) {
-            const pct = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-            setUploadProgress(pct < 100 ? `Uploading: ${pct}%` : 'Processing file on server... This may take a minute for large files.');
-          }
-        },
-      });
+      if (useChunked) {
+        response = await uploadChunked(fileType, file);
+      } else {
+        // Small file — direct upload
+        setUploadProgress('Uploading file...');
+        const formData = new FormData();
+        formData.append('file', file);
+        let endpoint;
+        if (fileType === 'opening_stock') {
+          endpoint = `${API}/opening-stock/upload`;
+        } else if (fileType === 'physical_stock') {
+          endpoint = `${API}/physical-stock/upload?verification_date=${dateRanges.physical_stock.date}`;
+        } else if (fileType === 'master_stock') {
+          endpoint = `${API}/master-stock/upload`;
+        } else {
+          const range = dateRanges[fileType];
+          endpoint = `${API}/transactions/upload/${fileType}?start_date=${range.start}&end_date=${range.end}`;
+        }
+        response = await axios.post(endpoint, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          timeout: 600000,
+          onUploadProgress: (progressEvent) => {
+            if (progressEvent.total) {
+              const pct = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+              setUploadProgress(pct < 100 ? `Uploading: ${pct}%` : 'Processing file on server...');
+            }
+          },
+        });
+      }
 
       setUploadedFiles((prev) => ({ ...prev, [fileType]: file.name }));
       toast.success(response.data.message || 'File uploaded successfully!');
