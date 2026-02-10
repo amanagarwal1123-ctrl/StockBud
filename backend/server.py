@@ -887,18 +887,32 @@ async def update_stock_entry(
     request: Dict,
     current_user: dict = Depends(get_current_user)
 ):
-    """Update a rejected stock entry"""
+    """Update a rejected stock entry (same day only)"""
     entries = request.get('entries', [])
+    today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
     
-    # Update existing entry
-    await db.stock_entries.update_one(
-        {'stamp': stamp, 'entered_by': current_user['username'], 'status': {'$in': ['pending', 'rejected']}},
+    # Try to update today's entry first, fallback to latest pending/rejected
+    result = await db.stock_entries.update_one(
+        {'stamp': stamp, 'entered_by': current_user['username'], 'entry_day': today, 'status': {'$in': ['pending', 'rejected']}},
         {'$set': {
             'entries': entries,
             'entry_date': datetime.now(timezone.utc).isoformat(),
             'status': 'pending'
         }}
     )
+    
+    if result.modified_count == 0:
+        # Fallback: update the latest pending/rejected entry for this stamp
+        await db.stock_entries.update_one(
+            {'stamp': stamp, 'entered_by': current_user['username'], 'status': {'$in': ['pending', 'rejected']}},
+            {'$set': {
+                'entries': entries,
+                'entry_date': datetime.now(timezone.utc).isoformat(),
+                'entry_day': today,
+                'status': 'pending'
+            }},
+            upsert=False
+        )
     
     return {'success': True, 'message': 'Entry updated'}
 
