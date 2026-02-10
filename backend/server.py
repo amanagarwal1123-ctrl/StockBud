@@ -642,6 +642,9 @@ async def upload_opening_stock(file: UploadFile = File(...)):
         
         await save_action('upload_opening_stock', f"Uploaded {len(stock_items)} merged opening stock items, total: {total_net_wt/1000:.3f} kg")
         
+        # Auto-normalize stamps after upload
+        await _auto_normalize_stamps()
+        
         return {
             "success": True,
             "count": len(stock_items),
