@@ -27,8 +27,14 @@ export default function DataVisualization() {
   const [insights, setInsights] = useState('');
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [insightQuestion, setInsightQuestion] = useState('');
+  const [historicalSummary, setHistoricalSummary] = useState(null);
+  const [histYear, setHistYear] = useState('2025');
+  const [histType, setHistType] = useState('sale');
+  const [histUploading, setHistUploading] = useState(false);
+  const [seasonalData, setSeasonalData] = useState(null);
+  const [seasonalLoading, setSeasonalLoading] = useState(false);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); fetchHistorical(); }, []);
 
   const fetchData = async (sd, ed) => {
     setLoading(true);
