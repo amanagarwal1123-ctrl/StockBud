@@ -1,56 +1,52 @@
 from fastapi import FastAPI, APIRouter, UploadFile, File, HTTPException, Query, Depends, Header
 from fastapi.responses import JSONResponse
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone, timedelta
 import pandas as pd
-import openpyxl
 from io import BytesIO
 import json
 from collections import defaultdict
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 import numpy as np
-import math
-import jwt
-from passlib.context import CryptContext
+import re
 
+from dotenv import load_dotenv
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# Authentication setup
-SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'stockbud-secret-key-change-in-production')
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_HOURS = 18
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-security = HTTPBearer()
-
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+# Import shared modules
+from database import db, client
+from auth import (
+    get_current_user, verify_password, get_password_hash,
+    create_access_token, security
+)
+from models import (
+    Transaction, OpeningStock, PhysicalStock, MasterItem, ItemMapping,
+    PurchaseLedger, User, LoginRequest, CreateUserRequest, Token,
+    ActionHistory, ResetRequest, StampAssignment, OrderCreate,
+    SmartInsightsRequest, HistoricalUploadRequest
+)
+from services.helpers import (
+    normalize_stamp, get_column_value, parse_labor_value,
+    normalize_date, stamp_sort_key, save_action, auto_normalize_stamps
+)
+from services.stock_service import get_current_inventory
 
 app = FastAPI()
 
-
-# Health check endpoint for Kubernetes
+# Health check endpoints
 @app.get("/health")
 async def health_check():
-    """Health check endpoint for deployment"""
     return {"status": "healthy", "service": "stockbud-backend"}
 
 @app.get("/api/health")
 async def api_health_check():
-    """Health check endpoint under /api prefix"""
     return {"status": "healthy", "service": "stockbud-backend"}
-
 
 api_router = APIRouter(prefix="/api")
 
