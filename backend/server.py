@@ -2800,7 +2800,60 @@ async def mark_order_received(order_id: str, current_user: dict = Depends(get_cu
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Order not found")
+    
+    # Notify admin that order was received
+    order = await db.orders.find_one({'id': order_id}, {"_id": 0})
+    if order:
+        await db.notifications.insert_one({
+            'id': str(uuid.uuid4()),
+            'category': 'order',
+            'type': 'order_received',
+            'message': f"Order received: {order.get('quantity_kg')} kg of '{order.get('item_name')}' by {current_user['username']}",
+            'item_name': order.get('item_name'),
+            'target_user': 'admin',
+            'read': False,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+    
     return {"success": True, "message": "Order marked as received"}
+
+@api_router.delete("/orders/{order_id}")
+async def cancel_order(order_id: str, current_user: dict = Depends(get_current_user)):
+    """Cancel/delete an order"""
+    if current_user['role'] not in ['admin', 'manager']:
+        raise HTTPException(status_code=403, detail="Admin or Manager only")
+    result = await db.orders.delete_one({'id': order_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return {"success": True, "message": "Order cancelled"}
+
+@api_router.get("/orders/overdue")
+async def check_overdue_orders(current_user: dict = Depends(get_current_user)):
+    """Check for orders that are overdue (ordered > 7 days ago, not received)"""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    overdue = await db.orders.find({
+        'status': 'ordered',
+        'ordered_at': {'$lt': cutoff}
+    }, {"_id": 0}).to_list(100)
+    
+    # Generate notifications for overdue orders
+    for order in overdue:
+        if not order.get('overdue_notified'):
+            days_ago = (datetime.now(timezone.utc) - datetime.fromisoformat(order['ordered_at'].replace('Z', '+00:00'))).days
+            await db.notifications.insert_one({
+                'id': str(uuid.uuid4()),
+                'category': 'order',
+                'type': 'order_overdue',
+                'severity': 'warning',
+                'message': f"OVERDUE: Order for {order.get('quantity_kg')} kg of '{order.get('item_name')}' placed {days_ago} days ago not received",
+                'item_name': order.get('item_name'),
+                'target_user': 'admin',
+                'read': False,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            })
+            await db.orders.update_one({'id': order['id']}, {'$set': {'overdue_notified': True}})
+    
+    return {"overdue_orders": overdue, "count": len(overdue)}
 
 # ==================== ENHANCED NOTIFICATIONS ====================
 
