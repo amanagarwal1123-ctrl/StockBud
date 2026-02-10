@@ -1468,106 +1468,21 @@ async def get_stamp_breakdown(stamp: str):
 
 @api_router.post("/admin/normalize-stamps")
 async def normalize_all_stamps(current_user: dict = Depends(get_current_user)):
-    """Normalize all stamps to CAPS format (Admin only - run once after deployment)"""
+    """Normalize all stamps to CAPS format (Admin only)"""
     if current_user['role'] != 'admin':
         raise HTTPException(status_code=403, detail="Admin only")
     
-    import re
+    total_updated = await auto_normalize_stamps()
     
-    # Get all unique stamps from all collections
-    all_stamps = set()
-    all_stamps.update(await db.master_items.distinct('stamp'))
-    all_stamps.update(await db.transactions.distinct('stamp'))
-    all_stamps.update(await db.opening_stock.distinct('stamp'))
+    if total_updated == 0:
+        return {"success": True, "message": "All stamps already normalized!", "stamps_updated": 0}
     
-    # Create mapping to CAPS format
-    stamp_mapping = {}
-    for stamp in all_stamps:
-        if not stamp or stamp == 'Unassigned':
-            continue
-        
-        # Extract number and create CAPS version
-        match = re.search(r'(\d+)', stamp)
-        if match:
-            normalized = f'STAMP {match.group(1)}'
-            if stamp != normalized:
-                stamp_mapping[stamp] = normalized
-    
-    # Also map empty strings to Unassigned
-    if '' in all_stamps:
-        stamp_mapping[''] = 'Unassigned'
-    
-    if not stamp_mapping:
-        return {
-            "success": True,
-            "message": "All stamps already normalized!",
-            "stamps_updated": 0
-        }
-    
-    # Update all collections
-    total_updated = 0
-    update_log = []
-    
-    for old_stamp, new_stamp in stamp_mapping.items():
-        # Update master_items
-        result1 = await db.master_items.update_many(
-            {'stamp': old_stamp},
-            {'$set': {'stamp': new_stamp}}
-        )
-        
-        # Update transactions
-        result2 = await db.transactions.update_many(
-            {'stamp': old_stamp},
-            {'$set': {'stamp': new_stamp}}
-        )
-        
-        # Update opening_stock
-        result3 = await db.opening_stock.update_many(
-            {'stamp': old_stamp},
-            {'$set': {'stamp': new_stamp}}
-        )
-        
-        # Update stock_entries (executive entries for approval)
-        result4 = await db.stock_entries.update_many(
-            {'stamp': old_stamp},
-            {'$set': {'stamp': new_stamp}}
-        )
-        
-        # Update stamp_approvals
-        result5 = await db.stamp_approvals.update_many(
-            {'stamp': old_stamp},
-            {'$set': {'stamp': new_stamp}}
-        )
-        
-        # Update stamp_verifications
-        result6 = await db.stamp_verifications.update_many(
-            {'stamp': old_stamp},
-            {'$set': {'stamp': new_stamp}}
-        )
-        
-        # Update physical_inventory
-        result7 = await db.physical_inventory.update_many(
-            {'stamp': old_stamp},
-            {'$set': {'stamp': new_stamp}}
-        )
-        
-        count = (result1.modified_count + result2.modified_count + result3.modified_count +
-                 result4.modified_count + result5.modified_count + result6.modified_count +
-                 result7.modified_count)
-        total_updated += count
-        
-        if count > 0:
-            update_log.append(f"'{old_stamp}' → '{new_stamp}': {count} documents")
-    
-    # Log the action
     await save_action('normalize_stamps', f'Normalized {total_updated} documents to CAPS format', {'count': total_updated})
     
     return {
         "success": True,
         "message": f"Normalized {total_updated} documents to CAPS format",
-        "stamps_updated": len(stamp_mapping),
-        "total_documents": total_updated,
-        "update_log": update_log
+        "total_documents": total_updated
     }
 
 @api_router.post("/history/undo-upload")
