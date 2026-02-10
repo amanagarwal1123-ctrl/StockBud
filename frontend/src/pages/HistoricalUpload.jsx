@@ -33,22 +33,55 @@ export default function HistoricalUpload() {
     finally { setLoading(false); }
   };
 
+  const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB per chunk
+
   const handleUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
     try {
       const token = localStorage.getItem('token');
-      const fd = new FormData();
-      fd.append('file', file);
-      let url = `${API}/historical/upload?file_type=${fileType}&year=${year}`;
-      if (startDate) url += `&start_date=${startDate}`;
-      if (endDate) url += `&end_date=${endDate}`;
-      const res = await axios.post(url, fd, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
-        timeout: 600000,
-      });
-      toast.success(res.data.message);
+      const useChunked = file.size > CHUNK_SIZE;
+
+      if (useChunked) {
+        // Chunked upload for large files
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+        const initRes = await axios.post(`${API}/upload/init`, {
+          file_type: fileType === 'sale' ? 'historical_sale' : 'historical_purchase',
+          year,
+          start_date: startDate || null,
+          end_date: endDate || null,
+          total_chunks: totalChunks,
+        }, { timeout: 30000 });
+        const uploadId = initRes.data.upload_id;
+
+        for (let i = 0; i < totalChunks; i++) {
+          const start = i * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, file.size);
+          const chunk = file.slice(start, end);
+          const fd = new FormData();
+          fd.append('file', chunk, `chunk_${i}`);
+          await axios.post(`${API}/upload/chunk/${uploadId}?chunk_index=${i}`, fd, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+            timeout: 120000,
+          });
+        }
+
+        const finalRes = await axios.post(`${API}/upload/finalize/${uploadId}`, {}, { timeout: 600000 });
+        toast.success(finalRes.data.message);
+      } else {
+        // Direct upload for small files
+        const fd = new FormData();
+        fd.append('file', file);
+        let url = `${API}/historical/upload?file_type=${fileType}&year=${year}`;
+        if (startDate) url += `&start_date=${startDate}`;
+        if (endDate) url += `&end_date=${endDate}`;
+        const res = await axios.post(url, fd, {
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
+          timeout: 600000,
+        });
+        toast.success(res.data.message);
+      }
       fetchSummary();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Upload failed');
