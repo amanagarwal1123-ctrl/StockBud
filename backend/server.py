@@ -1308,7 +1308,8 @@ async def upload_physical_stock(
     
     try:
         # Parse using opening_stock parser (same format)
-        records = parse_excel_file(content, 'opening_stock')
+        loop = asyncio.get_event_loop()
+        records = await loop.run_in_executor(_parse_executor, parse_excel_file, content, 'opening_stock')
         
         if not records:
             raise HTTPException(status_code=400, detail="No valid records found in file")
