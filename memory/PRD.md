@@ -8,62 +8,28 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 - **Frontend:** React, TailwindCSS, shadcn/ui, Recharts, Axios
 - **Database:** MongoDB (test_database)
 
-### Modular Structure
-```
-backend/
-  server.py            -> Main entry + route handlers
-  database.py          -> Shared MongoDB connection
-  auth.py              -> JWT auth helpers
-  models.py            -> All Pydantic models
-  services/
-    helpers.py         -> Shared helpers (normalize_stamp, save_action, etc.)
-    stock_service.py   -> get_current_inventory() - single source of truth
-```
-
-## Navigation Structure (Grouped Sidebar)
-- **Main:** Dashboard, Notifications
-- **Inventory:** Upload Files, Historical Upload, Current Stock, Item Mapping, Manage Mappings, Purchase Rates, Polythene Mgmt
-- **Verification:** Physical vs Book, Approvals, Stamp Mgmt, Stamp Assign
-- **Analytics & AI:** Visualization, Item Buffers, Orders, Party Analytics, Profit Analysis
-- **Admin:** User Mgmt, History, Activity Log
-
 ## Core Features (All Implemented)
-- Multi-user roles: Admin, Manager, SEE, PEE with JWT authentication
-- Excel file uploads with auto stamp normalization
-- Item name mapping, Stamp management (ALL CAPS auto-normalize)
-- Current Stock (single source of truth), Physical vs Book comparison
-- Stamp verification with save/cancel history
-- Profit Analysis, Party Analytics, Purchase Rates
-- Polythene weight adjustments
-- Manager approval workflow (includes mapped items)
-- Notifications (in-app + browser push, 60s polling)
-- Selective data reset, CSV export, mobile-responsive UI
+- Multi-user roles, JWT auth, Excel uploads with auto stamp normalization
+- Current Stock, Physical vs Book comparison, Stamp verification
+- Profit Analysis, Party Analytics, Purchase Rates, Polythene Mgmt
+- Manager approval workflow, Notifications, CSV export
 
-## Large File Upload - Chunked Upload (Feb 10, 2026)
-- Auto chunked upload for files > 4MB (4MB binary chunks)
-- 3-step API: init -> chunk -> finalize with same parse_excel_file logic
-- Optimized: single Excel read, dict iteration, batch MongoDB inserts, thread pool
+## Chunked Upload (Feb 10, 2026)
+- Auto chunked for files > 4MB on BOTH Upload Files and Historical Upload pages
+- 3-step API: init -> chunk -> finalize
+- Supports: sale, purchase, branch_transfer, opening_stock, physical_stock, historical_sale, historical_purchase
 
 ## Date-Based Stock Entry Model (Feb 10, 2026)
 - Entries keyed by {stamp, entered_by, entry_day}
-- Same stamp + same day = UPDATE (overwrite, reset to pending)
-- Different day = INSERT new (old entries locked/historical)
-- Approved entries from previous days remain untouched
-- stamp_approvals includes approval_day for per-day tracking
-- my-entries returns latest per stamp (deduped)
-- Frontend: date label, Re-submit for approved entries
+- Same day = update, different day = new entry, old approvals untouched
 
-## Approval View Details & Rejection Fix (Feb 10, 2026)
-- Approved stamps now show full "View Details" panel with comparison table
-- Rejection message textarea inside details panel (required for rejection)
-- Reject button placed alongside the message input
+## Approval View Details Fix (Feb 10, 2026)
+- View Details works for approved stamps (was missing details panel)
+- Rejection requires message (textarea inside details panel)
 
-## Order Management (Full Workflow)
-- Quick Order from Alerts, Create/Track Orders
-- Mark as Received, Cancel Orders, Overdue Detection
-
-## AI Seasonal Analysis (Hindu Calendar) - PLACEHOLDER
-- Historical Data Upload page exists, core LLM logic NOT implemented
+## Historical Summary Fix (Feb 10, 2026)
+- Summary aggregation groups sale+sale_return as "sale", purchase+purchase_return as "purchase"
+- Previously purchase entries were invisible due to type mismatch
 
 ## Key Credentials
 - Admin: admin / admin123
@@ -76,4 +42,3 @@ backend/
 - (P1) Further split server.py into route modules
 - (P2) Implement Core AI Seasonal Analysis Logic
 - (P2) Enhance Item Mapping with similarity suggestions
-- (P2) Auto-check stock returns to green after purchase received
