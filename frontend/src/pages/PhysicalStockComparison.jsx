@@ -668,6 +668,62 @@ export default function PhysicalStockComparison() {
           </AlertDescription>
         </Alert>
       )}
+
+      {/* Saved Verifications History */}
+      {verificationHistory.length > 0 && (
+        <Card className="border-border/40" data-testid="verification-history">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-green-600" />
+              Saved Verifications
+            </CardTitle>
+            <CardDescription>Stamp verifications saved from this page. Admin/Manager can cancel if done by mistake.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Stamp</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead className="text-right">Book Gross</TableHead>
+                    <TableHead className="text-right">Physical Gross</TableHead>
+                    <TableHead className="text-right">Difference</TableHead>
+                    <TableHead>Status</TableHead>
+                    {(isAdmin || isManager) && <TableHead className="text-right">Action</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {verificationHistory.map((v, idx) => (
+                    <TableRow key={idx} data-testid={`verif-row-${idx}`}>
+                      <TableCell className="font-medium">{v.stamp}</TableCell>
+                      <TableCell className="text-sm">{v.verification_date}</TableCell>
+                      <TableCell className="text-right font-mono text-sm">{(v.book_gross_wt / 1000).toFixed(3)} kg</TableCell>
+                      <TableCell className="text-right font-mono text-sm">{(v.physical_gross_wt / 1000).toFixed(3)} kg</TableCell>
+                      <TableCell className={`text-right font-mono text-sm font-semibold ${v.is_match ? 'text-green-600' : 'text-red-600'}`}>
+                        {v.difference_kg} kg
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={v.is_match ? 'bg-green-600' : 'bg-red-600'}>
+                          {v.is_match ? 'Matched' : 'Mismatch'}
+                        </Badge>
+                      </TableCell>
+                      {(isAdmin || isManager) && (
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="sm" onClick={() => deleteVerification(v.stamp, v.verification_date)}
+                            data-testid={`verif-cancel-${idx}`} className="text-destructive hover:text-destructive">
+                            Cancel
+                          </Button>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
