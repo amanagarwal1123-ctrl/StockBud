@@ -74,6 +74,63 @@ export default function DataVisualization() {
     }
   };
 
+  const fetchHistorical = async () => {
+    try {
+      const res = await axios.get(`${API}/historical/summary`);
+      setHistoricalSummary(res.data);
+    } catch (e) { console.error(e); }
+  };
+
+  const handleHistoricalUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setHistUploading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await axios.post(
+        `${API}/historical/upload?file_type=${histType}&year=${histYear}`,
+        fd,
+        { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } }
+      );
+      toast.success(res.data.message);
+      fetchHistorical();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Upload failed');
+    } finally {
+      setHistUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleDeleteHistorical = async (year) => {
+    if (!window.confirm(`Delete all historical data for ${year}?`)) return;
+    try {
+      const token = localStorage.getItem('token');
+      await axios.delete(`${API}/historical/${year}`, { headers: { Authorization: `Bearer ${token}` } });
+      toast.success(`Historical data for ${year} deleted`);
+      fetchHistorical();
+    } catch (e) { toast.error('Delete failed'); }
+  };
+
+  const handleSeasonalAnalysis = async () => {
+    setSeasonalLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.post(`${API}/ai/seasonal-analysis`, {}, {
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: 120000
+      });
+      setSeasonalData(res.data);
+      toast.success('Seasonal analysis complete');
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Seasonal analysis failed');
+    } finally {
+      setSeasonalLoading(false);
+    }
+  };
+
   if (loading) return <div className="flex items-center justify-center h-64"><div className="text-muted-foreground">Loading...</div></div>;
 
   const salesByItem = vizData?.sales_by_item?.slice(0, 15).map(i => ({
