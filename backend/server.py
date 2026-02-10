@@ -10,10 +10,17 @@ from datetime import datetime, timezone, timedelta
 import pandas as pd
 from io import BytesIO
 import json
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 import numpy as np
 import re
+
+# Thread pool for CPU-bound Excel parsing
+_parse_executor = ThreadPoolExecutor(max_workers=2)
+
+BATCH_INSERT_SIZE = 5000
 
 from dotenv import load_dotenv
 ROOT_DIR = Path(__file__).parent
