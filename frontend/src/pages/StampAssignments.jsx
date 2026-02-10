@@ -37,7 +37,12 @@ export default function StampAssignments() {
       setAssignments(aRes.data.assignments || []);
       setUsers(uRes.data || []);
       const stampSet = new Set(mRes.data.map(i => i.stamp).filter(Boolean));
-      setStamps(Array.from(stampSet).sort());
+      // Natural sort: STAMP 1, STAMP 2, ... STAMP 10, STAMP 11
+      setStamps(Array.from(stampSet).sort((a, b) => {
+        const numA = parseInt((a.match(/\d+/) || [0])[0]);
+        const numB = parseInt((b.match(/\d+/) || [0])[0]);
+        return numA - numB;
+      }));
     } catch (e) {
       console.error(e);
     } finally {
