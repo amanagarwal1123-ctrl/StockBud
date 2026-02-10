@@ -1841,14 +1841,14 @@ async def create_mapping(transaction_name: str, master_name: str):
     return {"success": True, "message": f"Mapped '{transaction_name}' → '{master_name}'"}
 
 @api_router.post("/stamp-verification/save")
-async def save_stamp_verification(
-    stamp: str,
-    physical_gross_wt: float,
-    book_gross_wt: float,
-    difference: float,
-    is_match: bool,
-    verification_date: str
-):
+async def save_stamp_verification(request: Dict):
+    """Save stamp verification record"""
+    stamp = request.get('stamp')
+    physical_gross_wt = request.get('physical_gross_wt', 0)
+    book_gross_wt = request.get('book_gross_wt', 0)
+    difference = request.get('difference', 0)
+    is_match = request.get('is_match', False)
+    verification_date = request.get('verification_date', datetime.now(timezone.utc).isoformat()[:10])
     """Save stamp verification record"""
     
     # Save to history
