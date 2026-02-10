@@ -231,14 +231,19 @@ export default function ExecutiveStockEntry() {
         <Card className="border-primary/20">
           <CardHeader>
             <CardTitle>My Stock Entries</CardTitle>
-            <CardDescription>Previous submissions - Edit rejected entries</CardDescription>
+            <CardDescription>Latest submission per stamp — sorted by most recent</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
               {myEntries.map((entry, idx) => (
-                <div key={idx} className="flex items-center justify-between p-3 border rounded-lg">
+                <div key={idx} className="flex items-center justify-between p-3 border rounded-lg" data-testid={`my-entry-${entry.stamp}`}>
                   <div className="flex-1">
-                    <p className="font-semibold">{entry.stamp}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold">{entry.stamp}</p>
+                      {entry.entry_day && (
+                        <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{entry.entry_day}</span>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       {new Date(entry.entry_date).toLocaleString()} - {entry.entries?.length || 0} items
                     </p>
@@ -257,12 +262,16 @@ export default function ExecutiveStockEntry() {
                     </Badge>
                   </div>
                   <div className="flex gap-2">
-                    {entry.status === 'rejected' && (
+                    {(entry.status === 'rejected' || entry.status === 'approved') && (
                       <>
-                        <Button onClick={() => editEntry(entry)} size="sm">Edit</Button>
-                        <Button onClick={() => deleteEntry(entry.stamp)} size="sm" variant="destructive">
-                          <Trash2 className="h-4 w-4" />
+                        <Button onClick={() => editEntry(entry)} size="sm" variant={entry.status === 'approved' ? 'outline' : 'default'}>
+                          {entry.status === 'approved' ? 'Re-submit' : 'Edit'}
                         </Button>
+                        {entry.status === 'rejected' && (
+                          <Button onClick={() => deleteEntry(entry.stamp)} size="sm" variant="destructive">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </>
                     )}
                   </div>
