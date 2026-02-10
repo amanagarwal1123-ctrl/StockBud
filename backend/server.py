@@ -1032,8 +1032,12 @@ async def get_approval_details(stamp: str, current_user: dict = Depends(get_curr
     if current_user['role'] not in ['manager', 'admin']:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    # Get pending or approved entry
-    entry = await db.stock_entries.find_one({'stamp': stamp, 'status': {'$in': ['pending', 'approved']}}, {"_id": 0})
+    # Get latest pending or approved entry for this stamp (most recent first)
+    entry = await db.stock_entries.find_one(
+        {'stamp': stamp, 'status': {'$in': ['pending', 'approved']}},
+        {"_id": 0},
+        sort=[('entry_date', -1)]
+    )
     
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
