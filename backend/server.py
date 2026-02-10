@@ -59,230 +59,279 @@ api_router = APIRouter(prefix="/api")
 
 # ==================== EXCEL PARSING ====================
 
-def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
-    """Parse Excel file and return list of rows. Excel files have weights in KG, multiply by 1000 to store as grams."""
+def _resolve_col(df_columns_set, possible_names):
+    """Resolve which column name exists in the DataFrame - called once per column"""
+    for name in possible_names:
+        if name in df_columns_set:
+            return name
+    return None
+
+
+def _safe_float(val, default=0.0):
+    """Fast float conversion"""
+    if val is None or val == '':
+        return default
     try:
-        df = pd.read_excel(BytesIO(file_content), header=None)
-        
-        # Find the actual header row
-        header_row_idx = None
-        for idx, row in df.iterrows():
-            row_str = ' '.join(str(val).lower() for val in row if pd.notna(val))
-            if 'item name' in row_str or 'particular' in row_str or 'party name' in row_str or 'lnarr' in row_str:
-                header_row_idx = idx
-                break
-        
-        if header_row_idx is None:
-            df = pd.read_excel(BytesIO(file_content))
-        else:
-            df = pd.read_excel(BytesIO(file_content), header=header_row_idx)
-        
-        df = df.fillna('')
-        df.columns = df.columns.str.strip()
-        
-        # IMPORTANT: Excel files have weights in KG, multiply by 1000 to store as grams internally
+        f = float(val)
+        return default if pd.isna(f) else f
+    except (ValueError, TypeError):
+        return default
+
+
+def _safe_str(val, default=''):
+    """Fast string conversion"""
+    if val is None:
+        return default
+    s = str(val).strip()
+    return default if s in ('', 'nan', 'None') else s
+
+
+def _safe_int(val, default=0):
+    """Fast int conversion"""
+    try:
+        f = float(val) if val not in (None, '', 'nan') else default
+        return default if pd.isna(f) else int(f)
+    except (ValueError, TypeError):
+        return default
+
+
+def _read_excel_once(file_content: bytes):
+    """Read Excel file ONCE and detect header row efficiently"""
+    df = pd.read_excel(BytesIO(file_content), header=None, dtype=str)
+    
+    header_row_idx = None
+    search_limit = min(20, len(df))
+    for idx in range(search_limit):
+        row_str = ' '.join(str(val).lower() for val in df.iloc[idx] if pd.notna(val))
+        if 'item name' in row_str or 'particular' in row_str or 'party name' in row_str or 'lnarr' in row_str:
+            header_row_idx = idx
+            break
+    
+    if header_row_idx is not None:
+        df.columns = df.iloc[header_row_idx].astype(str).str.strip()
+        df = df.iloc[header_row_idx + 1:].reset_index(drop=True)
+    else:
+        df.columns = df.iloc[0].astype(str).str.strip()
+        df = df.iloc[1:].reset_index(drop=True)
+    
+    return df
+
+
+def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
+    """Parse Excel file using fast dict-based iteration. Weights in KG -> grams."""
+    try:
+        df = _read_excel_once(file_content)
+        cols = set(df.columns)
         KG_TO_GRAMS = 1000
-        
+
+        # Convert DataFrame to list of dicts ONCE (much faster than iterrows)
+        raw_rows = df.to_dict('records')
+
         if file_type == 'purchase':
+            item_col = _resolve_col(cols, ['Item Name', 'Particular', 'item name'])
+            type_col = _resolve_col(cols, ['Type', 'type'])
+            tag_col = _resolve_col(cols, ['Tag.No.', 'Tag No', 'tag no'])
+            wt_rs_col = _resolve_col(cols, ['Wt/Rs', 'Wt Rs'])
+            total_col = _resolve_col(cols, ['Total', 'total'])
+            tunch_col = _resolve_col(cols, ['Tunch', 'tunch'])
+            wstg_col = _resolve_col(cols, ['Wstg', 'wstg'])
+            date_col = _resolve_col(cols, ['Date', 'date'])
+            refno_col = _resolve_col(cols, ['Refno', 'refno', 'Ref No'])
+            party_col = _resolve_col(cols, ['Party Name', 'party name', 'Party'])
+            stamp_col = _resolve_col(cols, ['Stamp', 'stamp'])
+            gr_col = _resolve_col(cols, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'])
+            net_col = _resolve_col(cols, ['Net.Wt.', 'Net Wt'])
+            fine_col = _resolve_col(cols, ['Fine', 'Sil.Fine', 'Sil Fine', 'Silver Fine'])
+            dia_col = _resolve_col(cols, ['Dia.Wt.', 'Dia Wt'])
+            stn_col = _resolve_col(cols, ['Stn.Wt.', 'Stn Wt'])
+            rate_col = _resolve_col(cols, ['Rate', 'rate'])
+            pc_col = _resolve_col(cols, ['Pc', 'pc', 'Pieces'])
+
             records = []
-            for _, row in df.iterrows():
-                try:
-                    item_name = str(get_column_value(row, ['Item Name', 'Particular', 'item name'], ''))
-                    if not item_name or len(item_name) < 2:
-                        continue
-                    
-                    trans_type = str(get_column_value(row, ['Type', 'type'], 'P')).strip().upper()
-                    
-                    # Skip Totals row (Type is a number like '333')
-                    if trans_type.isdigit():
-                        continue
-                    
-                    tag_no = str(get_column_value(row, ['Tag.No.', 'Tag No', 'tag no'], ''))
-                    labor_val, labor_on = parse_labor_value(tag_no)
-                    
-                    # Read labour from Wt/Rs column
-                    wt_rs_value = get_column_value(row, ['Wt/Rs', 'Wt Rs'], '')
-                    if wt_rs_value:
-                        labor_val = float(wt_rs_value) if str(wt_rs_value).replace('.', '').isdigit() else labor_val
-                    
-                    # Labour is in "Total" column (total labour cost for the transaction)
-                    total_labor = float(get_column_value(row, ['Total', 'total'], 0) or 0)
-                    
-                    # Calculate purchase tunch = tunch + wstg
-                    tunch_val = float(get_column_value(row, ['Tunch', 'tunch'], 0) or 0)
-                    wstg_val = float(get_column_value(row, ['Wstg', 'wstg'], 0) or 0)
-                    purchase_tunch = tunch_val + wstg_val if not pd.isna(tunch_val) and not pd.isna(wstg_val) else (tunch_val if not pd.isna(tunch_val) else 0)
-                    
-                    # Store type as-is; weights are already positive/negative in Excel
-                    record = {
-                        'date': normalize_date(get_column_value(row, ['Date', 'date'], '')),
-                        'type': 'purchase' if trans_type in ['P', 'PURCHASE'] else 'purchase_return',
-                        'refno': str(get_column_value(row, ['Refno', 'refno', 'Ref No'], '')),
-                        'party_name': str(get_column_value(row, ['Party Name', 'party name', 'Party'], '')),
-                        'item_name': item_name,
-                        'stamp': normalize_stamp(get_column_value(row, ['Stamp', 'stamp'], '')),
-                        'tag_no': tag_no,
-                        'gr_wt': float(get_column_value(row, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'], 0) or 0) * KG_TO_GRAMS,
-                        'net_wt': float(get_column_value(row, ['Net.Wt.', 'Net Wt'], 0) or 0) * KG_TO_GRAMS,
-                        'fine': float(get_column_value(row, ['Fine', 'Sil.Fine', 'Sil Fine', 'Silver Fine'], 0) or 0) * KG_TO_GRAMS,
-                        'labor': total_labor,
-                        'labor_on': labor_on,
-                        'dia_wt': float(get_column_value(row, ['Dia.Wt.', 'Dia Wt'], 0) or 0) * KG_TO_GRAMS,
-                        'stn_wt': float(get_column_value(row, ['Stn.Wt.', 'Stn Wt'], 0) or 0) * KG_TO_GRAMS,
-                        'tunch': str(purchase_tunch),
-                        'rate': float(get_column_value(row, ['Rate', 'rate'], 0) or 0),
-                        'total_pc': int(get_column_value(row, ['Pc', 'pc', 'Pieces'], 0) or 0),
-                        'total_amount': float(get_column_value(row, ['Total', 'total'], 0) or 0)
-                    }
-                    records.append(record)
-                except Exception as e:
+            for r in raw_rows:
+                item_name = _safe_str(r.get(item_col) if item_col else None)
+                if len(item_name) < 2:
                     continue
+                trans_type = _safe_str(r.get(type_col) if type_col else None, 'P').upper()
+                if trans_type.isdigit():
+                    continue
+
+                tag_no = _safe_str(r.get(tag_col) if tag_col else None)
+                labor_val, labor_on = parse_labor_value(tag_no)
+                wt_rs = r.get(wt_rs_col) if wt_rs_col else None
+                if wt_rs and str(wt_rs).replace('.', '').isdigit():
+                    labor_val = float(wt_rs)
+
+                total_labor = _safe_float(r.get(total_col) if total_col else None)
+                tunch_v = _safe_float(r.get(tunch_col) if tunch_col else None)
+                wstg_v = _safe_float(r.get(wstg_col) if wstg_col else None)
+                purchase_tunch = tunch_v + wstg_v
+
+                records.append({
+                    'date': normalize_date(r.get(date_col) if date_col else ''),
+                    'type': 'purchase' if trans_type in ('P', 'PURCHASE') else 'purchase_return',
+                    'refno': _safe_str(r.get(refno_col) if refno_col else None),
+                    'party_name': _safe_str(r.get(party_col) if party_col else None),
+                    'item_name': item_name,
+                    'stamp': normalize_stamp(r.get(stamp_col) if stamp_col else ''),
+                    'tag_no': tag_no,
+                    'gr_wt': _safe_float(r.get(gr_col) if gr_col else None) * KG_TO_GRAMS,
+                    'net_wt': _safe_float(r.get(net_col) if net_col else None) * KG_TO_GRAMS,
+                    'fine': _safe_float(r.get(fine_col) if fine_col else None) * KG_TO_GRAMS,
+                    'labor': total_labor,
+                    'labor_on': labor_on,
+                    'dia_wt': _safe_float(r.get(dia_col) if dia_col else None) * KG_TO_GRAMS,
+                    'stn_wt': _safe_float(r.get(stn_col) if stn_col else None) * KG_TO_GRAMS,
+                    'tunch': str(purchase_tunch),
+                    'rate': _safe_float(r.get(rate_col) if rate_col else None),
+                    'total_pc': _safe_int(r.get(pc_col) if pc_col else None),
+                    'total_amount': total_labor,
+                })
             return records
-            
+
         elif file_type == 'sale':
+            item_col = _resolve_col(cols, ['Item Name', 'Particular', 'item name'])
+            type_col = _resolve_col(cols, ['Type', 'type'])
+            tag_col = _resolve_col(cols, ['Lbr. On Tag.No.', 'Tag.No.', 'Tag No'])
+            on_col = _resolve_col(cols, ['On', 'on'])
+            total_col = _resolve_col(cols, ['Total', 'total'])
+            tunch_col = _resolve_col(cols, ['Tunch', 'tunch'])
+            date_col = _resolve_col(cols, ['Date', 'date'])
+            refno_col = _resolve_col(cols, ['Refno', 'refno', 'Ref No'])
+            party_col = _resolve_col(cols, ['Party Name', 'party name', 'Party'])
+            stamp_col = _resolve_col(cols, ['Stamp', 'stamp'])
+            gr_col = _resolve_col(cols, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'])
+            net_col = _resolve_col(cols, ['Gold Std.', 'Net.Wt.', 'Net Wt'])
+            fine_col = _resolve_col(cols, ['Fine', 'Sil.Fine', 'Sil Fine'])
+            dia_col = _resolve_col(cols, ['Dia.Wt.', 'Dia Wt'])
+            stn_col = _resolve_col(cols, ['Stn.Wt.', 'Stn Wt'])
+            taxable_col = _resolve_col(cols, ['Taxable Val.', 'Taxable Value'])
+            pc_col = _resolve_col(cols, ['Pc', 'pc'])
+
             records = []
-            for _, row in df.iterrows():
-                try:
-                    item_name = str(get_column_value(row, ['Item Name', 'Particular', 'item name'], ''))
-                    if not item_name or len(item_name) < 2:
-                        continue
-                    
-                    trans_type = str(get_column_value(row, ['Type', 'type'], 'S')).strip().upper()
-                    
-                    # Skip Totals row (Type is a number like '8085')
-                    if trans_type.isdigit():
-                        continue
-                    
-                    tag_no = str(get_column_value(row, ['Lbr. On Tag.No.', 'Tag.No.', 'Tag No'], ''))
-                    labor_val, labor_on = parse_labor_value(tag_no)
-                    
-                    # Read labour from On column (might have values like "100", "1200", etc.)
-                    on_value = get_column_value(row, ['On', 'on'], '')
-                    if on_value and str(on_value).replace('.', '').isdigit():
-                        labor_val = float(on_value)
-                    
-                    # Labour is in "Total" column (total labour cost for the transaction)
-                    total_labor = float(get_column_value(row, ['Total', 'total'], 0) or 0)
-                    
-                    # Sale tunch is just the tunch column (no wstg)
-                    sale_tunch = float(get_column_value(row, ['Tunch', 'tunch'], 0) or 0)
-                    
-                    # Store type as-is; weights are already positive/negative in Excel
-                    record = {
-                        'type': 'sale' if trans_type in ['S', 'SALE'] else 'sale_return',
-                        'date': normalize_date(get_column_value(row, ['Date', 'date'], '')),
-                        'refno': str(get_column_value(row, ['Refno', 'refno', 'Ref No'], '')),
-                        'party_name': str(get_column_value(row, ['Party Name', 'party name', 'Party'], '')),
-                        'item_name': item_name,
-                        'stamp': normalize_stamp(get_column_value(row, ['Stamp', 'stamp'], '')),
-                        'tag_no': tag_no,
-                        'gr_wt': float(get_column_value(row, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'], 0) or 0) * KG_TO_GRAMS,
-                        'net_wt': float(get_column_value(row, ['Gold Std.', 'Net.Wt.', 'Net Wt'], 0) or 0) * KG_TO_GRAMS,
-                        'fine': float(get_column_value(row, ['Fine', 'Sil.Fine', 'Sil Fine'], 0) or 0) * KG_TO_GRAMS,
-                        'labor': total_labor,
-                        'labor_on': labor_on,
-                        'dia_wt': float(get_column_value(row, ['Dia.Wt.', 'Dia Wt'], 0) or 0) * KG_TO_GRAMS,
-                        'stn_wt': float(get_column_value(row, ['Stn.Wt.', 'Stn Wt'], 0) or 0) * KG_TO_GRAMS,
-                        'tunch': str(sale_tunch),
-                        'total_amount': float(get_column_value(row, ['Total', 'total'], 0) or 0),
-                        'taxable_value': float(get_column_value(row, ['Taxable Val.', 'Taxable Value'], 0) or 0),
-                        'total_pc': int(get_column_value(row, ['Pc', 'pc'], 0) or 0)
-                    }
-                    records.append(record)
-                except Exception as e:
+            for r in raw_rows:
+                item_name = _safe_str(r.get(item_col) if item_col else None)
+                if len(item_name) < 2:
                     continue
+                trans_type = _safe_str(r.get(type_col) if type_col else None, 'S').upper()
+                if trans_type.isdigit():
+                    continue
+
+                tag_no = _safe_str(r.get(tag_col) if tag_col else None)
+                labor_val, labor_on = parse_labor_value(tag_no)
+                on_val = r.get(on_col) if on_col else None
+                if on_val and str(on_val).replace('.', '').isdigit():
+                    labor_val = float(on_val)
+
+                total_labor = _safe_float(r.get(total_col) if total_col else None)
+                sale_tunch = _safe_float(r.get(tunch_col) if tunch_col else None)
+
+                records.append({
+                    'type': 'sale' if trans_type in ('S', 'SALE') else 'sale_return',
+                    'date': normalize_date(r.get(date_col) if date_col else ''),
+                    'refno': _safe_str(r.get(refno_col) if refno_col else None),
+                    'party_name': _safe_str(r.get(party_col) if party_col else None),
+                    'item_name': item_name,
+                    'stamp': normalize_stamp(r.get(stamp_col) if stamp_col else ''),
+                    'tag_no': tag_no,
+                    'gr_wt': _safe_float(r.get(gr_col) if gr_col else None) * KG_TO_GRAMS,
+                    'net_wt': _safe_float(r.get(net_col) if net_col else None) * KG_TO_GRAMS,
+                    'fine': _safe_float(r.get(fine_col) if fine_col else None) * KG_TO_GRAMS,
+                    'labor': total_labor,
+                    'labor_on': labor_on,
+                    'dia_wt': _safe_float(r.get(dia_col) if dia_col else None) * KG_TO_GRAMS,
+                    'stn_wt': _safe_float(r.get(stn_col) if stn_col else None) * KG_TO_GRAMS,
+                    'tunch': str(sale_tunch),
+                    'total_amount': total_labor,
+                    'taxable_value': _safe_float(r.get(taxable_col) if taxable_col else None),
+                    'total_pc': _safe_int(r.get(pc_col) if pc_col else None),
+                })
             return records
-            
+
         elif file_type == 'branch_transfer':
+            item_col = _resolve_col(cols, ['Lnarr'])
+            type_col = _resolve_col(cols, ['Type'])
+            date_col = _resolve_col(cols, ['Date'])
+            refno_col = _resolve_col(cols, ['Refno'])
+            gr_col = _resolve_col(cols, ['Gr.Wt.'])
+            net_col = _resolve_col(cols, ['Net.Wt.'])
+
             records = []
-            for _, row in df.iterrows():
-                try:
-                    item_name = str(get_column_value(row, ['Lnarr'], ''))
-                    if not item_name or len(item_name) < 2:
-                        continue
-                    
-                    # Skip "opening balance" and "totals" entries
-                    if 'opening' in item_name.lower() and 'balance' in item_name.lower():
-                        continue
-                    if 'total' in item_name.lower():
-                        continue
-                    
-                    # Skip if item name is ONLY 1-2 digits (totals row like "26", "27")
-                    # But allow items like "84-18", "84-35" which are valid item names
-                    if item_name.isdigit() and len(item_name) <= 2:
-                        continue
-                    
-                    trans_type = str(get_column_value(row, ['Type'], '')).strip().upper()
-                    
-                    # Skip if no type or invalid
-                    if not trans_type or trans_type in ['', 'NAN']:
-                        continue
-                    
-                    record = {
-                        'type': 'receive' if trans_type == 'R' else 'issue',
-                        'date': normalize_date(get_column_value(row, ['Date'], '')),
-                        'refno': str(get_column_value(row, ['Refno'], '')),
-                        'party_name': 'MMI Jewelly Branch',
-                        'item_name': item_name,
-                        'stamp': '',
-                        'tag_no': '',
-                        'gr_wt': float(get_column_value(row, ['Gr.Wt.'], 0) or 0) * KG_TO_GRAMS,
-                        'net_wt': float(get_column_value(row, ['Net.Wt.'], 0) or 0) * KG_TO_GRAMS,
-                        'fine': 0.0,
-                        'labor': 0.0,
-                        'labor_on': None,
-                        'dia_wt': 0.0,
-                        'stn_wt': 0.0,
-                        'tunch': '0',
-                        'rate': 0.0,
-                        'total_pc': 0,
-                        'total_amount': 0.0,
-                        'taxable_value': 0.0
-                    }
-                    records.append(record)
-                except Exception as e:
+            for r in raw_rows:
+                item_name = _safe_str(r.get(item_col) if item_col else None)
+                if len(item_name) < 2:
                     continue
+                if 'opening' in item_name.lower() and 'balance' in item_name.lower():
+                    continue
+                if 'total' in item_name.lower():
+                    continue
+                if item_name.isdigit() and len(item_name) <= 2:
+                    continue
+
+                trans_type = _safe_str(r.get(type_col) if type_col else None).upper()
+                if not trans_type or trans_type in ('', 'NAN'):
+                    continue
+
+                records.append({
+                    'type': 'receive' if trans_type == 'R' else 'issue',
+                    'date': normalize_date(r.get(date_col) if date_col else ''),
+                    'refno': _safe_str(r.get(refno_col) if refno_col else None),
+                    'party_name': 'MMI Jewelly Branch',
+                    'item_name': item_name,
+                    'stamp': '',
+                    'tag_no': '',
+                    'gr_wt': _safe_float(r.get(gr_col) if gr_col else None) * KG_TO_GRAMS,
+                    'net_wt': _safe_float(r.get(net_col) if net_col else None) * KG_TO_GRAMS,
+                    'fine': 0.0,
+                    'labor': 0.0,
+                    'labor_on': None,
+                    'dia_wt': 0.0,
+                    'stn_wt': 0.0,
+                    'tunch': '0',
+                    'rate': 0.0,
+                    'total_pc': 0,
+                    'total_amount': 0.0,
+                    'taxable_value': 0.0,
+                })
             return records
-            
+
         elif file_type == 'opening_stock':
+            item_col = _resolve_col(cols, ['Item Name', 'Particular', 'item name', 'Stock'])
+            stamp_col = _resolve_col(cols, ['Stamp', 'stamp'])
+            unit_col = _resolve_col(cols, ['Unit', 'unit'])
+            pc_col = _resolve_col(cols, ['Pc', 'pc', 'Pieces'])
+            gr_col = _resolve_col(cols, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'])
+            net_col = _resolve_col(cols, ['Gold Std.', 'Net.Wt.', 'Net Wt'])
+            fine_col = _resolve_col(cols, ['Sil.Fine', 'Fine', 'fine'])
+            rate_col = _resolve_col(cols, ['Rate', 'rate'])
+            total_col = _resolve_col(cols, ['Total', 'total'])
+            tunch_col = _resolve_col(cols, ['Tunch', 'tunch'])
+            wstg_col = _resolve_col(cols, ['Wstg', 'wstg'])
+
             records = []
-            for _, row in df.iterrows():
-                try:
-                    item_name = str(get_column_value(row, ['Item Name', 'Particular', 'item name', 'Stock'], ''))
-                    if not item_name or len(item_name) < 2:
-                        continue
-                    
-                    # Skip the "Totals" row - user clarified we should sum individual entries
-                    if 'total' in item_name.lower():
-                        continue
-                    
-                    # Handle "Gold Std." as Net Weight in stock files
-                    net_wt_value = get_column_value(row, ['Gold Std.', 'Net.Wt.', 'Net Wt'], 0)
-                    
-                    # Labour is in "Total" column
-                    total_labor = float(get_column_value(row, ['Total', 'total'], 0) or 0)
-                    
-                    # Calculate stock tunch = tunch + wstg
-                    tunch_val = float(get_column_value(row, ['Tunch', 'tunch'], 0) or 0)
-                    wstg_val = float(get_column_value(row, ['Wstg', 'wstg'], 0) or 0)
-                    stock_tunch = tunch_val + wstg_val if not pd.isna(tunch_val) and not pd.isna(wstg_val) else (tunch_val if not pd.isna(tunch_val) else 0)
-                    
-                    record = {
-                        'item_name': item_name,
-                        'stamp': normalize_stamp(get_column_value(row, ['Stamp', 'stamp'], '')),
-                        'unit': str(get_column_value(row, ['Unit', 'unit'], '')),
-                        'pc': int(get_column_value(row, ['Pc', 'pc', 'Pieces'], 0) or 0),
-                        'gr_wt': float(get_column_value(row, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'], 0) or 0) * KG_TO_GRAMS,
-                        'net_wt': float(net_wt_value or 0) * KG_TO_GRAMS,
-                        'fine': float(get_column_value(row, ['Sil.Fine', 'Fine', 'fine'], 0) or 0) * KG_TO_GRAMS,
-                        'labor_wt': 0.0,
-                        'labor_rs': 0.0,
-                        'rate': float(get_column_value(row, ['Rate', 'rate'], 0) or 0),
-                        'total': total_labor
-                    }
-                    records.append(record)
-                except Exception as e:
+            for r in raw_rows:
+                item_name = _safe_str(r.get(item_col) if item_col else None)
+                if len(item_name) < 2:
                     continue
+                if 'total' in item_name.lower():
+                    continue
+
+                tunch_v = _safe_float(r.get(tunch_col) if tunch_col else None)
+                wstg_v = _safe_float(r.get(wstg_col) if wstg_col else None)
+
+                records.append({
+                    'item_name': item_name,
+                    'stamp': normalize_stamp(r.get(stamp_col) if stamp_col else ''),
+                    'unit': _safe_str(r.get(unit_col) if unit_col else None),
+                    'pc': _safe_int(r.get(pc_col) if pc_col else None),
+                    'gr_wt': _safe_float(r.get(gr_col) if gr_col else None) * KG_TO_GRAMS,
+                    'net_wt': _safe_float(r.get(net_col) if net_col else None) * KG_TO_GRAMS,
+                    'fine': _safe_float(r.get(fine_col) if fine_col else None) * KG_TO_GRAMS,
+                    'labor_wt': 0.0,
+                    'labor_rs': 0.0,
+                    'rate': _safe_float(r.get(rate_col) if rate_col else None),
+                    'total': _safe_float(r.get(total_col) if total_col else None),
+                })
             return records
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error parsing Excel file: {str(e)}")
