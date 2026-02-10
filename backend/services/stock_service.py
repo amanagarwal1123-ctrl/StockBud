@@ -94,7 +94,6 @@ async def get_current_inventory():
 
     for key, item in inventory_map.items():
         item['stamps_seen'] = list(item['stamps_seen']) if isinstance(item['stamps_seen'], set) else item['stamps_seen']
-
         item_name = item['item_name']
         net_wt_grams = item['net_wt']
 
