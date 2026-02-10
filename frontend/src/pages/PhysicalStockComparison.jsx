@@ -120,8 +120,30 @@ export default function PhysicalStockComparison() {
 
       toast.success(`${stampComparison.stamp} verification saved!`);
       clearStampMatch();
+      fetchVerificationHistory();
     } catch (error) {
       toast.error('Failed to save verification');
+    }
+  };
+
+  const fetchVerificationHistory = async () => {
+    try {
+      const res = await axios.get(`${API}/stamp-verification/all`);
+      setVerificationHistory(res.data.verifications || []);
+    } catch (e) { console.error(e); }
+  };
+
+  const deleteVerification = async (stamp, date) => {
+    if (!window.confirm(`Cancel verification for ${stamp} on ${date}?`)) return;
+    try {
+      const token = localStorage.getItem('token');
+      await axios.delete(`${API}/stamp-verification/${encodeURIComponent(stamp)}/${date}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success(`Verification for ${stamp} cancelled`);
+      fetchVerificationHistory();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Failed to cancel');
     }
   };
 
@@ -132,7 +154,6 @@ export default function PhysicalStockComparison() {
   };
 
   const summary = comparison?.summary;
-  const { isAdmin } = useAuth();
 
   if (loading) {
     return (
