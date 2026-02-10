@@ -88,11 +88,13 @@ export default function ManagerApprovals() {
       return;
     }
 
-    if (!allDetails[stamp]) {
+    // Use approvalDetails (from View Details) or allDetails (from badge pre-fetch)
+    let details = allDetails[stamp] || approvalDetails;
+    if (!details) {
       await fetchDetailsForBadge(stamp);
+      details = allDetails[stamp];
     }
     
-    const details = allDetails[stamp];
     const totalDiff = details?.total_difference ? details.total_difference * 1000 : 0;
     
     try {
