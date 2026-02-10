@@ -44,56 +44,77 @@ export default function Layout({ children }) {
   const [resetCategories, setResetCategories] = useState([]);
   const [showUndoDialog, setShowUndoDialog] = useState(false);
   const [recentUploads, setRecentUploads] = useState([]);
+  const [expandedGroups, setExpandedGroups] = useState({ inventory: true, verification: true, analytics: true, settings: true });
   
   const { user, logout, isAdmin, isManager } = useAuth();
 
-  // Base navigation for all users
-  const baseNavigation = [
-    { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['admin'] },
-  ];
+  const toggleGroup = (group) => {
+    setExpandedGroups(prev => ({ ...prev, [group]: !prev[group] }));
+  };
 
-  // Executive-specific (ONLY Stock Entry)
-  const executiveNavigation = [
-    { name: 'Stock Entry', href: '/executive-entry', icon: Package, roles: ['executive'] },
+  // Grouped navigation structure
+  const navGroups = [
+    {
+      id: 'main',
+      items: [
+        { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['admin'] },
+        { name: 'Stock Entry', href: '/executive-entry', icon: Package, roles: ['executive'] },
+        { name: 'Polythene Entry', href: '/polythene-entry', icon: Box, roles: ['polythene_executive'] },
+        { name: 'Notifications', href: '/notifications', icon: Receipt, roles: ['manager', 'admin', 'executive'] },
+      ]
+    },
+    {
+      id: 'inventory',
+      label: 'Inventory',
+      icon: Package,
+      roles: ['admin'],
+      items: [
+        { name: 'Upload Files', href: '/upload', icon: Upload, roles: ['admin'] },
+        { name: 'Historical Upload', href: '/historical-upload', icon: FileUp, roles: ['admin'] },
+        { name: 'Current Stock', href: '/current-stock', icon: Package, roles: ['admin'] },
+        { name: 'Item Mapping', href: '/item-mapping', icon: Link2, roles: ['admin'] },
+        { name: 'Manage Mappings', href: '/mapping-management', icon: GitBranch, roles: ['admin'] },
+        { name: 'Purchase Rates', href: '/purchase-rates', icon: Receipt, roles: ['admin'] },
+        { name: 'Polythene Mgmt', href: '/polythene-management', icon: Box, roles: ['admin'] },
+      ]
+    },
+    {
+      id: 'verification',
+      label: 'Verification',
+      icon: CheckCircle2,
+      roles: ['manager', 'admin'],
+      items: [
+        { name: 'Physical vs Book', href: '/physical-vs-book', icon: Scale, roles: ['manager', 'admin'] },
+        { name: 'Approvals', href: '/approvals', icon: CheckCircle2, roles: ['manager', 'admin'] },
+        { name: 'Stamp Mgmt', href: '/stamps', icon: Tag, roles: ['admin'] },
+        { name: 'Stamp Assign', href: '/stamp-assignments', icon: UserCog, roles: ['admin'] },
+      ]
+    },
+    {
+      id: 'analytics',
+      label: 'Analytics & AI',
+      icon: BarChart3,
+      roles: ['admin'],
+      items: [
+        { name: 'Visualization', href: '/visualization', icon: BarChart3, roles: ['admin'] },
+        { name: 'Item Buffers', href: '/item-buffers', icon: Layers, roles: ['admin'] },
+        { name: 'Orders', href: '/orders', icon: ShoppingCart, roles: ['admin', 'executive'] },
+        { name: 'Party Analytics', href: '/party-analytics', icon: Users, roles: ['admin'] },
+        { name: 'Profit Analysis', href: '/profit', icon: TrendingUp, roles: ['admin'] },
+      ]
+    },
+    {
+      id: 'settings',
+      label: 'Admin',
+      icon: User,
+      roles: ['admin'],
+      items: [
+        { name: 'User Mgmt', href: '/users', icon: User, roles: ['admin'] },
+        { name: 'History', href: '/history', icon: History, roles: ['admin'] },
+        { name: 'Activity Log', href: '/activity-log', icon: Activity, roles: ['admin'] },
+      ]
+    },
   ];
-
-  // Polythene Executive-specific
-  const polytheneNavigation = [
-    { name: 'Polythene Adjustment', href: '/polythene-entry', icon: Box, roles: ['polythene_executive'] },
-  ];
-
-  // Manager-specific  
-  const managerNavigation = [
-    { name: 'Physical vs Book', href: '/physical-vs-book', icon: Scale, roles: ['manager', 'admin'] },
-    { name: 'Approvals', href: '/approvals', icon: CheckCircle2, roles: ['manager', 'admin'] },
-    { name: 'Notifications', href: '/notifications', icon: Receipt, roles: ['manager', 'admin'] },
-  ];
-
-  // Admin-only navigation
-  const adminNavigation = [
-    { name: 'Upload Files', href: '/upload', icon: Upload, roles: ['admin'] },
-    { name: 'Current Stock', href: '/current-stock', icon: Package, roles: ['admin'] },
-    { name: 'Item Buffers', href: '/item-buffers', icon: Layers, roles: ['admin'] },
-    { name: 'Orders', href: '/orders', icon: ShoppingCart, roles: ['admin', 'executive'] },
-    { name: 'Visualization', href: '/visualization', icon: BarChart3, roles: ['admin'] },
-    { name: 'Item Mapping', href: '/item-mapping', icon: Link2, roles: ['admin'] },
-    { name: 'Manage Mappings', href: '/mapping-management', icon: GitBranch, roles: ['admin'] },
-    { name: 'Purchase Rates', href: '/purchase-rates', icon: Receipt, roles: ['admin'] },
-    { name: 'Polythene Management', href: '/polythene-management', icon: Box, roles: ['admin'] },
-    { name: 'Stamp Management', href: '/stamps', icon: Tag, roles: ['admin'] },
-    { name: 'Stamp Assignments', href: '/stamp-assignments', icon: UserCog, roles: ['admin'] },
-    { name: 'Party Analytics', href: '/party-analytics', icon: Users, roles: ['admin'] },
-    { name: 'Profit Analysis', href: '/profit', icon: TrendingUp, roles: ['admin'] },
-    { name: 'History', href: '/history', icon: History, roles: ['admin'] },
-    { name: 'User Management', href: '/users', icon: User, roles: ['admin'] },
-    { name: 'Activity Log', href: '/activity-log', icon: Activity, roles: ['admin'] },
-  ];
-
-  // Combine and filter based on user role
-  const allNavigationItems = [...baseNavigation, ...executiveNavigation, ...polytheneNavigation, ...managerNavigation, ...adminNavigation];
-  const allNavigation = allNavigationItems.filter(item => 
-    !user || item.roles.includes(user.role)
-  );
 
   const handleUndo = async () => {
     // Fetch recent uploads
