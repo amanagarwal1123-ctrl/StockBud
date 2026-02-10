@@ -18,6 +18,7 @@ export default function HistoricalUpload() {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
   const [year, setYear] = useState('2025');
   const [fileType, setFileType] = useState('sale');
   const [startDate, setStartDate] = useState('');
