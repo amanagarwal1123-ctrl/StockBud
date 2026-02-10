@@ -1147,7 +1147,10 @@ async def approve_stamp(
     request: Dict,
     current_user: dict = Depends(get_current_user)
 ):
-    """Approve or reject a stamp's stock entry (can reject approved stamps too)"""
+    """Approve or reject a stamp's stock entry.
+    Only affects the latest pending/approved entry for this stamp.
+    Old approved entries from previous days remain untouched.
+    """
     
     if current_user['role'] not in ['manager', 'admin']:
         raise HTTPException(status_code=403, detail="Only managers can approve")
@@ -1156,32 +1159,40 @@ async def approve_stamp(
     approve = request.get('approve')
     total_difference = request.get('total_difference', 0)
     
-    # Get the entry (can be pending or approved)
-    entry = await db.stock_entries.find_one({'stamp': stamp, 'status': {'$in': ['pending', 'approved']}})
-    
-    iteration = entry.get('iteration', 1) if entry else 1
-    
-    # Update stock entry status
-    await db.stock_entries.update_many(
+    # Get the LATEST pending or approved entry for this stamp
+    entry = await db.stock_entries.find_one(
         {'stamp': stamp, 'status': {'$in': ['pending', 'approved']}},
+        sort=[('entry_date', -1)]
+    )
+    
+    if not entry:
+        raise HTTPException(status_code=404, detail="No pending entry found for this stamp")
+    
+    iteration = entry.get('iteration', 1)
+    entry_day = entry.get('entry_day', datetime.now(timezone.utc).strftime('%Y-%m-%d'))
+    now_iso = datetime.now(timezone.utc).isoformat()
+    
+    # Update ONLY this specific entry (by _id to be precise)
+    await db.stock_entries.update_one(
+        {'_id': entry['_id']},
         {'$set': {
             'status': 'approved' if approve else 'rejected',
             'approved_by': current_user['username'],
-            'approved_at': datetime.now(timezone.utc).isoformat(),
+            'approved_at': now_iso,
             'rejection_message': request.get('rejection_message', '') if not approve else None
         }}
     )
     
-    # If approving, lock the stamp. If rejecting, unlock it
+    # If approving, record approval (keyed by stamp + day so previous approvals remain)
     if approve:
-        now_iso = datetime.now(timezone.utc).isoformat()
         await db.stamp_approvals.update_one(
-            {'stamp': stamp},
+            {'stamp': stamp, 'approval_day': entry_day},
             {'$set': {
                 'stamp': stamp,
                 'is_approved': True,
                 'approved_by': current_user['username'],
                 'approved_at': now_iso,
+                'approval_day': entry_day,
                 'iterations': iteration,
                 'total_difference': total_difference
             }},
@@ -1206,8 +1217,8 @@ async def approve_stamp(
             upsert=True
         )
     else:
-        # Rejecting - remove approval lock
-        await db.stamp_approvals.delete_one({'stamp': stamp})
+        # Rejecting — remove today's approval lock only (not historical)
+        await db.stamp_approvals.delete_one({'stamp': stamp, 'approval_day': entry_day})
     
     # Notify admin
     is_matching = abs(total_difference) <= 50
