@@ -338,7 +338,7 @@ async def upload_opening_stock(file: UploadFile = File(...)):
         await save_action('upload_opening_stock', f"Uploaded {len(stock_items)} merged opening stock items, total: {total_net_wt/1000:.3f} kg")
         
         # Auto-normalize stamps after upload
-        await _auto_normalize_stamps()
+        await auto_normalize_stamps()
         
         return {
             "success": True,
@@ -607,7 +607,7 @@ async def upload_transaction_file(
     )
     
     # Auto-normalize stamps after upload
-    await _auto_normalize_stamps()
+    await auto_normalize_stamps()
     
     return {
         "success": True,
@@ -1474,7 +1474,7 @@ async def upload_physical_stock(
         await db.physical_stock.insert_many(stock_items)
         
         # Auto-normalize stamps after upload
-        await _auto_normalize_stamps()
+        await auto_normalize_stamps()
         
         # Calculate totals
         total_net_wt = sum(item['net_wt'] for item in stock_items)
@@ -1907,7 +1907,7 @@ async def upload_master_stock(file: UploadFile = File(...)):
         await db.master_items.insert_many(master_items)
         
         # Auto-normalize stamps after upload
-        await _auto_normalize_stamps()
+        await auto_normalize_stamps()
         
         total_net = sum(i['net_wt'] for i in opening_items)
         
