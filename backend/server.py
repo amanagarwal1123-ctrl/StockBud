@@ -2208,6 +2208,9 @@ async def upload_master_stock(file: UploadFile = File(...)):
         await db.opening_stock.insert_many(opening_items)
         await db.master_items.insert_many(master_items)
         
+        # Auto-normalize stamps after upload
+        await _auto_normalize_stamps()
+        
         total_net = sum(i['net_wt'] for i in opening_items)
         
         return {
