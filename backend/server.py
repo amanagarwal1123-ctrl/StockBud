@@ -1843,7 +1843,13 @@ async def create_mapping(transaction_name: str, master_name: str):
 @api_router.post("/stamp-verification/save")
 async def save_stamp_verification(request: Dict):
     """Save stamp verification record"""
-    stamp = request.get('stamp')
+    stamp = request.get('stamp', '')
+    # Normalize stamp format to match master items
+    import re as _re
+    _match = _re.search(r'(\d+)', stamp)
+    if _match:
+        stamp = f'STAMP {_match.group(1)}'
+    
     physical_gross_wt = request.get('physical_gross_wt', 0)
     book_gross_wt = request.get('book_gross_wt', 0)
     difference = request.get('difference', 0)
