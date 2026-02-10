@@ -1387,44 +1387,48 @@ async def get_recent_uploads():
 
 @api_router.get("/inventory/stamp-breakdown/{stamp}")
 async def get_stamp_breakdown(stamp: str):
-    """Get detailed breakdown for a specific stamp (opening + purchases - sales)"""
+    """Get detailed breakdown for a specific stamp using the authoritative inventory calculation"""
     
-    # Get opening stock for this stamp
+    # Use the single source of truth: get_current_inventory
+    inventory_response = await get_current_inventory()
+    all_items = inventory_response.get('inventory', []) + inventory_response.get('negative_items', [])
+    
+    # Filter items in this stamp
+    stamp_items = [item for item in all_items if item.get('stamp') == stamp]
+    
+    # Calculate totals from inventory
+    current_gross = sum(item.get('gr_wt', 0) for item in stamp_items)
+    current_net = sum(item.get('net_wt', 0) for item in stamp_items)
+    
+    # Get opening stock for breakdown display
     opening = await db.opening_stock.find({"stamp": stamp}, {"_id": 0}).to_list(1000)
-    stamp_item_names = [item['item_name'] for item in opening]
-    
-    # Get mappings to this stamp's items
-    all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
-    mapped_names = [m['transaction_name'] for m in all_mappings if m['master_name'] in stamp_item_names]
-    
-    # All names that belong to this stamp
-    all_names = stamp_item_names + mapped_names
-    
-    # Calculate opening totals
     opening_gross = sum(item.get('gr_wt', 0) for item in opening)
     opening_net = sum(item.get('net_wt', 0) for item in opening)
     
-    # Get purchases for these items
+    # Collect all item names (master + mapped) for transaction queries
+    item_names = [item['item_name'] for item in stamp_items]
+    all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
+    mapped_names = [m['transaction_name'] for m in all_mappings if m['master_name'] in item_names]
+    all_names = list(set(item_names + mapped_names))
+    
+    # Get purchase/sale breakdown for display
     purchases = await db.transactions.find({
         "item_name": {"$in": all_names},
         "type": {"$in": ["purchase", "purchase_return"]}
     }, {"_id": 0}).to_list(10000)
-    
     purchase_gross = sum(t.get('gr_wt', 0) for t in purchases)
     purchase_net = sum(t.get('net_wt', 0) for t in purchases)
     
-    # Get sales for these items
     sales = await db.transactions.find({
         "item_name": {"$in": all_names},
         "type": {"$in": ["sale", "sale_return"]}
     }, {"_id": 0}).to_list(10000)
-    
     sale_gross = sum(t.get('gr_wt', 0) for t in sales)
     sale_net = sum(t.get('net_wt', 0) for t in sales)
     
-    # Current = Opening + Purchases - Sales
-    current_gross = opening_gross + purchase_gross - sale_gross
-    current_net = opening_net + purchase_net - sale_net
+    # Count master vs mapped
+    master_count = len([i for i in stamp_items if not any(m['transaction_name'] == i['item_name'] for m in all_mappings)])
+    mapped_count = len(stamp_items) - master_count
     
     return {
         "stamp": stamp,
@@ -1436,8 +1440,8 @@ async def get_stamp_breakdown(stamp: str):
         "sale_net": round(sale_net, 3),
         "current_gross": round(current_gross, 3),
         "current_net": round(current_net, 3),
-        "item_count": len(stamp_item_names),
-        "mapped_count": len(mapped_names)
+        "item_count": len(stamp_items),
+        "mapped_count": mapped_count
     }
 
 
