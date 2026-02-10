@@ -1287,10 +1287,11 @@ async def get_stamp_verification_history():
             sort=[('verified_at', -1)]
         )
         
-        # Also check stamp_approvals (manager approval = verification)
+        # Also check stamp_approvals (manager approval = verification) — get latest
         approval = await db.stamp_approvals.find_one(
             {'stamp': stamp, 'is_approved': True},
-            {"_id": 0}
+            {"_id": 0},
+            sort=[('approved_at', -1)]
         )
         
         # Use whichever is more recent
