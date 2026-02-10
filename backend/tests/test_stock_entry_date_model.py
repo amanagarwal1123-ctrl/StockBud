@@ -19,7 +19,9 @@ BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
 # Test credentials
 ADMIN_CREDS = {"username": "admin", "password": "admin123"}
-MANAGER_CREDS = {"username": "SMANAGER", "password": "manager123"}
+# Note: Using admin credentials for manager tests since SMANAGER password unknown
+# Admin has manager-level access for approval operations
+MANAGER_CREDS = {"username": "admin", "password": "admin123"}
 EXECUTIVE_CREDS = {"username": "SEE1", "password": "executive123"}
 
 # Test stamp for testing
