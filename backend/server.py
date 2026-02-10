@@ -1162,15 +1162,34 @@ async def approve_stamp(
     
     # If approving, lock the stamp. If rejecting, unlock it
     if approve:
+        now_iso = datetime.now(timezone.utc).isoformat()
         await db.stamp_approvals.update_one(
             {'stamp': stamp},
             {'$set': {
                 'stamp': stamp,
                 'is_approved': True,
                 'approved_by': current_user['username'],
-                'approved_at': datetime.now(timezone.utc).isoformat(),
+                'approved_at': now_iso,
                 'iterations': iteration,
                 'total_difference': total_difference
+            }},
+            upsert=True
+        )
+        
+        # Also write to stamp_verifications so dashboard sees this as verified
+        diff_kg = total_difference / 1000 if total_difference else 0
+        is_match = abs(total_difference) <= 50
+        await db.stamp_verifications.update_one(
+            {'stamp': stamp, 'verification_date': now_iso[:10]},
+            {'$set': {
+                'stamp': stamp,
+                'physical_gross_wt': 0,
+                'book_gross_wt': 0,
+                'difference': diff_kg,
+                'is_match': is_match,
+                'verification_date': now_iso[:10],
+                'verified_at': now_iso,
+                'approved_by': current_user['username']
             }},
             upsert=True
         )
