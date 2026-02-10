@@ -809,30 +809,6 @@ async def get_approval_details(stamp: str, current_user: dict = Depends(get_curr
     }
 
 
-    
-    # Update or insert
-    await db.stock_entries.update_one(
-        {'stamp': stamp, 'entered_by': entered_by},
-        {'$set': entry_record},
-        upsert=True
-    )
-    
-    # Create notification for manager
-    await db.notifications.insert_one({
-        'type': 'stock_entry',
-        'message': f'{entered_by} submitted stock for {stamp}',
-        'severity': 'info',
-        'for_role': 'manager',
-        'stamp': stamp,
-        'created_at': datetime.now(timezone.utc).isoformat(),
-        'read': False
-    })
-    
-    # Save to history
-    await save_action('stock_entry', f'{entered_by} entered stock for {stamp}', {'stamp': stamp, 'items': len(entries)})
-    
-    return {'success': True, 'message': f'Stock entry saved for {stamp}'}
-
 # ==================== MANAGER ENDPOINTS ====================
 
 @api_router.get("/manager/pending-approvals")
