@@ -280,71 +280,7 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error parsing Excel file: {str(e)}")
 
-# Save action for undo/redo and accountability
-async def save_action(action_type: str, description: str, data_snapshot: dict = None, user: dict = None):
-    action = ActionHistory(
-        action_type=action_type,
-        description=description,
-        data_snapshot=data_snapshot or {}
-    )
-    await db.action_history.insert_one(action.model_dump())
-    
-    # Also log to activity_log for accountability if user provided
-    if user:
-        await db.activity_log.insert_one({
-            'user': user.get('username', 'system'),
-            'user_role': user.get('role', 'system'),
-            'action_type': action_type,
-            'description': description,
-            'details': data_snapshot or {},
-            'timestamp': datetime.now(timezone.utc).isoformat()
-        })
-    
-    # Keep only last 20 actions
-    count = await db.action_history.count_documents({})
-    if count > 20:
-        oldest = await db.action_history.find({}, {"_id": 1}).sort("timestamp", 1).limit(count - 20).to_list(count)
-        if oldest:
-            await db.action_history.delete_many({"_id": {"$in": [doc["_id"] for doc in oldest]}})
-
-async def _auto_normalize_stamps():
-    """Internal helper: auto-normalize stamps across all collections after upload"""
-    import re
-    
-    all_stamps = set()
-    all_stamps.update(await db.master_items.distinct('stamp'))
-    all_stamps.update(await db.transactions.distinct('stamp'))
-    all_stamps.update(await db.opening_stock.distinct('stamp'))
-    
-    stamp_mapping = {}
-    for stamp in all_stamps:
-        if not stamp or stamp == 'Unassigned':
-            continue
-        match = re.search(r'(\d+)', stamp)
-        if match:
-            normalized = f'STAMP {match.group(1)}'
-            if stamp != normalized:
-                stamp_mapping[stamp] = normalized
-    if '' in all_stamps:
-        stamp_mapping[''] = 'Unassigned'
-    
-    if not stamp_mapping:
-        return 0
-    
-    total_updated = 0
-    collections_to_update = [
-        'master_items', 'transactions', 'opening_stock', 'stock_entries',
-        'stamp_approvals', 'stamp_verifications', 'physical_inventory'
-    ]
-    for old_stamp, new_stamp in stamp_mapping.items():
-        for coll_name in collections_to_update:
-            result = await db[coll_name].update_many(
-                {'stamp': old_stamp},
-                {'$set': {'stamp': new_stamp}}
-            )
-            total_updated += result.modified_count
-    
-    return total_updated
+# ==================== UPLOAD ENDPOINTS ====================
 
 @api_router.post("/opening-stock/upload")
 async def upload_opening_stock(file: UploadFile = File(...)):
