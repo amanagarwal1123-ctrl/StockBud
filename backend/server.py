@@ -796,6 +796,21 @@ async def finalize_chunked_upload(upload_id: str):
             return {"success": True, "count": len(stock_items),
                     "message": f"Physical stock uploaded: {len(stock_items)} items, {total_net_wt/1000:.3f} kg"}
 
+        elif file_type in ('historical_sale', 'historical_purchase'):
+            year = meta.get('year', '2025')
+            for record in records:
+                record['batch_id'] = batch_id
+                record['historical_year'] = year
+                record['is_historical'] = True
+
+            hist_docs = _prepare_transactions(records, batch_id)
+            await batch_insert(db.historical_transactions, hist_docs)
+
+            actual_type = 'sale' if file_type == 'historical_sale' else 'purchase'
+            return {"success": True, "count": len(hist_docs), "year": year,
+                    "file_type": actual_type, "batch_id": batch_id,
+                    "message": f"Uploaded {len(hist_docs)} historical {actual_type} records for {year}"}
+
         else:
             raise HTTPException(status_code=400, detail=f"Chunked upload not supported for {file_type}")
 
