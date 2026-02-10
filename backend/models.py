@@ -3,6 +3,7 @@ from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone
 
+
 class Transaction(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -28,6 +29,7 @@ class Transaction(BaseModel):
     total_amount: float = 0.0
     taxable_value: float = 0.0
 
+
 class OpeningStock(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -44,6 +46,7 @@ class OpeningStock(BaseModel):
     total: float = 0.0
     upload_date: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
+
 class PhysicalStock(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -56,6 +59,7 @@ class PhysicalStock(BaseModel):
     verification_date: Optional[str] = None
     upload_date: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
+
 class MasterItem(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -66,6 +70,7 @@ class MasterItem(BaseModel):
     is_master: bool = True
     upload_date: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
+
 class ItemMapping(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -73,6 +78,7 @@ class ItemMapping(BaseModel):
     master_name: str
     created_by: str = "system"
     created_date: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
 
 class PurchaseLedger(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -85,6 +91,7 @@ class PurchaseLedger(BaseModel):
     total_labour: float
     last_updated: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
+
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -96,9 +103,11 @@ class User(BaseModel):
     created_by: str = "system"
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
+
 class LoginRequest(BaseModel):
     username: str
     password: str
+
 
 class CreateUserRequest(BaseModel):
     username: str
@@ -106,10 +115,12 @@ class CreateUserRequest(BaseModel):
     full_name: str
     role: str
 
+
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: Dict[str, Any]
+
 
 class ActionHistory(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -120,5 +131,30 @@ class ActionHistory(BaseModel):
     data_snapshot: Dict[str, Any] = {}
     can_undo: bool = True
 
+
 class ResetRequest(BaseModel):
     password: str
+    categories: List[str] = []
+
+
+class StampAssignment(BaseModel):
+    stamp: str
+    assigned_user: str
+
+
+class OrderCreate(BaseModel):
+    item_name: str
+    quantity_kg: float
+    supplier: str = ''
+    notes: str = ''
+
+
+class SmartInsightsRequest(BaseModel):
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    question: Optional[str] = None
+
+
+class HistoricalUploadRequest(BaseModel):
+    year: str
+    file_type: str  # 'sale' or 'purchase'
