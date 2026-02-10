@@ -25,6 +25,7 @@ import ItemBufferManagement from './pages/ItemBufferManagement';
 import OrderManagement from './pages/OrderManagement';
 import DataVisualization from './pages/DataVisualization';
 import StampAssignments from './pages/StampAssignments';
+import HistoricalUpload from './pages/HistoricalUpload';
 import Login from './pages/Login';
 import Layout from './components/Layout';
 import { Toaster } from '@/components/ui/sonner';
