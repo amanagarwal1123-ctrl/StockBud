@@ -324,7 +324,7 @@ export default function ManagerApprovals() {
 
         <TabsContent value="rejected">
           {rejectedEntries.map((entry) => (
-            <Card key={entry.stamp} className="border-red-500/20">
+            <Card key={`rejected-${entry.stamp}-${entry.entry_day || ''}`} className="border-red-500/20">
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
