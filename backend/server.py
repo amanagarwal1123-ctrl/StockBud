@@ -3355,7 +3355,9 @@ async def upload_historical_data(
         raise HTTPException(status_code=400, detail="file_type must be 'sale' or 'purchase'")
     
     content = await file.read()
-    records = parse_excel_file(content, file_type)
+    
+    loop = asyncio.get_event_loop()
+    records = await loop.run_in_executor(_parse_executor, parse_excel_file, content, file_type)
     
     if not records:
         raise HTTPException(status_code=400, detail="No valid records found")
@@ -3367,9 +3369,9 @@ async def upload_historical_data(
         record['batch_id'] = batch_id
         record['historical_year'] = year
         record['is_historical'] = True
-    
-    hist_docs = [Transaction(**r).model_dump() for r in records]
-    await db.historical_transactions.insert_many(hist_docs)
+
+    hist_docs = _prepare_transactions(records, batch_id)
+    await batch_insert(db.historical_transactions, hist_docs)
     
     await save_action('upload_historical', f"Uploaded {len(hist_docs)} historical {file_type} records for year {year}", user=current_user)
     
