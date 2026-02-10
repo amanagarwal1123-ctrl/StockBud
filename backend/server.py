@@ -927,14 +927,19 @@ async def get_all_entries(current_user: dict = Depends(get_current_user)):
 
 @api_router.delete("/executive/delete-entry/{stamp}/{username}")
 async def delete_executive_entry(stamp: str, username: str, current_user: dict = Depends(get_current_user)):
-    """Delete a stock entry"""
+    """Delete the latest stock entry for a stamp"""
     if current_user['username'] != username and current_user['role'] != 'admin':
         raise HTTPException(status_code=403, detail="Can only delete your own entries")
     
-    result = await db.stock_entries.delete_one({'stamp': stamp, 'entered_by': username})
-    
-    if result.deleted_count == 0:
+    # Delete the most recent entry for this stamp by this user
+    latest = await db.stock_entries.find_one(
+        {'stamp': stamp, 'entered_by': username},
+        sort=[('entry_date', -1)]
+    )
+    if not latest:
         raise HTTPException(status_code=404, detail="Entry not found")
+    
+    await db.stock_entries.delete_one({'_id': latest['_id']})
     
     return {'success': True, 'message': 'Entry deleted'}
 
