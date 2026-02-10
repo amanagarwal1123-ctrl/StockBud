@@ -90,6 +90,7 @@ export default function HistoricalUpload() {
       toast.error(err.response?.data?.detail || 'Upload failed');
     } finally {
       setUploading(false);
+      setUploadProgress('');
       e.target.value = '';
     }
   };
