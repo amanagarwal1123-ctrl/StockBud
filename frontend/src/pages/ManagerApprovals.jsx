@@ -234,28 +234,88 @@ export default function ManagerApprovals() {
 
         <TabsContent value="approved">
           {approvedEntries.map((entry) => (
-            <Card key={entry.stamp} className="border-green-500/20">
+            <Card key={`approved-${entry.stamp}-${entry.entry_day || ''}`} className="border-green-500/20">
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
-                    <CardTitle>{entry.stamp}</CardTitle>
+                    <CardTitle className="flex items-center gap-2">
+                      {entry.stamp}
+                      {entry.entry_day && <span className="text-xs text-muted-foreground font-normal bg-muted px-1.5 py-0.5 rounded">{entry.entry_day}</span>}
+                    </CardTitle>
                     <CardDescription>
-                      By {entry.entered_by} • Approved by {entry.approved_by} on {new Date(entry.approved_at).toLocaleString()}
+                      By {entry.entered_by} • Approved by {entry.approved_by} on {entry.approved_at ? new Date(entry.approved_at).toLocaleString() : '—'}
                       {entry.iteration > 1 && <span className="ml-2">• {entry.iteration} iterations</span>}
                     </CardDescription>
                     <div className="mt-3 flex gap-2">
                       <Badge className="bg-green-600">APPROVED</Badge>
-                      <Button onClick={() => fetchApprovalDetails(entry.stamp)} variant="outline" size="sm">View Details</Button>
+                      <Button onClick={() => fetchApprovalDetails(entry.stamp)} variant="outline" size="sm" data-testid={`view-details-${entry.stamp}`}>View Details</Button>
                       <Button onClick={() => exportStampDifferences(entry.stamp)} variant="outline" size="sm">
                         <Download className="h-4 w-4 mr-1" />Export All
-                      </Button>
-                      <Button onClick={() => handleApproval(entry.stamp, false)} variant="destructive" size="sm">
-                        <XSquare className="h-4 w-4 mr-1" />Reject Again
                       </Button>
                     </div>
                   </div>
                 </div>
               </CardHeader>
+              
+              {selectedEntry === entry.stamp && approvalDetails && (
+                <CardContent>
+                  <div className="bg-muted/30 p-4 rounded-lg space-y-4">
+                    <p className="font-semibold">Book vs Entered Comparison</p>
+                    <div className="max-h-64 overflow-y-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Item</TableHead>
+                            <TableHead className="text-right">Book</TableHead>
+                            <TableHead className="text-right">Entered</TableHead>
+                            <TableHead className="text-right">Diff</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {approvalDetails.comparison?.map((item, i) => (
+                            <TableRow key={i} className={item.was_entered ? '' : 'opacity-40'}>
+                              <TableCell className="text-sm">{item.item_name}</TableCell>
+                              <TableCell className="text-right font-mono text-sm">{(item.book_gross || 0).toFixed(3)}</TableCell>
+                              <TableCell className="text-right font-mono text-sm">{(item.entered_gross || 0).toFixed(3)}</TableCell>
+                              <TableCell className={`text-right font-mono text-sm font-semibold ${
+                                Math.abs(item.difference || 0) < 0.05 ? 'text-green-600' : 'text-red-600'
+                              }`}>
+                                {(item.difference || 0) >= 0 ? '+' : ''}{(item.difference || 0).toFixed(3)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          <TableRow className="bg-primary/10 border-t-2">
+                            <TableCell className="font-bold">TOTAL</TableCell>
+                            <TableCell className="text-right font-mono font-bold">{(approvalDetails?.total_book || 0).toFixed(3)} kg</TableCell>
+                            <TableCell className="text-right font-mono font-bold">{(approvalDetails?.total_entered || 0).toFixed(3)} kg</TableCell>
+                            <TableCell className={`text-right font-mono font-bold text-lg ${
+                              Math.abs(approvalDetails?.total_difference || 0) < 0.05 ? 'text-green-600' : 'text-red-600'
+                            }`}>
+                              {((approvalDetails?.total_difference || 0) >= 0 ? '+' : '') + (approvalDetails?.total_difference || 0).toFixed(3)} kg
+                            </TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                    </div>
+                    
+                    {/* Rejection Message Input */}
+                    <div className="p-4 bg-red-50 rounded-lg border border-red-200">
+                      <Label className="font-semibold mb-2">Rejection Message (Required to reject)</Label>
+                      <Textarea
+                        placeholder="Explain what needs to be corrected..."
+                        value={rejectionMessage}
+                        onChange={(e) => setRejectionMessage(e.target.value)}
+                        rows={3}
+                        className="mt-2"
+                        data-testid={`rejection-msg-${entry.stamp}`}
+                      />
+                      <Button onClick={() => handleApproval(entry.stamp, false)} variant="destructive" size="sm" className="mt-3" data-testid={`reject-btn-${entry.stamp}`}>
+                        <XSquare className="h-4 w-4 mr-1" />Reject
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              )}
             </Card>
           ))}
         </TabsContent>
