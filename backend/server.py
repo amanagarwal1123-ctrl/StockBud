@@ -753,25 +753,30 @@ async def get_approval_details(stamp: str, current_user: dict = Depends(get_curr
     
     # Get ALL items in this stamp from master
     master_items = await db.master_items.find({'stamp': stamp}, {"_id": 0}).to_list(1000)
+    master_item_names = {m['item_name'] for m in master_items}
     
     # Create map of entered weights
     entered_map = {}
     for entered in entry.get('entries', []):
         entered_map[entered['item_name']] = entered['gross_wt']
     
-    # Get current inventory
+    # Get current inventory (includes mapped items)
     inventory_response = await get_current_inventory()
     all_inventory = inventory_response.get('inventory', []) + inventory_response.get('negative_items', [])
     inventory_map = {item['item_name']: item for item in all_inventory}
     
-    # Build comparison for ALL items in stamp
+    # Collect ALL items in this stamp: master items + any inventory items in same stamp
+    stamp_items = set(master_item_names)
+    for inv_item in all_inventory:
+        if inv_item.get('stamp') == stamp:
+            stamp_items.add(inv_item['item_name'])
+    
+    # Build comparison for ALL items in stamp (master + mapped)
     comparison = []
     total_entered = 0
     total_book = 0
     
-    for master_item in master_items:
-        item_name = master_item['item_name']
-        
+    for item_name in sorted(stamp_items):
         # Entered weight (0 if not entered)
         entered_gross = entered_map.get(item_name, 0.0)
         
@@ -780,7 +785,9 @@ async def get_approval_details(stamp: str, current_user: dict = Depends(get_curr
         if inv_item:
             book_gross = inv_item.get('gr_wt', 0) / 1000  # Convert to kg
         else:
-            book_gross = master_item.get('gr_wt', 0) / 1000
+            # Fallback to master item weight
+            master = next((m for m in master_items if m['item_name'] == item_name), None)
+            book_gross = master.get('gr_wt', 0) / 1000 if master else 0
         
         difference = entered_gross - book_gross
         
@@ -789,7 +796,8 @@ async def get_approval_details(stamp: str, current_user: dict = Depends(get_curr
             'entered_gross': entered_gross,
             'book_gross': book_gross,
             'difference': difference,
-            'was_entered': item_name in entered_map
+            'was_entered': item_name in entered_map,
+            'is_mapped': item_name not in master_item_names
         })
         
         total_entered += entered_gross
