@@ -705,6 +705,10 @@ async def finalize_chunked_upload(upload_id: str):
         parse_type = file_type
         if file_type in ('opening_stock', 'physical_stock', 'master_stock'):
             parse_type = 'opening_stock'
+        elif file_type == 'historical_sale':
+            parse_type = 'sale'
+        elif file_type == 'historical_purchase':
+            parse_type = 'purchase'
 
         # Parse in thread pool
         loop = asyncio.get_event_loop()
