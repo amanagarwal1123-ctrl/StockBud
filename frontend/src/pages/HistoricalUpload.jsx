@@ -45,7 +45,8 @@ export default function HistoricalUpload() {
       if (startDate) url += `&start_date=${startDate}`;
       if (endDate) url += `&end_date=${endDate}`;
       const res = await axios.post(url, fd, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' }
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
+        timeout: 600000,
       });
       toast.success(res.data.message);
       fetchSummary();
