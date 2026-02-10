@@ -145,7 +145,7 @@ export default function ManagerApprovals() {
 
         <TabsContent value="pending">
           {pendingEntries.map((entry) => (
-            <Card key={entry.stamp} className="border-orange-500/20">
+            <Card key={`pending-${entry.stamp}-${entry.entry_day || ''}`} className="border-orange-500/20">
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
