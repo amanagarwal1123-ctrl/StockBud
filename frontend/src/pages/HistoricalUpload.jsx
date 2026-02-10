@@ -57,6 +57,7 @@ export default function HistoricalUpload() {
         const uploadId = initRes.data.upload_id;
 
         for (let i = 0; i < totalChunks; i++) {
+          setUploadProgress(`Uploading chunk ${i + 1} of ${totalChunks}...`);
           const start = i * CHUNK_SIZE;
           const end = Math.min(start + CHUNK_SIZE, file.size);
           const chunk = file.slice(start, end);
