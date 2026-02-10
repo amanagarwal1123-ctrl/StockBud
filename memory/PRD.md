@@ -43,18 +43,23 @@ backend/
 - **Problem**: 205K row Excel files (24MB) fail in deployed environment due to proxy body size limits
 - **Solution**: Automatic chunked upload for files > 4MB
   - Frontend splits file into 4MB binary chunks
-  - 3-step API: `/api/upload/init` → `/api/upload/chunk/{id}` → `/api/upload/finalize/{id}`
-  - Backend reassembles chunks and processes with EXACT same `parse_excel_file` logic
-  - Progress indicator shows "Uploading chunk X of Y..." then "Processing on server..."
-- **Optimized parsing**: Single Excel read, dict-based iteration (not iterrows), batch MongoDB inserts (5K chunks), thread pool for CPU-bound parsing
-- **Performance**: 100K records in ~20s
+  - 3-step API: `/api/upload/init` -> `/api/upload/chunk/{id}` -> `/api/upload/finalize/{id}`
+  - Backend reassembles chunks and processes with EXACT same parse_excel_file logic
+  - Progress indicator shows chunk-by-chunk progress
+- **Optimized parsing**: Single Excel read, dict-based iteration, batch MongoDB inserts (5K chunks), thread pool
 
-## Stamp Re-submission Fix (Feb 10, 2026)
-- **Problem**: Approved stamps blocked new stock entries ("already approved. Cannot modify.")
-- **Fix**: New submission clears old approval, marks old entry as 'superseded', resets to 'pending' for re-approval
-- **Flow**: Executive submits → old approval cleared → new pending entry → manager re-approves
+## Date-Based Stock Entry Model (Feb 10, 2026)
+- **Problem**: Approved stamps blocked new stock entries. Old approach: single entry per stamp, approval blocks re-submission
+- **New Model**:
+  - Entries keyed by `{stamp, entered_by, entry_day}` (YYYY-MM-DD)
+  - Same stamp + same day = UPDATE existing (overwrite values, reset to pending)
+  - Different day = INSERT new entry (old entries locked/historical)
+  - Approved entries from previous days remain untouched forever
+  - `stamp_approvals` includes `approval_day` to track per-day approval
+  - `my-entries` returns latest entry per stamp (deduped)
+  - Frontend shows date label and "Re-submit" button for approved entries
 
-## Order Management (Full Workflow - Feb 10, 2026)
+## Order Management (Full Workflow)
 - Quick Order from Alerts, Create/Track Orders
 - Mark as Received, Cancel Orders, Overdue Detection
 - Status Filter: All/Pending/Received views
