@@ -603,6 +603,31 @@ async def initialize_admin():
         "warning": "Please change password after first login!"
     }
 
+async def batch_insert(collection, documents: list):
+    """Insert documents in batches to handle large datasets"""
+    total = 0
+    for i in range(0, len(documents), BATCH_INSERT_SIZE):
+        batch = documents[i:i + BATCH_INSERT_SIZE]
+        await collection.insert_many(batch, ordered=False)
+        total += len(batch)
+    return total
+
+
+def _prepare_transactions(records: list, batch_id: str) -> list:
+    """Prepare transaction dicts with defaults (skip per-row Pydantic for speed)"""
+    now = datetime.now(timezone.utc).isoformat()
+    docs = []
+    for r in records:
+        r['batch_id'] = batch_id
+        r.setdefault('id', str(uuid.uuid4()))
+        r.setdefault('upload_date', now)
+        r.setdefault('rate', 0.0)
+        r.setdefault('total_amount', 0.0)
+        r.setdefault('taxable_value', 0.0)
+        docs.append(r)
+    return docs
+
+
 @api_router.post("/transactions/upload/{file_type}")
 async def upload_transaction_file(
     file_type: str, 
@@ -615,12 +640,14 @@ async def upload_transaction_file(
         raise HTTPException(status_code=400, detail="file_type must be 'purchase', 'sale', or 'branch_transfer'")
     
     content = await file.read()
-    records = parse_excel_file(content, file_type)
+    
+    # Parse in thread pool so we don't block the event loop
+    loop = asyncio.get_event_loop()
+    records = await loop.run_in_executor(_parse_executor, parse_excel_file, content, file_type)
     
     if not records:
         raise HTTPException(status_code=400, detail="No valid records found in file")
     
-    # Generate unique batch ID for this upload
     batch_id = str(uuid.uuid4())
     
     # If date range provided, DELETE existing transactions in that range
@@ -633,19 +660,14 @@ async def upload_transaction_file(
         delete_result = await db.transactions.delete_many(delete_query)
         deleted_count = delete_result.deleted_count
     
-    # Add batch_id to all transactions
-    for record in records:
-        record['batch_id'] = batch_id
-    
-    # Insert new transactions
-    transactions = [Transaction(**record).model_dump() for record in records]
-    result = await db.transactions.insert_many(transactions)
+    # Prepare and batch-insert (skip Pydantic for speed on large files)
+    transactions = _prepare_transactions(records, batch_id)
+    await batch_insert(db.transactions, transactions)
     
     message = f"Uploaded {len(transactions)} {file_type} records"
     if deleted_count > 0:
         message += f" (replaced {deleted_count} existing records from {start_date} to {end_date})"
     
-    # Save action with batch_id
     await save_action(
         f'upload_{file_type}',
         message,
