@@ -3612,7 +3612,12 @@ async def get_historical_summary():
     """Get summary of uploaded historical data"""
     pipeline = [
         {"$group": {
-            "_id": {"year": "$historical_year", "type": "$type"},
+            "_id": {
+                "year": "$historical_year",
+                "type": {"$cond": [
+                    {"$in": ["$type", ["sale", "sale_return"]]}, "sale", "purchase"
+                ]}
+            },
             "count": {"$sum": 1},
             "total_net_wt": {"$sum": "$net_wt"}
         }},
