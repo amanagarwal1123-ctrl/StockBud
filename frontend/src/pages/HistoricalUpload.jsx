@@ -171,7 +171,7 @@ export default function HistoricalUpload() {
           </div>
           {uploading && (
             <div className="flex items-center gap-2 text-blue-600 text-sm">
-              <Loader2 className="h-4 w-4 animate-spin" />Uploading and parsing...
+              <Loader2 className="h-4 w-4 animate-spin" />{uploadProgress || 'Uploading and parsing...'}
             </div>
           )}
         </CardContent>
