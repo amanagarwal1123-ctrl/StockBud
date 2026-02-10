@@ -1232,24 +1232,60 @@ async def approve_stamp(
 @api_router.get("/stamp-verification/history")
 async def get_stamp_verification_history():
     """Get verification history for all stamps"""
+    import re
     
     # Get all stamps from master
     all_stamps = await db.master_items.distinct('stamp')
     
+    # Safe numeric sort for stamps like "STAMP 7", "Stamp 12", etc.
+    def stamp_sort_key(s):
+        match = re.search(r'(\d+)', s or '')
+        return int(match.group(1)) if match else 0
+    
     # Get latest verification for each
     history = []
-    for stamp in sorted(all_stamps, key=lambda s: int(s.replace('Stamp ', '') or 0)):
+    for stamp in sorted(all_stamps, key=stamp_sort_key):
+        if not stamp or stamp == 'Unassigned':
+            continue
+        
+        # Check stamp_verifications first (physical verification)
         latest = await db.stamp_verifications.find_one(
             {'stamp': stamp},
             {"_id": 0},
             sort=[('verified_at', -1)]
         )
         
+        # Also check stamp_approvals (manager approval = verification)
+        approval = await db.stamp_approvals.find_one(
+            {'stamp': stamp, 'is_approved': True},
+            {"_id": 0}
+        )
+        
+        # Use whichever is more recent
+        verified_date = None
+        is_match = None
+        difference = None
+        
+        if latest:
+            verified_date = latest.get('verification_date')
+            is_match = latest.get('is_match')
+            difference = latest.get('difference')
+        
+        if approval:
+            approval_date = approval.get('approved_at', '')
+            latest_date = latest.get('verified_at', '') if latest else ''
+            if approval_date > latest_date:
+                verified_date = approval_date[:10] if approval_date else None
+                diff_kg = approval.get('total_difference', 0) / 1000 if approval.get('total_difference') else 0
+                is_match = abs(diff_kg) < 0.05
+                difference = diff_kg
+        
         history.append({
             'stamp': stamp,
-            'last_verified_date': latest.get('verification_date') if latest else None,
-            'verified_by': latest.get('verified_at') if latest else None,
-            'is_match': latest.get('is_match') if latest else None
+            'last_verified_date': verified_date,
+            'verified_by': approval.get('approved_by') if approval else (latest.get('verified_at') if latest else None),
+            'is_match': is_match,
+            'difference': difference
         })
     
     return history
