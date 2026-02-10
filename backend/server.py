@@ -991,15 +991,9 @@ async def approve_stamp(
 @api_router.get("/stamp-verification/history")
 async def get_stamp_verification_history():
     """Get verification history for all stamps"""
-    import re
     
     # Get all stamps from master
     all_stamps = await db.master_items.distinct('stamp')
-    
-    # Safe numeric sort for stamps like "STAMP 7", "Stamp 12", etc.
-    def stamp_sort_key(s):
-        match = re.search(r'(\d+)', s or '')
-        return int(match.group(1)) if match else 0
     
     # Get latest verification for each
     history = []
