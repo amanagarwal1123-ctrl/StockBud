@@ -28,52 +28,71 @@ export default function UploadManager() {
     physical_stock: { date: '' }
   });
 
-  const CHUNK_SIZE = 768 * 1024; // 768KB per chunk — stays under deployment proxy limits
+  const CHUNK_SIZE = 200 * 1024; // 200KB — safe for any deployment proxy
 
   const pollUploadStatus = async (uploadId) => {
-    for (let attempt = 0; attempt < 120; attempt++) { // Max ~10 minutes
-      await new Promise(r => setTimeout(r, 5000)); // Poll every 5s
-      const res = await axios.get(`${API}/upload/status/${uploadId}`, { timeout: 10000 });
-      if (res.data.status === 'complete') return res;
-      if (res.data.status === 'error') throw new Error(res.data.detail || 'Processing failed');
-      setUploadProgress(`Processing on server... (${attempt * 5}s elapsed)`);
+    for (let attempt = 0; attempt < 180; attempt++) {
+      await new Promise(r => setTimeout(r, 5000));
+      try {
+        const res = await axios.get(`${API}/upload/status/${uploadId}`, { timeout: 10000 });
+        if (res.data.status === 'complete') return res;
+        if (res.data.status === 'error') throw new Error(res.data.detail || 'Processing failed on server');
+        setUploadProgress(`Processing on server... (${(attempt + 1) * 5}s elapsed)`);
+      } catch (pollErr) {
+        if (pollErr.message?.includes('Processing failed')) throw pollErr;
+      }
     }
-    throw new Error('Processing timed out');
+    throw new Error('Processing timed out after 15 minutes');
+  };
+
+  const uploadChunkWithRetry = async (url, formData, chunkIdx, totalChunks, maxRetries = 3) => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await axios.post(url, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          timeout: 60000,
+        });
+      } catch (err) {
+        const status = err.response?.status || 'network error';
+        const detail = err.response?.data?.detail || err.message;
+        if (attempt === maxRetries) {
+          throw new Error(`Chunk ${chunkIdx + 1}/${totalChunks} failed (${status}: ${detail})`);
+        }
+        setUploadProgress(`Chunk ${chunkIdx + 1}/${totalChunks} retry ${attempt}/${maxRetries}...`);
+        await new Promise(r => setTimeout(r, 2000 * attempt));
+      }
+    }
   };
 
   const uploadChunked = async (fileType, file) => {
     const range = dateRanges[fileType] || {};
-    // 1. Init upload session
-    setUploadProgress('Initializing upload...');
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+    setUploadProgress(`Initializing upload (${totalChunks} chunks)...`);
     const initRes = await axios.post(`${API}/upload/init`, {
       file_type: fileType,
       start_date: range.start || null,
       end_date: range.end || null,
       verification_date: fileType === 'physical_stock' ? dateRanges.physical_stock?.date : null,
-      total_chunks: Math.ceil(file.size / CHUNK_SIZE),
+      total_chunks: totalChunks,
     }, { timeout: 30000 });
     const uploadId = initRes.data.upload_id;
-    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 
-    // 2. Send chunks
     for (let i = 0; i < totalChunks; i++) {
+      setUploadProgress(`Uploading chunk ${i + 1} of ${totalChunks} (${Math.round((i / totalChunks) * 100)}%)...`);
       const start = i * CHUNK_SIZE;
       const end = Math.min(start + CHUNK_SIZE, file.size);
       const chunk = file.slice(start, end);
       const fd = new FormData();
       fd.append('file', chunk, `chunk_${i}`);
-      setUploadProgress(`Uploading chunk ${i + 1} of ${totalChunks}...`);
-      await axios.post(`${API}/upload/chunk/${uploadId}?chunk_index=${i}`, fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 120000,
-      });
+      await uploadChunkWithRetry(
+        `${API}/upload/chunk/${uploadId}?chunk_index=${i}`,
+        fd, i, totalChunks
+      );
     }
 
-    // 3. Finalize — kicks off background processing
-    setUploadProgress('Processing file on server...');
+    setUploadProgress('All chunks uploaded. Processing file on server...');
     await axios.post(`${API}/upload/finalize/${uploadId}`, {}, { timeout: 30000 });
 
-    // 4. Poll for completion
     return await pollUploadStatus(uploadId);
   };
 
