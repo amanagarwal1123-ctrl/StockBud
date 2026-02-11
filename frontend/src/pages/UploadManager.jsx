@@ -238,8 +238,12 @@ export default function UploadManager() {
           )}
 
           <label
-            htmlFor={`${type}-upload`}
-            className="upload-zone flex flex-col items-center justify-center gap-3 cursor-pointer border-2 border-dashed border-muted-foreground/25 rounded-xl p-12 hover:border-primary/50 transition-all bg-muted/5"
+            htmlFor={uploading ? undefined : `${type}-upload`}
+            className={`upload-zone flex flex-col items-center justify-center gap-3 border-2 border-dashed rounded-xl p-12 transition-all ${
+              uploading 
+                ? 'border-muted-foreground/10 bg-muted/20 cursor-not-allowed opacity-50' 
+                : 'border-muted-foreground/25 cursor-pointer hover:border-primary/50 bg-muted/5'
+            }`}
             data-testid={`upload-zone-${type}`}
           >
             {uploadedFiles[type] ? (
