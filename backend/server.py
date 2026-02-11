@@ -634,8 +634,20 @@ def _prepare_transactions(records: list, batch_id: str) -> list:
 # ==================== CHUNKED UPLOAD ====================
 UPLOAD_TEMP_DIR = Path(tempfile.gettempdir()) / "stockbud_uploads"
 UPLOAD_TEMP_DIR.mkdir(exist_ok=True)
-# Track active uploads {upload_id: {file_type, start_date, end_date, total_chunks, received}}
-_active_uploads: Dict[str, Dict] = {}
+
+
+def _save_upload_meta(upload_id: str, meta: dict):
+    """Persist upload metadata to disk (survives process restarts)"""
+    meta_path = UPLOAD_TEMP_DIR / upload_id / "meta.json"
+    meta_path.write_text(json.dumps(meta))
+
+
+def _load_upload_meta(upload_id: str) -> dict:
+    """Load upload metadata from disk"""
+    meta_path = UPLOAD_TEMP_DIR / upload_id / "meta.json"
+    if not meta_path.exists():
+        return None
+    return json.loads(meta_path.read_text())
 
 
 @api_router.post("/upload/init")
@@ -649,7 +661,7 @@ async def init_chunked_upload(request: Dict):
     upload_dir = UPLOAD_TEMP_DIR / upload_id
     upload_dir.mkdir(exist_ok=True)
 
-    _active_uploads[upload_id] = {
+    meta = {
         'file_type': file_type,
         'start_date': request.get('start_date'),
         'end_date': request.get('end_date'),
@@ -659,6 +671,7 @@ async def init_chunked_upload(request: Dict):
         'received': 0,
         'created_at': datetime.now(timezone.utc).isoformat(),
     }
+    _save_upload_meta(upload_id, meta)
 
     return {"upload_id": upload_id}
 
@@ -666,7 +679,8 @@ async def init_chunked_upload(request: Dict):
 @api_router.post("/upload/chunk/{upload_id}")
 async def upload_chunk(upload_id: str, chunk_index: int, file: UploadFile = File(...)):
     """Receive a single chunk of a large file"""
-    if upload_id not in _active_uploads:
+    meta = _load_upload_meta(upload_id)
+    if not meta:
         raise HTTPException(status_code=404, detail="Upload session not found")
 
     upload_dir = UPLOAD_TEMP_DIR / upload_id
@@ -674,9 +688,10 @@ async def upload_chunk(upload_id: str, chunk_index: int, file: UploadFile = File
     content = await file.read()
     chunk_path.write_bytes(content)
 
-    _active_uploads[upload_id]['received'] += 1
+    meta['received'] = meta.get('received', 0) + 1
+    _save_upload_meta(upload_id, meta)
 
-    return {"received": _active_uploads[upload_id]['received'], "chunk_index": chunk_index}
+    return {"received": meta['received'], "chunk_index": chunk_index}
 
 
 @api_router.post("/upload/finalize/{upload_id}")
