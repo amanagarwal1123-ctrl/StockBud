@@ -1340,6 +1340,8 @@ async def client_batch_upload(request: Dict):
 
     docs = _prepare_transactions(records, batch_id)
     await batch_insert(collection, docs)
+    del raw_rows, records, docs
+    gc.collect()
 
     total = await collection.count_documents({"batch_id": batch_id})
     logger.info(f"[Client batch] batch_index={batch_index}, inserted={len(docs)}, total_so_far={total}")
