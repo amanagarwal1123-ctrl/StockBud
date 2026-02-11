@@ -1340,13 +1340,14 @@ async def client_batch_upload(request: Dict):
 
     docs = _prepare_transactions(records, batch_id)
     await batch_insert(collection, docs)
+    inserted_count = len(docs)
     del raw_rows, records, docs
     gc.collect()
 
     total = await collection.count_documents({"batch_id": batch_id})
-    logger.info(f"[Client batch] batch_index={batch_index}, inserted={len(docs)}, total_so_far={total}")
+    logger.info(f"[Client batch] batch_index={batch_index}, inserted={inserted_count}, total_so_far={total}")
 
-    result = {"success": True, "batch_records": len(docs), "total_so_far": total}
+    result = {"success": True, "batch_records": inserted_count, "total_so_far": total}
     if is_final:
         actual_type = parse_type
         result["message"] = f"Uploaded {total} historical {actual_type} records for {year}"
