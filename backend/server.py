@@ -695,17 +695,21 @@ async def upload_chunk(upload_id: str, chunk_index: int, file: UploadFile = File
 
 
 async def _process_upload(upload_id: str, meta: dict):
-    """Background task: reassemble chunks, parse, and insert into DB"""
-    upload_dir = UPLOAD_TEMP_DIR / upload_id
+    """Background task: reassemble chunks from MongoDB, parse, and insert into DB"""
     try:
-        # Reassemble chunks
-        chunks = sorted(upload_dir.glob("chunk_*"))
+        # Reassemble chunks from MongoDB
+        cursor = db.upload_chunks.find(
+            {"upload_id": upload_id},
+            {"chunk_index": 1, "data": 1, "_id": 0}
+        ).sort("chunk_index", 1)
+        
         assembled = bytearray()
-        for chunk_path in chunks:
-            if chunk_path.name != 'meta.json':
-                assembled.extend(chunk_path.read_bytes())
+        async for chunk_doc in cursor:
+            assembled.extend(chunk_doc['data'])
 
         file_content = bytes(assembled)
+        del assembled  # Free memory
+
         file_type = meta['file_type']
 
         parse_type = file_type
