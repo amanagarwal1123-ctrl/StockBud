@@ -140,10 +140,14 @@ def _detect_header_and_clean(df):
     return df
 
 
-def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
-    """Parse Excel file using fast dict-based iteration. Weights in KG -> grams."""
+def parse_excel_file(file_content, file_type: str) -> List[Dict]:
+    """Parse Excel file using fast dict-based iteration. Weights in KG -> grams.
+    file_content can be bytes OR a file path string (for memory-efficient large file processing)."""
     try:
-        df = _read_excel_once(file_content)
+        if isinstance(file_content, str):
+            df = _read_excel_from_path(file_content)
+        else:
+            df = _read_excel_once(file_content)
         cols = set(df.columns)
         KG_TO_GRAMS = 1000
 
