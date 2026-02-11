@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { BarChart3, TrendingUp, Calendar, Sparkles, Loader2, Upload, Trash2, Sun } from 'lucide-react';
+import { BarChart3, TrendingUp, Calendar, Sparkles, Loader2, Upload, Trash2, Sun, IndianRupee } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
