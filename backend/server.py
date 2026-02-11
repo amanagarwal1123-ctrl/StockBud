@@ -854,7 +854,18 @@ async def _process_upload(upload_id: str, meta: dict):
         logger.error(f"[Upload {upload_id}] FAILED: {e}", exc_info=True)
         meta['status'] = 'error'
         meta['error'] = str(e)
-        await _save_upload_meta(upload_id, meta)
+        try:
+            await _save_upload_meta(upload_id, meta)
+        except Exception:
+            pass
+    finally:
+        # Always clean up temp file
+        if tmp_path:
+            try:
+                import os as _os
+                _os.unlink(tmp_path)
+            except Exception:
+                pass
 
 
 @api_router.post("/upload/finalize/{upload_id}")
