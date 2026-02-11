@@ -839,7 +839,7 @@ async def finalize_chunked_upload(upload_id: str, background_tasks: BackgroundTa
     meta['status'] = 'processing'
     _save_upload_meta(upload_id, meta)
 
-    background_tasks.add(_process_upload(upload_id, meta))
+    background_tasks.add_task(_process_upload, upload_id, meta)
 
     return {"status": "processing", "upload_id": upload_id,
             "message": "File is being processed. Poll /api/upload/status/{upload_id} for progress."}
