@@ -725,6 +725,8 @@ async def _process_upload(upload_id: str, meta: dict):
     tmp_path = None
     try:
         logger.info(f"[Upload {upload_id}] Starting processing, file_type={meta['file_type']}")
+        meta['progress'] = 'Reassembling file from chunks...'
+        await _save_upload_meta(upload_id, meta)
         
         # Write chunks directly to a temp file (avoids holding entire file in memory)
         tmp_fd, tmp_path = _tempfile.mkstemp(suffix='.xlsx')
