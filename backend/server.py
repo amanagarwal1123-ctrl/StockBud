@@ -655,8 +655,6 @@ async def init_chunked_upload(request: Dict):
         raise HTTPException(status_code=400, detail="Invalid file_type")
 
     upload_id = str(uuid.uuid4())
-    upload_dir = UPLOAD_TEMP_DIR / upload_id
-    upload_dir.mkdir(exist_ok=True)
 
     meta = {
         'file_type': file_type,
@@ -668,7 +666,7 @@ async def init_chunked_upload(request: Dict):
         'received': 0,
         'created_at': datetime.now(timezone.utc).isoformat(),
     }
-    _save_upload_meta(upload_id, meta)
+    await _save_upload_meta(upload_id, meta)
 
     return {"upload_id": upload_id}
 
