@@ -4684,23 +4684,22 @@ async def update_buffers_with_seasonal(current_user: dict = Depends(get_current_
     if current_user['role'] != 'admin':
         raise HTTPException(status_code=403, detail="Admin only")
     
-    # Get seasonal analysis data
-    current_txns = await db.transactions.find({"type": {"$in": ["sale", "sale_return"]}}, {"_id": 0}).to_list(50000)
-    historical_txns = await db.historical_transactions.find({"type": {"$in": ["sale", "sale_return"]}}, {"_id": 0}).to_list(100000)
-    all_sales = current_txns + historical_txns
-    
-    # Monthly sales per item
+    # Get seasonal analysis data via aggregation (memory-efficient)
     monthly_item_sales = defaultdict(lambda: defaultdict(float))
-    for sale in all_sales:
-        item = sale.get('item_name', '')
-        date_str = sale.get('date', '')
-        if not item or not date_str:
-            continue
-        try:
-            month = int(date_str[5:7])
-        except:
-            continue
-        monthly_item_sales[item][month] += abs(sale.get('net_wt', 0)) / 1000
+    
+    for coll in [db.transactions, db.historical_transactions]:
+        pipeline = [
+            {"$match": {"type": {"$in": ["sale", "sale_return"]}}},
+            {"$project": {"item_name": 1, "net_wt": 1, "month": {"$substr": ["$date", 5, 2]}}},
+            {"$group": {"_id": {"item": "$item_name", "month": "$month"}, "total_wt": {"$sum": "$net_wt"}}},
+        ]
+        async for doc in coll.aggregate(pipeline, allowDiskUse=True):
+            item = doc['_id']['item']
+            try:
+                month = int(doc['_id']['month'])
+            except (ValueError, TypeError):
+                continue
+            monthly_item_sales[item][month] += abs(doc['total_wt']) / 1000
     
     now = datetime.now()
     current_month = now.month
