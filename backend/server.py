@@ -4528,22 +4528,8 @@ async def seasonal_analysis(current_user: dict = Depends(get_current_user)):
     inv_dict = {item['item_name']: round(item['net_wt'] / 1000, 3) for item in inv_response['inventory']}
     inv_dict.update({item['item_name']: round(item['net_wt'] / 1000, 3) for item in inv_response.get('negative_items', [])})
     
-    # Analyze monthly sales per item
-    monthly_item_sales = defaultdict(lambda: defaultdict(float))
+    # Analyze monthly sales per item (already computed via aggregation above)
     item_seasonal_data = defaultdict(lambda: defaultdict(float))
-    
-    for sale in all_sales:
-        item = sale.get('item_name', '')
-        date_str = sale.get('date', '')
-        if not item or not date_str:
-            continue
-        try:
-            month = int(date_str[5:7])
-        except:
-            continue
-        
-        wt_kg = abs(sale.get('net_wt', 0)) / 1000
-        monthly_item_sales[item][month] += wt_kg
     
     # Identify seasonal patterns
     seasonal_items = {}
