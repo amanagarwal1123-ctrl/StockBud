@@ -701,6 +701,8 @@ async def upload_chunk(upload_id: str, chunk_index: int, file: UploadFile = File
 async def _process_upload(upload_id: str, meta: dict):
     """Background task: reassemble chunks from MongoDB, parse, and insert into DB"""
     try:
+        logger.info(f"[Upload {upload_id}] Starting processing, file_type={meta['file_type']}")
+        
         # Reassemble chunks from MongoDB
         cursor = db.upload_chunks.find(
             {"upload_id": upload_id},
@@ -708,8 +710,15 @@ async def _process_upload(upload_id: str, meta: dict):
         ).sort("chunk_index", 1)
         
         assembled = bytearray()
+        chunk_count = 0
         async for chunk_doc in cursor:
             assembled.extend(chunk_doc['data'])
+            chunk_count += 1
+        
+        logger.info(f"[Upload {upload_id}] Reassembled {chunk_count} chunks, total {len(assembled)} bytes")
+        
+        # Delete chunks from MongoDB immediately to free DB space
+        await db.upload_chunks.delete_many({"upload_id": upload_id})
 
         file_content = bytes(assembled)
         del assembled  # Free memory
