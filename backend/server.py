@@ -4623,7 +4623,7 @@ async def seasonal_analysis(current_user: dict = Depends(get_current_user)):
 - Current month: {now.strftime('%B %Y')}
 - Current seasons: {', '.join(current_seasons) if current_seasons else 'None'}
 - Total items analyzed: {len(seasonal_items)}
-- Historical + Current sales analyzed: {len(all_sales)} transactions
+- Historical + Current sales analyzed: {all_sales_count} transactions
 
 Top items with seasonal patterns:
 {chr(10).join(seasonal_summary[:15])}
