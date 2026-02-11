@@ -3878,9 +3878,11 @@ async def upload_historical_data(
         raise HTTPException(status_code=400, detail="file_type must be 'sale' or 'purchase'")
     
     content = await file.read()
+    logger.info(f"[Historical Direct Upload] file_type={file_type}, year={year}, size={len(content)} bytes")
     
     loop = asyncio.get_event_loop()
     records = await loop.run_in_executor(_parse_executor, parse_excel_file, content, file_type)
+    del content  # Free memory
     
     if not records:
         raise HTTPException(status_code=400, detail="No valid records found")
@@ -3896,15 +3898,19 @@ async def upload_historical_data(
     hist_docs = _prepare_transactions(records, batch_id)
     await batch_insert(db.historical_transactions, hist_docs)
     
-    await save_action('upload_historical', f"Uploaded {len(hist_docs)} historical {file_type} records for year {year}", user=current_user)
+    # Verify insertion
+    verify_count = await db.historical_transactions.count_documents({"batch_id": batch_id})
+    logger.info(f"[Historical Direct Upload] Inserted and verified {verify_count} records for batch {batch_id}")
+    
+    await save_action('upload_historical', f"Uploaded {verify_count} historical {file_type} records for year {year}", user=current_user)
     
     return {
         "success": True,
-        "count": len(hist_docs),
+        "count": verify_count,
         "year": year,
         "file_type": file_type,
         "batch_id": batch_id,
-        "message": f"Uploaded {len(hist_docs)} historical {file_type} records for {year}"
+        "message": f"Uploaded {verify_count} historical {file_type} records for {year}"
     }
 
 
