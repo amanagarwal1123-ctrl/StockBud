@@ -4282,7 +4282,7 @@ Provide your analysis in a clear, actionable format with specific numbers. Use b
             api_key=llm_key,
             session_id=f"insights-{datetime.now().strftime('%Y%m%d%H%M')}",
             system_message="You are a silver jewelry wholesale business analyst. Provide concise, data-driven insights. Use specific numbers from the data. Be direct and actionable."
-        ).with_model("anthropic", "claude-opus-4-6")
+        ).with_model("anthropic", "claude-sonnet-4-5")
         
         response = await chat.send_message(UserMessage(text=prompt))
         
@@ -4299,18 +4299,8 @@ Provide your analysis in a clear, actionable format with specific numbers. Use b
             }
         }
     except Exception as e:
-        # Fallback if Claude Opus 4.6 not available
-        try:
-            chat = LlmChat(
-                api_key=llm_key,
-                session_id=f"insights-{datetime.now().strftime('%Y%m%d%H%M')}",
-                system_message="You are a silver jewelry wholesale business analyst."
-            ).with_model("anthropic", "claude-4-opus-20250514")
-            
-            response = await chat.send_message(UserMessage(text=prompt))
-            return {"insights": response, "data_summary": {"sales_count": sale_count, "purchase_count": purchase_count, "total_sale_kg": round(total_sale_wt, 3), "total_purchase_kg": round(total_purchase_wt, 3)}}
-        except:
-            raise HTTPException(status_code=500, detail=f"AI analysis failed: {str(e)}")
+        logger.error(f"Smart insights LLM failed: {e}")
+        raise HTTPException(status_code=500, detail=f"AI analysis failed: {str(e)}")
 
 # ==================== HISTORICAL DATA & SEASONAL AI ====================
 
