@@ -4656,7 +4656,7 @@ Be specific with numbers. Format as actionable bullet points."""
             api_key=llm_key,
             session_id=f"seasonal-{datetime.now().strftime('%Y%m%d%H%M')}",
             system_message="You are an expert silver jewelry wholesale inventory analyst specializing in the Indian market. You understand Hindu calendar festivals and their impact on jewelry demand. Provide data-driven, actionable insights with specific numbers."
-        ).with_model("anthropic", "claude-opus-4-6")
+        ).with_model("anthropic", "claude-sonnet-4-5")
         
         ai_response = await chat.send_message(UserMessage(text=ai_prompt))
     except Exception as e:
@@ -4666,7 +4666,7 @@ Be specific with numbers. Format as actionable bullet points."""
         "current_season": current_seasons,
         "current_month": now.strftime('%B %Y'),
         "total_items_analyzed": len(seasonal_items),
-        "total_transactions_analyzed": len(all_sales),
+        "total_transactions_analyzed": all_sales_count,
         "recommendations": recommendations[:30],
         "seasonal_items": dict(sorted(
             [(k, v) for k, v in seasonal_items.items() if v['total_sales_kg'] > 0.1],
