@@ -3538,34 +3538,28 @@ async def get_historical_profit(
         return {"view": "customer", "year": year, "data": rows, "total": len(rows)}
 
     if view == "supplier":
-        supplier_items = defaultdict(lambda: defaultdict(lambda: {"wt": 0.0, "tunch_wt": 0.0, "labor_total": 0.0}))
+        # Group purchases by supplier → master item, using fine for tunch
+        supplier_items = defaultdict(lambda: defaultdict(lambda: {"fine": 0.0, "net_wt": 0.0, "labor": 0.0}))
         for p in purchases:
-            if p["type"] != "purchase":
-                continue
             supplier = p.get("party_name", "Unknown") or "Unknown"
-            item = p.get("item_name", "")
+            master = resolve(p.get("item_name", ""))
             nw = p.get("net_wt", 0)
             if nw < 0.001:
                 continue
-            tunch = float(p.get("tunch", 0) or 0)
-            labor = p.get("labor", 0)
-            supplier_items[supplier][item]["wt"] += nw
-            supplier_items[supplier][item]["tunch_wt"] += tunch * nw
-            supplier_items[supplier][item]["labor_total"] += labor
+            supplier_items[supplier][master]["fine"] += p.get("fine", 0)
+            supplier_items[supplier][master]["net_wt"] += nw
+            supplier_items[supplier][master]["labor"] += p.get("labor", 0)
 
-        item_sale_agg = defaultdict(lambda: {"wt": 0.0, "tunch_wt": 0.0, "labor_total": 0.0})
+        # Aggregate sales by master item using fine
+        item_sale_agg = defaultdict(lambda: {"fine": 0.0, "net_wt": 0.0, "labor": 0.0})
         for s in sales:
-            if s["type"] != "sale":
-                continue
-            item = s.get("item_name", "")
+            master = resolve(s.get("item_name", ""))
             nw = s.get("net_wt", 0)
             if nw < 0.001:
                 continue
-            tunch = float(s.get("tunch", 0) or 0)
-            labor = s.get("labor", 0)
-            item_sale_agg[item]["wt"] += nw
-            item_sale_agg[item]["tunch_wt"] += tunch * nw
-            item_sale_agg[item]["labor_total"] += labor
+            item_sale_agg[master]["fine"] += s.get("fine", 0)
+            item_sale_agg[master]["net_wt"] += nw
+            item_sale_agg[master]["labor"] += s.get("labor", 0)
 
         rows = []
         for supplier, items in supplier_items.items():
@@ -3573,17 +3567,17 @@ async def get_historical_profit(
             sp_labor = 0.0
             sp_wt = 0.0
             item_count = 0
-            for item, pd_ in items.items():
-                pw = pd_["wt"]
+            for master, pd_ in items.items():
+                pw = pd_["net_wt"]
                 if pw < 0.001:
                     continue
-                sa = item_sale_agg.get(item)
-                if not sa or sa["wt"] < 0.001:
+                sa = item_sale_agg.get(master)
+                if not sa or sa["net_wt"] < 0.001:
                     continue
-                p_tunch = pd_["tunch_wt"] / pw
-                s_tunch = sa["tunch_wt"] / sa["wt"]
-                p_lpg = pd_["labor_total"] / pw
-                s_lpg = sa["labor_total"] / sa["wt"]
+                p_tunch = (pd_["fine"] / pw) * 100 if pd_["fine"] > 0 else 0
+                s_tunch = (sa["fine"] / sa["net_wt"]) * 100 if sa["fine"] > 0 else 0
+                p_lpg = pd_["labor"] / pw
+                s_lpg = sa["labor"] / sa["net_wt"]
                 sp_silver += (s_tunch - p_tunch) * pw / 100 / 1000
                 sp_labor += (s_lpg - p_lpg) * pw
                 sp_wt += pw / 1000
