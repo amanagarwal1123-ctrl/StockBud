@@ -92,6 +92,11 @@ export default function HistoricalProfit({ years = [] }) {
 
       {loading ? (
         <div className="flex items-center justify-center h-48"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+      ) : error ? (
+        <div className="text-center py-16">
+          <p className="text-red-500 font-medium">Error loading profit data</p>
+          <p className="text-sm text-muted-foreground mt-1">{error}</p>
+        </div>
       ) : !data ? (
         <div className="text-center text-muted-foreground py-16">No historical data for this year</div>
       ) : view === 'yearly' ? (
