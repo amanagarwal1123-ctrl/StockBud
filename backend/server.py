@@ -855,10 +855,18 @@ async def finalize_chunked_upload(upload_id: str, background_tasks: BackgroundTa
     if not meta:
         raise HTTPException(status_code=404, detail="Upload session not found")
 
-    # Verify chunks exist in MongoDB
+    # Verify ALL chunks are present before processing
     chunk_count = await db.upload_chunks.count_documents({"upload_id": upload_id})
+    expected = meta.get('total_chunks', 0)
     if chunk_count == 0:
         raise HTTPException(status_code=400, detail="No chunks received")
+    if expected > 0 and chunk_count < expected:
+        # Find which chunks are missing
+        received = set()
+        async for doc in db.upload_chunks.find({"upload_id": upload_id}, {"chunk_index": 1, "_id": 0}):
+            received.add(doc["chunk_index"])
+        missing = [i for i in range(expected) if i not in received]
+        raise HTTPException(status_code=400, detail=f"Missing {len(missing)} of {expected} chunks: {missing[:10]}")
 
     # Mark as processing and kick off background task
     meta['status'] = 'processing'
