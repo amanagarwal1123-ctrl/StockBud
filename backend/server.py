@@ -46,6 +46,12 @@ from services.stock_service import get_current_inventory
 
 app = FastAPI()
 
+@app.on_event("startup")
+async def create_upload_indexes():
+    """Create indexes for chunked upload collections (idempotent)"""
+    await db.upload_sessions.create_index("upload_id", unique=True)
+    await db.upload_chunks.create_index([("upload_id", 1), ("chunk_index", 1)], unique=True)
+
 # Health check endpoints
 @app.get("/health")
 async def health_check():
