@@ -673,18 +673,23 @@ async def init_chunked_upload(request: Dict):
 
 @api_router.post("/upload/chunk/{upload_id}")
 async def upload_chunk(upload_id: str, chunk_index: int, file: UploadFile = File(...)):
-    """Receive a single chunk of a large file"""
-    meta = _load_upload_meta(upload_id)
+    """Receive a single chunk of a large file — stored in MongoDB for cross-pod access"""
+    meta = await _load_upload_meta(upload_id)
     if not meta:
         raise HTTPException(status_code=404, detail="Upload session not found")
 
-    upload_dir = UPLOAD_TEMP_DIR / upload_id
-    chunk_path = upload_dir / f"chunk_{chunk_index:05d}"
     content = await file.read()
-    chunk_path.write_bytes(content)
+
+    # Store chunk in MongoDB (using Binary for efficient storage)
+    from bson import Binary
+    await db.upload_chunks.update_one(
+        {"upload_id": upload_id, "chunk_index": chunk_index},
+        {"$set": {"upload_id": upload_id, "chunk_index": chunk_index, "data": Binary(content)}},
+        upsert=True
+    )
 
     meta['received'] = meta.get('received', 0) + 1
-    _save_upload_meta(upload_id, meta)
+    await _save_upload_meta(upload_id, meta)
 
     return {"received": meta['received'], "chunk_index": chunk_index}
 
