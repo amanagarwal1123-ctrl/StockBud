@@ -697,10 +697,10 @@ async def upload_chunk(upload_id: str, chunk_index: int, file: UploadFile = File
 @api_router.post("/upload/finalize/{upload_id}")
 async def finalize_chunked_upload(upload_id: str):
     """Reassemble chunks and process the complete file"""
-    if upload_id not in _active_uploads:
+    meta = _load_upload_meta(upload_id)
+    if not meta:
         raise HTTPException(status_code=404, detail="Upload session not found")
 
-    meta = _active_uploads[upload_id]
     upload_dir = UPLOAD_TEMP_DIR / upload_id
 
     try:
