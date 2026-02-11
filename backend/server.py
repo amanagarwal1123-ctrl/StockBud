@@ -819,12 +819,15 @@ async def _process_upload(upload_id: str, meta: dict):
             meta['status'] = 'error'
             meta['error'] = f"Unsupported file_type: {file_type}"
 
-        _save_upload_meta(upload_id, meta)
+        await _save_upload_meta(upload_id, meta)
+        # Clean up chunk data from MongoDB after successful processing
+        await db.upload_chunks.delete_many({"upload_id": upload_id})
 
     except Exception as e:
         meta['status'] = 'error'
         meta['error'] = str(e)
-        _save_upload_meta(upload_id, meta)
+        await _save_upload_meta(upload_id, meta)
+        await db.upload_chunks.delete_many({"upload_id": upload_id})
 
 
 @api_router.post("/upload/finalize/{upload_id}")
