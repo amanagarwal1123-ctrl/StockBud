@@ -124,7 +124,9 @@ export default function HistoricalUpload() {
       }
       fetchSummary();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Upload failed');
+      const detail = err.response?.data?.detail || err.message || 'Upload failed';
+      toast.error(detail, { duration: 10000 });
+      console.error('Upload error:', err);
     } finally {
       setUploading(false);
       setUploadProgress('');
