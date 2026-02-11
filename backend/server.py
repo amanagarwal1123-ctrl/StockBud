@@ -20,7 +20,7 @@ import re
 # Thread pool for CPU-bound Excel parsing
 _parse_executor = ThreadPoolExecutor(max_workers=2)
 
-BATCH_INSERT_SIZE = 5000
+BATCH_INSERT_SIZE = 2000
 
 from dotenv import load_dotenv
 ROOT_DIR = Path(__file__).parent
