@@ -735,11 +735,14 @@ async def _process_upload(upload_id: str, meta: dict):
 
         loop = asyncio.get_event_loop()
         records = await loop.run_in_executor(_parse_executor, parse_excel_file, file_content, parse_type)
+        del file_content  # Free memory immediately after parsing
+
+        logger.info(f"[Upload {upload_id}] Parsed {len(records) if records else 0} records")
 
         if not records:
             meta['status'] = 'error'
             meta['error'] = 'No valid records found in file'
-            _save_upload_meta(upload_id, meta)
+            await _save_upload_meta(upload_id, meta)
             return
 
         batch_id = str(uuid.uuid4())
