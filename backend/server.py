@@ -16,6 +16,7 @@ from collections import defaultdict
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 import numpy as np
 import re
+import gc
 
 # Thread pool for CPU-bound Excel parsing
 _parse_executor = ThreadPoolExecutor(max_workers=1)
