@@ -694,29 +694,20 @@ async def upload_chunk(upload_id: str, chunk_index: int, file: UploadFile = File
     return {"received": meta['received'], "chunk_index": chunk_index}
 
 
-@api_router.post("/upload/finalize/{upload_id}")
-async def finalize_chunked_upload(upload_id: str):
-    """Reassemble chunks and process the complete file"""
-    meta = _load_upload_meta(upload_id)
-    if not meta:
-        raise HTTPException(status_code=404, detail="Upload session not found")
-
+async def _process_upload(upload_id: str, meta: dict):
+    """Background task: reassemble chunks, parse, and insert into DB"""
     upload_dir = UPLOAD_TEMP_DIR / upload_id
-
     try:
-        # Reassemble chunks in order
+        # Reassemble chunks
         chunks = sorted(upload_dir.glob("chunk_*"))
-        if not chunks:
-            raise HTTPException(status_code=400, detail="No chunks received")
-
         assembled = bytearray()
         for chunk_path in chunks:
-            assembled.extend(chunk_path.read_bytes())
+            if chunk_path.name != 'meta.json':
+                assembled.extend(chunk_path.read_bytes())
 
         file_content = bytes(assembled)
         file_type = meta['file_type']
 
-        # Map to internal file_type for parser
         parse_type = file_type
         if file_type in ('opening_stock', 'physical_stock', 'master_stock'):
             parse_type = 'opening_stock'
@@ -725,43 +716,39 @@ async def finalize_chunked_upload(upload_id: str):
         elif file_type == 'historical_purchase':
             parse_type = 'purchase'
 
-        # Parse in thread pool
         loop = asyncio.get_event_loop()
         records = await loop.run_in_executor(_parse_executor, parse_excel_file, file_content, parse_type)
 
         if not records:
-            raise HTTPException(status_code=400, detail="No valid records found in file")
+            meta['status'] = 'error'
+            meta['error'] = 'No valid records found in file'
+            _save_upload_meta(upload_id, meta)
+            return
 
         batch_id = str(uuid.uuid4())
         start_date = meta.get('start_date')
         end_date = meta.get('end_date')
 
-        # Route to appropriate handler based on file_type
         if file_type in ('purchase', 'sale', 'branch_transfer'):
             deleted_count = 0
             if start_date and end_date:
-                delete_query = {
+                delete_result = await db.transactions.delete_many({
                     "type": {"$in": [file_type, f"{file_type}_return"]},
                     "date": {"$gte": start_date, "$lte": end_date}
-                }
-                delete_result = await db.transactions.delete_many(delete_query)
+                })
                 deleted_count = delete_result.deleted_count
-
             transactions = _prepare_transactions(records, batch_id)
             await batch_insert(db.transactions, transactions)
-
             message = f"Uploaded {len(transactions)} {file_type} records"
             if deleted_count > 0:
                 message += f" (replaced {deleted_count} existing records from {start_date} to {end_date})"
-
             await save_action(f'upload_{file_type}', message, {
-                'batch_id': batch_id, 'file_type': file_type,
-                'count': len(transactions), 'start_date': start_date, 'end_date': end_date
+                'batch_id': batch_id, 'file_type': file_type, 'count': len(transactions)
             })
             await auto_normalize_stamps()
-
-            return {"success": True, "count": len(transactions), "replaced_count": deleted_count,
-                    "batch_id": batch_id, "message": message}
+            meta['status'] = 'complete'
+            meta['result'] = {"success": True, "count": len(transactions), "replaced_count": deleted_count,
+                              "batch_id": batch_id, "message": message}
 
         elif file_type == 'opening_stock':
             merged_items = {}
@@ -778,14 +765,15 @@ async def finalize_chunked_upload(upload_id: str):
                 merged_items[key]['total'] += record.get('total', 0)
                 if record.get('stamp') and not merged_items[key]['stamp']:
                     merged_items[key]['stamp'] = record['stamp']
-
             await db.opening_stock.delete_many({})
             stock_items = [OpeningStock(**item).model_dump() for item in merged_items.values()]
             await db.opening_stock.insert_many(stock_items)
             total_net_wt = sum(i['net_wt'] for i in stock_items)
             await save_action('upload_opening_stock', f"Uploaded {len(stock_items)} merged opening stock items")
             await auto_normalize_stamps()
-            return {"success": True, "count": len(stock_items), "message": f"Opening stock uploaded: {len(stock_items)} items, {total_net_wt/1000:.3f} kg"}
+            meta['status'] = 'complete'
+            meta['result'] = {"success": True, "count": len(stock_items),
+                              "message": f"Opening stock uploaded: {len(stock_items)} items, {total_net_wt/1000:.3f} kg"}
 
         elif file_type == 'physical_stock':
             verification_date = meta.get('verification_date')
@@ -802,14 +790,14 @@ async def finalize_chunked_upload(upload_id: str):
                 merged_items[key]['pc'] += record.get('pc', 0)
                 if record.get('stamp') and not merged_items[key]['stamp']:
                     merged_items[key]['stamp'] = record['stamp']
-
             await db.physical_stock.delete_many({})
             stock_items = [PhysicalStock(**item).model_dump() for item in merged_items.values()]
             await db.physical_stock.insert_many(stock_items)
             total_net_wt = sum(i['net_wt'] for i in stock_items)
             await auto_normalize_stamps()
-            return {"success": True, "count": len(stock_items),
-                    "message": f"Physical stock uploaded: {len(stock_items)} items, {total_net_wt/1000:.3f} kg"}
+            meta['status'] = 'complete'
+            meta['result'] = {"success": True, "count": len(stock_items),
+                              "message": f"Physical stock uploaded: {len(stock_items)} items, {total_net_wt/1000:.3f} kg"}
 
         elif file_type in ('historical_sale', 'historical_purchase'):
             year = meta.get('year', '2025')
@@ -817,21 +805,67 @@ async def finalize_chunked_upload(upload_id: str):
                 record['batch_id'] = batch_id
                 record['historical_year'] = year
                 record['is_historical'] = True
-
             hist_docs = _prepare_transactions(records, batch_id)
             await batch_insert(db.historical_transactions, hist_docs)
-
             actual_type = 'sale' if file_type == 'historical_sale' else 'purchase'
-            return {"success": True, "count": len(hist_docs), "year": year,
-                    "file_type": actual_type, "batch_id": batch_id,
-                    "message": f"Uploaded {len(hist_docs)} historical {actual_type} records for {year}"}
-
+            meta['status'] = 'complete'
+            meta['result'] = {"success": True, "count": len(hist_docs), "year": year,
+                              "message": f"Uploaded {len(hist_docs)} historical {actual_type} records for {year}"}
         else:
-            raise HTTPException(status_code=400, detail=f"Chunked upload not supported for {file_type}")
+            meta['status'] = 'error'
+            meta['error'] = f"Unsupported file_type: {file_type}"
 
-    finally:
-        # Cleanup temp files
+        _save_upload_meta(upload_id, meta)
+
+    except Exception as e:
+        meta['status'] = 'error'
+        meta['error'] = str(e)
+        _save_upload_meta(upload_id, meta)
+
+
+@api_router.post("/upload/finalize/{upload_id}")
+async def finalize_chunked_upload(upload_id: str, background_tasks: BackgroundTasks):
+    """Reassemble chunks and process the complete file in background"""
+    meta = _load_upload_meta(upload_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="Upload session not found")
+
+    upload_dir = UPLOAD_TEMP_DIR / upload_id
+    chunks = sorted([f for f in upload_dir.glob("chunk_*")])
+    if not chunks:
+        raise HTTPException(status_code=400, detail="No chunks received")
+
+    # Mark as processing and kick off background task
+    meta['status'] = 'processing'
+    _save_upload_meta(upload_id, meta)
+
+    background_tasks.add(_process_upload(upload_id, meta))
+
+    return {"status": "processing", "upload_id": upload_id,
+            "message": "File is being processed. Poll /api/upload/status/{upload_id} for progress."}
+
+
+@api_router.get("/upload/status/{upload_id}")
+async def get_upload_status(upload_id: str):
+    """Poll processing status of a chunked upload"""
+    meta = _load_upload_meta(upload_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="Upload session not found")
+
+    status = meta.get('status', 'unknown')
+
+    if status == 'complete':
+        result = meta.get('result', {})
+        # Cleanup temp files now that processing is done
+        upload_dir = UPLOAD_TEMP_DIR / upload_id
         shutil.rmtree(upload_dir, ignore_errors=True)
+        return {"status": "complete", **result}
+    elif status == 'error':
+        upload_dir = UPLOAD_TEMP_DIR / upload_id
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        return {"status": "error", "detail": meta.get('error', 'Unknown error')}
+    else:
+        return {"status": "processing", "message": "Still processing..."}
 
 
 @api_router.post("/transactions/upload/{file_type}")
