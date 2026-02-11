@@ -2661,8 +2661,10 @@ async def get_unmapped_items():
     """Get all unmapped items from transactions AND historical_transactions"""
     # Get item names from both collections
     transactions = await db.transactions.find({}, {"_id": 0, "item_name": 1}).to_list(10000)
-    historical = await db.historical_transactions.find({}, {"_id": 0, "item_name": 1}).to_list(300000)
-    trans_names = set(t['item_name'] for t in transactions) | set(h['item_name'] for h in historical)
+    historical_names = set()
+    async for doc in db.historical_transactions.find({}, {"_id": 0, "item_name": 1}):
+        historical_names.add(doc['item_name'])
+    trans_names = set(t['item_name'] for t in transactions) | historical_names
     
     # Get all master item names
     master = await db.master_items.find({}, {"_id": 0, "item_name": 1}).to_list(10000)
