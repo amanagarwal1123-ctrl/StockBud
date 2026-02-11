@@ -4501,10 +4501,9 @@ async def seasonal_analysis(current_user: dict = Depends(get_current_user)):
     if not llm_key:
         raise HTTPException(status_code=500, detail="LLM key not configured")
     
-    try:
-        # Gather data via aggregation (memory-efficient, not loading 100k+ docs)
-        # Monthly item sales from current transactions
-        monthly_pipeline = [
+    # Gather data via aggregation (memory-efficient, not loading 100k+ docs)
+    # Monthly item sales from current transactions
+    monthly_pipeline = [
         {"$match": {"type": {"$in": ["sale", "sale_return"]}}},
         {"$project": {"item_name": 1, "net_wt": 1, "month": {"$substr": ["$date", 5, 2]}}},
         {"$group": {"_id": {"item": "$item_name", "month": "$month"}, "total_wt": {"$sum": "$net_wt"}}},
