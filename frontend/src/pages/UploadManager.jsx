@@ -39,7 +39,7 @@ export default function UploadManager() {
         const res = await axios.get(`${API}/upload/status/${uploadId}`, { timeout: 10000 });
         if (res.data.status === 'complete') return res;
         if (res.data.status === 'error') throw new Error(res.data.detail || 'Processing failed on server');
-        setUploadProgress(`Processing on server... (${(attempt + 1) * 5}s elapsed)`);
+        setUploadProgress(res.data.message || `Processing on server... (${(attempt + 1) * 5}s elapsed)`);
       } catch (pollErr) {
         if (pollErr.message?.includes('Processing failed')) throw pollErr;
       }
