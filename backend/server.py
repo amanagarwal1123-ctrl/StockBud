@@ -3897,33 +3897,56 @@ async def upload_historical_data(
 @api_router.get("/historical/summary")
 async def get_historical_summary():
     """Get summary of uploaded historical data"""
-    pipeline = [
-        {"$group": {
-            "_id": {
-                "year": "$historical_year",
-                "type": {"$cond": [
-                    {"$in": ["$type", ["sale", "sale_return"]]}, "sale", "purchase"
-                ]}
-            },
-            "count": {"$sum": 1},
-            "total_net_wt": {"$sum": "$net_wt"}
-        }},
-        {"$sort": {"_id.year": 1, "_id.type": 1}}
-    ]
-    results = await db.historical_transactions.aggregate(pipeline).to_list(100)
-    
-    summary = {}
-    for r in results:
-        year = r['_id']['year']
-        ttype = r['_id']['type']
-        if year not in summary:
-            summary[year] = {}
-        summary[year][ttype] = {
-            'count': r['count'],
-            'total_kg': round(r['total_net_wt'] / 1000, 3)
-        }
-    
-    return {"summary": summary, "years": sorted(summary.keys())}
+    try:
+        pipeline = [
+            {"$match": {"historical_year": {"$ne": None, "$exists": True}}},
+            {"$group": {
+                "_id": {
+                    "year": "$historical_year",
+                    "type": {"$cond": [
+                        {"$in": ["$type", ["sale", "sale_return"]]}, "sale", "purchase"
+                    ]}
+                },
+                "count": {"$sum": 1},
+                "total_net_wt": {"$sum": "$net_wt"}
+            }},
+            {"$sort": {"_id.year": 1, "_id.type": 1}}
+        ]
+        results = await db.historical_transactions.aggregate(pipeline).to_list(100)
+        
+        summary = {}
+        for r in results:
+            year = r['_id'].get('year')
+            if not year:
+                continue
+            ttype = r['_id']['type']
+            if year not in summary:
+                summary[year] = {}
+            total_wt = r.get('total_net_wt', 0) or 0
+            summary[year][ttype] = {
+                'count': r['count'],
+                'total_kg': round(total_wt / 1000, 3)
+            }
+        
+        return {"summary": summary, "years": sorted(summary.keys())}
+    except Exception as e:
+        # Fallback: direct count if aggregation fails
+        logger.error(f"Historical summary aggregation failed: {e}")
+        total = await db.historical_transactions.count_documents({})
+        if total > 0:
+            years = await db.historical_transactions.distinct("historical_year")
+            years = [y for y in years if y]
+            fallback = {}
+            for yr in years:
+                sale_c = await db.historical_transactions.count_documents({"historical_year": yr, "type": {"$in": ["sale", "sale_return"]}})
+                purch_c = await db.historical_transactions.count_documents({"historical_year": yr, "type": {"$in": ["purchase", "purchase_return"]}})
+                fallback[yr] = {}
+                if sale_c:
+                    fallback[yr]["sale"] = {"count": sale_c, "total_kg": 0}
+                if purch_c:
+                    fallback[yr]["purchase"] = {"count": purch_c, "total_kg": 0}
+            return {"summary": fallback, "years": sorted(years)}
+        return {"summary": {}, "years": []}
 
 
 @api_router.delete("/historical/{year}")
