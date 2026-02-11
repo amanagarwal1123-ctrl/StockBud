@@ -3590,23 +3590,36 @@ async def get_historical_profit(
         return {"view": "supplier", "year": year, "data": rows, "total": len(rows)}
 
     if view == "item":
-        item_sales = defaultdict(list)
+        # Group sales by MASTER item name, compute tunch from fine/net_wt
+        master_sale_agg = defaultdict(lambda: {"fine": 0.0, "net_wt": 0.0, "labor": 0.0, "count": 0})
         for s in sales:
-            item_sales[s.get("item_name", "")].append(s)
+            master = resolve(s.get("item_name", ""))
+            nw = s.get("net_wt", 0)
+            if nw < 0.001:
+                continue
+            if not purchase_basis.get(master):
+                continue
+            master_sale_agg[master]["fine"] += s.get("fine", 0)
+            master_sale_agg[master]["net_wt"] += nw
+            master_sale_agg[master]["labor"] += s.get("labor", 0)
+            master_sale_agg[master]["count"] += 1
+
         rows = []
-        for item, slist in item_sales.items():
-            basis = purchase_basis.get(item)
-            if not basis:
+        for master, sa in master_sale_agg.items():
+            basis = purchase_basis[master]
+            snw = sa["net_wt"]
+            if snw < 0.001 or sa["count"] == 0:
                 continue
-            sk, li, wt, cnt = _calc_profit(slist)
-            if cnt == 0:
-                continue
-            total_snw = max(sum(abs(s.get("net_wt", 0)) for s in slist), 0.001)
-            avg_st = sum(float(s.get("tunch", 0) or 0) * abs(s.get("net_wt", 0)) for s in slist) / total_snw
-            rows.append({"name": item, "silver_profit_kg": sk, "labor_profit_inr": li,
-                         "total_sold_kg": wt, "transactions": cnt,
-                         "avg_purchase_tunch": round(basis["avg_tunch"], 2),
-                         "avg_sale_tunch": round(avg_st, 2)})
+            sell_tunch = (sa["fine"] / snw) * 100 if sa["fine"] > 0 else 0
+            buy_tunch = basis["avg_tunch"]
+            silver_g = (sell_tunch - buy_tunch) * snw / 100
+            silver_kg = round(silver_g / 1000, 3)
+            s_lpg = sa["labor"] / snw
+            labor_inr = round((s_lpg - basis["labor_per_gram"]) * snw, 2)
+            rows.append({"name": master, "silver_profit_kg": silver_kg, "labor_profit_inr": labor_inr,
+                         "total_sold_kg": round(snw / 1000, 3), "transactions": sa["count"],
+                         "avg_purchase_tunch": round(buy_tunch, 2),
+                         "avg_sale_tunch": round(sell_tunch, 2)})
         rows.sort(key=lambda x: x["silver_profit_kg"], reverse=True)
         return {"view": "item", "year": year, "data": rows, "total": len(rows)}
 
