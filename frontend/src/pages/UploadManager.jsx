@@ -191,6 +191,7 @@ export default function UploadManager() {
     } finally {
       setUploading(false);
       setUploadProgress('');
+      setUploadPercent(0);
     }
   };
 
