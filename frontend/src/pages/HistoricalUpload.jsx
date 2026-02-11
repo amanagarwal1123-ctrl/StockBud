@@ -36,6 +36,17 @@ export default function HistoricalUpload() {
 
   const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB per chunk
 
+  const pollUploadStatus = async (uploadId) => {
+    for (let attempt = 0; attempt < 120; attempt++) {
+      await new Promise(r => setTimeout(r, 5000));
+      const res = await axios.get(`${API}/upload/status/${uploadId}`, { timeout: 10000 });
+      if (res.data.status === 'complete') return res;
+      if (res.data.status === 'error') throw new Error(res.data.detail || 'Processing failed');
+      setUploadProgress(`Processing on server... (${attempt * 5}s elapsed)`);
+    }
+    throw new Error('Processing timed out');
+  };
+
   const handleUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -45,8 +56,8 @@ export default function HistoricalUpload() {
       const useChunked = file.size > CHUNK_SIZE;
 
       if (useChunked) {
-        // Chunked upload for large files
         const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+        setUploadProgress('Initializing upload...');
         const initRes = await axios.post(`${API}/upload/init`, {
           file_type: fileType === 'sale' ? 'historical_sale' : 'historical_purchase',
           year,
@@ -70,8 +81,9 @@ export default function HistoricalUpload() {
         }
 
         setUploadProgress('Processing file on server...');
-        const finalRes = await axios.post(`${API}/upload/finalize/${uploadId}`, {}, { timeout: 600000 });
-        toast.success(finalRes.data.message);
+        await axios.post(`${API}/upload/finalize/${uploadId}`, {}, { timeout: 30000 });
+        const result = await pollUploadStatus(uploadId);
+        toast.success(result.data.message);
       } else {
         // Direct upload for small files
         const fd = new FormData();
