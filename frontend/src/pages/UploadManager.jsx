@@ -30,10 +30,21 @@ export default function UploadManager() {
 
   const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB per chunk
 
+  const pollUploadStatus = async (uploadId) => {
+    for (let attempt = 0; attempt < 120; attempt++) { // Max ~10 minutes
+      await new Promise(r => setTimeout(r, 5000)); // Poll every 5s
+      const res = await axios.get(`${API}/upload/status/${uploadId}`, { timeout: 10000 });
+      if (res.data.status === 'complete') return res;
+      if (res.data.status === 'error') throw new Error(res.data.detail || 'Processing failed');
+      setUploadProgress(`Processing on server... (${attempt * 5}s elapsed)`);
+    }
+    throw new Error('Processing timed out');
+  };
+
   const uploadChunked = async (fileType, file) => {
     const range = dateRanges[fileType] || {};
     // 1. Init upload session
-    setUploadProgress('Initializing chunked upload...');
+    setUploadProgress('Initializing upload...');
     const initRes = await axios.post(`${API}/upload/init`, {
       file_type: fileType,
       start_date: range.start || null,
@@ -58,10 +69,12 @@ export default function UploadManager() {
       });
     }
 
-    // 3. Finalize — server reassembles and processes
-    setUploadProgress('Processing file on server... This may take a minute for large files.');
-    const finalRes = await axios.post(`${API}/upload/finalize/${uploadId}`, {}, { timeout: 600000 });
-    return finalRes;
+    // 3. Finalize — kicks off background processing
+    setUploadProgress('Processing file on server...');
+    await axios.post(`${API}/upload/finalize/${uploadId}`, {}, { timeout: 30000 });
+
+    // 4. Poll for completion
+    return await pollUploadStatus(uploadId);
   };
 
   const handleFileUpload = async (fileType, file) => {
