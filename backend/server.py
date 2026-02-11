@@ -2182,10 +2182,11 @@ async def get_purchase_ledger():
 
 @api_router.get("/mappings/unmapped")
 async def get_unmapped_items():
-    """Get all unmapped items from transactions"""
-    # Get all transaction item names
+    """Get all unmapped items from transactions AND historical_transactions"""
+    # Get item names from both collections
     transactions = await db.transactions.find({}, {"_id": 0, "item_name": 1}).to_list(10000)
-    trans_names = set(t['item_name'] for t in transactions)
+    historical = await db.historical_transactions.find({}, {"_id": 0, "item_name": 1}).to_list(300000)
+    trans_names = set(t['item_name'] for t in transactions) | set(h['item_name'] for h in historical)
     
     # Get all master item names
     master = await db.master_items.find({}, {"_id": 0, "item_name": 1}).to_list(10000)
