@@ -3441,6 +3441,8 @@ async def get_historical_profit(
     """
     Profit analysis from historical_transactions.
     Views: customer, supplier, item, month, yearly
+    Clubs mapped items together using item_mappings + master_items.
+    Uses fine/net_wt for tunch, raw labor sums for labour rate.
     """
     query = {}
     if year:
@@ -3448,33 +3450,36 @@ async def get_historical_profit(
 
     all_txns = await db.historical_transactions.find(query, {"_id": 0}).to_list(300000)
 
-    purchases = [t for t in all_txns if t["type"] in ("purchase", "purchase_return")]
-    sales = [t for t in all_txns if t["type"] in ("sale", "sale_return")]
+    # Load item mappings: transaction_name -> master_name
+    all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
+    mapping_dict = {m["transaction_name"]: m["master_name"] for m in all_mappings}
 
-    # Build per-item purchase cost basis
-    # Use ONLY purchase records for cost basis (returns reduce qty, not unit cost)
-    item_purchase = defaultdict(lambda: {"wt": 0.0, "tunch_wt": 0.0, "labor_total": 0.0})
+    def resolve(name):
+        return mapping_dict.get(name, name)
+
+    purchases = [t for t in all_txns if t["type"] == "purchase"]
+    sales = [t for t in all_txns if t["type"] == "sale"]
+
+    # Build per-master-item purchase cost basis (using fine, net_wt, labor sums)
+    item_purchase = defaultdict(lambda: {"fine": 0.0, "net_wt": 0.0, "gr_wt": 0.0, "labor": 0.0})
     for p in purchases:
-        if p["type"] != "purchase":
-            continue  # Skip returns — they don't change cost basis
-        item = p.get("item_name", "")
+        master = resolve(p.get("item_name", ""))
         nw = p.get("net_wt", 0)
         if nw < 0.001:
             continue
-        tunch = float(p.get("tunch", 0) or 0)
-        labor = p.get("labor", 0)
-        item_purchase[item]["wt"] += nw
-        item_purchase[item]["tunch_wt"] += tunch * nw
-        item_purchase[item]["labor_total"] += labor
+        item_purchase[master]["fine"] += p.get("fine", 0)
+        item_purchase[master]["net_wt"] += nw
+        item_purchase[master]["gr_wt"] += p.get("gr_wt", 0)
+        item_purchase[master]["labor"] += p.get("labor", 0)
 
     purchase_basis = {}
     for item, d in item_purchase.items():
-        w = d["wt"]
-        if w < 0.001:
+        nw = d["net_wt"]
+        if nw < 0.001:
             continue
         purchase_basis[item] = {
-            "avg_tunch": d["tunch_wt"] / w,
-            "labor_per_gram": d["labor_total"] / w,
+            "avg_tunch": (d["fine"] / nw) * 100 if d["fine"] > 0 else 0,
+            "labor_per_gram": d["labor"] / nw,
         }
 
     def _calc_profit(sale_list):
@@ -3483,23 +3488,20 @@ async def get_historical_profit(
         total_wt_kg = 0.0
         count = 0
         for s in sale_list:
-            if s["type"] != "sale":
-                continue  # Skip returns for profit calc
-            item = s.get("item_name", "")
-            basis = purchase_basis.get(item)
+            master = resolve(s.get("item_name", ""))
+            basis = purchase_basis.get(master)
             if not basis:
                 continue
             nw = s.get("net_wt", 0)
             if nw < 0.001:
                 continue
-            sale_tunch = float(s.get("tunch", 0) or 0)
+            sale_fine = s.get("fine", 0)
+            sale_tunch = (sale_fine / nw) * 100 if sale_fine > 0 and nw > 0 else float(s.get("tunch", 0) or 0)
             sale_labor = s.get("labor", 0)
 
-            # Silver profit = (sale_tunch - buy_tunch) * net_wt / 100
             silver_g = (sale_tunch - basis["avg_tunch"]) * nw / 100
             silver_kg += silver_g / 1000
 
-            # Labour profit = (sale_labor/gram - buy_labor/gram) * net_wt
             sale_labor_pg = sale_labor / nw
             labor_inr += (sale_labor_pg - basis["labor_per_gram"]) * nw
 
