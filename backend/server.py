@@ -749,10 +749,6 @@ async def _process_upload(upload_id: str, meta: dict):
         # Delete chunks from MongoDB immediately to free DB space
         await db.upload_chunks.delete_many({"upload_id": upload_id})
 
-        # Read file from disk (Pandas reads from disk more efficiently than from bytes)
-        with open(tmp_path, 'rb') as f:
-            file_content = f.read()
-
         file_type = meta['file_type']
 
         parse_type = file_type
@@ -763,9 +759,10 @@ async def _process_upload(upload_id: str, meta: dict):
         elif file_type == 'historical_purchase':
             parse_type = 'purchase'
 
+        # Pass file PATH (not bytes) so Pandas reads directly from disk
+        # This avoids loading the entire file into Python memory (prevents OOM on large files)
         loop = asyncio.get_event_loop()
-        records = await loop.run_in_executor(_parse_executor, parse_excel_file, file_content, parse_type)
-        del file_content  # Free memory immediately after parsing
+        records = await loop.run_in_executor(_parse_executor, parse_excel_file, tmp_path, parse_type)
 
         logger.info(f"[Upload {upload_id}] Parsed {len(records) if records else 0} records")
 
