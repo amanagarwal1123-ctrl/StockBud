@@ -116,7 +116,7 @@ export default function HistoricalUpload() {
           rows: batchRows,
           batch_index: b,
           is_final: isFinal,
-        }, { timeout: 120000 });
+        }, { timeout: 0 });
 
         totalInserted = res.data.total_so_far || totalInserted + (res.data.batch_records || 0);
 
