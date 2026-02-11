@@ -3537,28 +3537,26 @@ async def get_historical_profit(
         for p in purchases:
             supplier = p.get("party_name", "Unknown") or "Unknown"
             item = p.get("item_name", "")
-            nw = abs(p.get("net_wt", 0))
-            if nw < 0.001:
+            nw = p.get("net_wt", 0)
+            if abs(nw) < 0.001:
                 continue
             tunch = float(p.get("tunch", 0) or 0)
-            labor = abs(p.get("labor", 0))
-            sign = -1 if p["type"] == "purchase_return" else 1
-            supplier_items[supplier][item]["wt"] += nw * sign
-            supplier_items[supplier][item]["tunch_wt"] += tunch * nw * sign
-            supplier_items[supplier][item]["labor_wt"] += labor * sign
+            labor = p.get("labor", 0)
+            supplier_items[supplier][item]["wt"] += nw
+            supplier_items[supplier][item]["tunch_wt"] += tunch * nw
+            supplier_items[supplier][item]["labor_wt"] += labor
 
         item_sale_agg = defaultdict(lambda: {"wt": 0.0, "tunch_wt": 0.0, "labor_wt": 0.0})
         for s in sales:
             item = s.get("item_name", "")
-            nw = abs(s.get("net_wt", 0))
-            if nw < 0.001:
+            nw = s.get("net_wt", 0)
+            if abs(nw) < 0.001:
                 continue
             tunch = float(s.get("tunch", 0) or 0)
-            labor = abs(s.get("labor", 0))
-            sign = -1 if s["type"] == "sale_return" else 1
-            item_sale_agg[item]["wt"] += nw * sign
-            item_sale_agg[item]["tunch_wt"] += tunch * nw * sign
-            item_sale_agg[item]["labor_wt"] += labor * sign
+            labor = s.get("labor", 0)
+            item_sale_agg[item]["wt"] += nw
+            item_sale_agg[item]["tunch_wt"] += tunch * nw
+            item_sale_agg[item]["labor_wt"] += labor
 
         rows = []
         for supplier, items in supplier_items.items():
@@ -3567,19 +3565,19 @@ async def get_historical_profit(
             sp_wt = 0.0
             item_count = 0
             for item, pd_ in items.items():
-                pw = abs(pd_["wt"])
-                if pw < 0.001:
+                pw = pd_["wt"]
+                if abs(pw) < 0.001:
                     continue
                 sa = item_sale_agg.get(item)
                 if not sa or abs(sa["wt"]) < 0.001:
                     continue
-                p_tunch = pd_["tunch_wt"] / pw
-                s_tunch = sa["tunch_wt"] / abs(sa["wt"])
-                p_lpg = pd_["labor_wt"] / pw
-                s_lpg = sa["labor_wt"] / abs(sa["wt"])
-                sp_silver += (s_tunch - p_tunch) * pw / 100 / 1000
-                sp_labor += (s_lpg - p_lpg) * pw
-                sp_wt += pw / 1000
+                p_tunch = abs(pd_["tunch_wt"] / pw)
+                s_tunch = abs(sa["tunch_wt"] / sa["wt"])
+                p_lpg = abs(pd_["labor_wt"] / pw)
+                s_lpg = abs(sa["labor_wt"] / sa["wt"])
+                sp_silver += (s_tunch - p_tunch) * abs(pw) / 100 / 1000
+                sp_labor += (s_lpg - p_lpg) * abs(pw)
+                sp_wt += abs(pw) / 1000
                 item_count += 1
             if item_count > 0:
                 rows.append({"name": supplier, "silver_profit_kg": round(sp_silver, 3),
