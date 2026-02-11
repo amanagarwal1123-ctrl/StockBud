@@ -3939,6 +3939,13 @@ async def get_historical_profit(
         elif t == "sale":
             sales.append(doc)
 
+    # Load item mappings: transaction_name -> master_name
+    all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
+    mapping_dict = {m["transaction_name"]: m["master_name"] for m in all_mappings}
+
+    def resolve(name):
+        return mapping_dict.get(name, name)
+
     # Build per-master-item purchase cost basis (using fine, net_wt, labor sums)
     item_purchase = defaultdict(lambda: {"fine": 0.0, "net_wt": 0.0, "gr_wt": 0.0, "labor": 0.0})
     for p in purchases:
