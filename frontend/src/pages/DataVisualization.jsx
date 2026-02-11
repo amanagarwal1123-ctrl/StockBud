@@ -121,7 +121,7 @@ export default function DataVisualization() {
       const token = localStorage.getItem('token');
       const res = await axios.post(`${API}/ai/seasonal-analysis`, {}, {
         headers: { Authorization: `Bearer ${token}` },
-        timeout: 120000
+        timeout: 0
       });
       setSeasonalData(res.data);
       toast.success('Seasonal analysis complete');
