@@ -751,6 +751,9 @@ async def _process_upload(upload_id: str, meta: dict):
         # Delete chunks from MongoDB immediately to free DB space
         await db.upload_chunks.delete_many({"upload_id": upload_id})
 
+        meta['progress'] = f'Parsing Excel file ({total_bytes // 1024} KB)...'
+        await _save_upload_meta(upload_id, meta)
+
         file_type = meta['file_type']
 
         parse_type = file_type
