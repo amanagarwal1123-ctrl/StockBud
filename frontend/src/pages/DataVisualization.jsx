@@ -187,10 +187,13 @@ export default function DataVisualization() {
       </Card>
 
       <Tabs defaultValue="sales" className="space-y-4">
-        <TabsList className="grid grid-cols-3 sm:grid-cols-6 w-full">
+        <TabsList className="grid grid-cols-4 sm:grid-cols-7 w-full">
           <TabsTrigger value="sales" data-testid="tab-sales">Sales</TabsTrigger>
           <TabsTrigger value="purchases" data-testid="tab-purchases">Purchases</TabsTrigger>
           <TabsTrigger value="health" data-testid="tab-health">Health</TabsTrigger>
+          <TabsTrigger value="profit" data-testid="tab-profit">
+            <IndianRupee className="h-3.5 w-3.5 mr-1" />Profit
+          </TabsTrigger>
           <TabsTrigger value="seasonal" data-testid="tab-seasonal">
             <Sun className="h-3.5 w-3.5 mr-1" />Seasonal
           </TabsTrigger>
