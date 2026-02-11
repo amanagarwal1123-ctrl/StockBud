@@ -315,9 +315,15 @@ export default function UploadManager() {
       </div>
 
       {uploading && uploadProgress && (
-        <div className="flex items-center gap-3 p-4 rounded-lg bg-primary/10 border border-primary/20" data-testid="upload-progress">
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          <span className="text-sm font-medium">{uploadProgress}</span>
+        <div className="space-y-2 p-4 rounded-lg bg-primary/10 border border-primary/20" data-testid="upload-progress">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              <span className="text-sm font-medium">{uploadProgress}</span>
+            </div>
+            {uploadPercent > 0 && <span className="text-sm font-mono font-bold text-primary">{uploadPercent}%</span>}
+          </div>
+          {uploadPercent > 0 && <Progress value={uploadPercent} className="h-2" />}
         </div>
       )}
 
