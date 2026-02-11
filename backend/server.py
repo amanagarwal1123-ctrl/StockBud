@@ -3931,24 +3931,24 @@ async def get_historical_profit(
         if year:
             query["historical_year"] = year
 
-    # Only fetch fields needed for profit calculation (saves ~70% memory vs full docs)
-    projection = {"_id": 0, "type": 1, "item_name": 1, "net_wt": 1, "fine": 1, 
-                  "labor": 1, "gr_wt": 1, "party_name": 1, "date": 1, "tunch": 1, "total_amount": 1}
-    
-    # Load purchases and sales separately with projection
-    purchases = await db.historical_transactions.find(
-        {**query, "type": {"$in": ["purchase", "purchase_return"]}}, projection
-    ).to_list(50000)
-    sales = await db.historical_transactions.find(
-        {**query, "type": {"$in": ["sale", "sale_return"]}}, projection
-    ).to_list(None)
+        # Only fetch fields needed for profit calculation (saves ~70% memory vs full docs)
+        projection = {"_id": 0, "type": 1, "item_name": 1, "net_wt": 1, "fine": 1, 
+                      "labor": 1, "gr_wt": 1, "party_name": 1, "date": 1, "tunch": 1, "total_amount": 1}
+        
+        # Load purchases and sales separately with projection
+        purchases = await db.historical_transactions.find(
+            {**query, "type": {"$in": ["purchase", "purchase_return"]}}, projection
+        ).to_list(50000)
+        sales = await db.historical_transactions.find(
+            {**query, "type": {"$in": ["sale", "sale_return"]}}, projection
+        ).to_list(None)
 
-    # Load item mappings: transaction_name -> master_name
-    all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
-    mapping_dict = {m["transaction_name"]: m["master_name"] for m in all_mappings}
+        # Load item mappings: transaction_name -> master_name
+        all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
+        mapping_dict = {m["transaction_name"]: m["master_name"] for m in all_mappings}
 
-    def resolve(name):
-        return mapping_dict.get(name, name)
+        def resolve(name):
+            return mapping_dict.get(name, name)
 
     # Build per-master-item purchase cost basis (using fine, net_wt, labor sums)
     item_purchase = defaultdict(lambda: {"fine": 0.0, "net_wt": 0.0, "gr_wt": 0.0, "labor": 0.0})
