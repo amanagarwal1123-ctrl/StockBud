@@ -4129,12 +4129,7 @@ async def get_historical_profit(
                          "total_sold_kg": wt, "transactions": cnt})
         return {"view": "month", "year": year, "data": rows, "total": len(rows)}
 
-        raise HTTPException(status_code=400, detail="Invalid view. Use: customer, supplier, item, month, yearly")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Historical profit analysis failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+    raise HTTPException(status_code=400, detail="Invalid view. Use: customer, supplier, item, month, yearly")
 
 
 # ==================== DATA VISUALIZATION ====================
