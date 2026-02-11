@@ -22,6 +22,12 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 - Upload metadata and chunks stored in **MongoDB** (`upload_sessions` + `upload_chunks` collections) — works across multiple pods in deployment
 - Supports: sale, purchase, branch_transfer, opening_stock, physical_stock, historical_sale, historical_purchase
 
+## Historical Profit Analysis (Feb 11, 2026)
+- Endpoint: `GET /api/analytics/historical-profit?year=2025&view={yearly|customer|supplier|item|month}`
+- Views: Yearly summary (6 KPI cards), Customer-wise (chart + table), Supplier-wise, Item-wise (with tunch comparison), Month-wise (bar + line charts)
+- Frontend: New "Profit" tab in Data Visualization page with year/view selectors, charts, sortable/searchable/paginated tables
+- Uses only `historical_transactions` — zero impact on current operations
+
 ## Historical Summary Fix (Feb 11, 2026)  
 - Aggregation groups sale+sale_return as "sale", purchase+purchase_return as "purchase"
 
