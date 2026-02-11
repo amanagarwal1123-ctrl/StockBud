@@ -3452,28 +3452,29 @@ async def get_historical_profit(
     sales = [t for t in all_txns if t["type"] in ("sale", "sale_return")]
 
     # Build per-item purchase cost basis
-    # Note: net_wt is already negative for returns, positive for purchases
-    item_purchase = defaultdict(lambda: {"wt": 0.0, "tunch_wt": 0.0, "labor_wt": 0.0})
+    # Use ONLY purchase records for cost basis (returns reduce qty, not unit cost)
+    item_purchase = defaultdict(lambda: {"wt": 0.0, "tunch_wt": 0.0, "labor_total": 0.0})
     for p in purchases:
+        if p["type"] != "purchase":
+            continue  # Skip returns — they don't change cost basis
         item = p.get("item_name", "")
         nw = p.get("net_wt", 0)
-        if abs(nw) < 0.001:
+        if nw < 0.001:
             continue
         tunch = float(p.get("tunch", 0) or 0)
         labor = p.get("labor", 0)
-        # Data already has correct sign: positive for purchase, negative for return
         item_purchase[item]["wt"] += nw
         item_purchase[item]["tunch_wt"] += tunch * nw
-        item_purchase[item]["labor_wt"] += labor
+        item_purchase[item]["labor_total"] += labor
 
     purchase_basis = {}
     for item, d in item_purchase.items():
         w = d["wt"]
-        if abs(w) < 0.001:
+        if w < 0.001:
             continue
         purchase_basis[item] = {
-            "avg_tunch": abs(d["tunch_wt"] / w),
-            "labor_per_gram": abs(d["labor_wt"] / w),
+            "avg_tunch": d["tunch_wt"] / w,
+            "labor_per_gram": d["labor_total"] / w,
         }
 
     def _calc_profit(sale_list):
@@ -3482,22 +3483,24 @@ async def get_historical_profit(
         total_wt_kg = 0.0
         count = 0
         for s in sale_list:
+            if s["type"] != "sale":
+                continue  # Skip returns for profit calc
             item = s.get("item_name", "")
             basis = purchase_basis.get(item)
             if not basis:
                 continue
-            nw = s.get("net_wt", 0)  # already signed: positive for sale, negative for return
-            if abs(nw) < 0.001:
+            nw = s.get("net_wt", 0)
+            if nw < 0.001:
                 continue
             sale_tunch = float(s.get("tunch", 0) or 0)
             sale_labor = s.get("labor", 0)
 
-            # Silver profit = (sale_tunch - buy_tunch) * net_wt / 100  (net_wt carries the sign)
+            # Silver profit = (sale_tunch - buy_tunch) * net_wt / 100
             silver_g = (sale_tunch - basis["avg_tunch"]) * nw / 100
             silver_kg += silver_g / 1000
 
             # Labour profit = (sale_labor/gram - buy_labor/gram) * net_wt
-            sale_labor_pg = abs(sale_labor) / abs(nw)
+            sale_labor_pg = sale_labor / nw
             labor_inr += (sale_labor_pg - basis["labor_per_gram"]) * nw
 
             total_wt_kg += nw / 1000
