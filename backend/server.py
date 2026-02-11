@@ -24,7 +24,7 @@ BATCH_INSERT_SIZE = 2000
 
 from dotenv import load_dotenv
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+load_dotenv(ROOT_DIR / '.env', override=False)
 
 # Import shared modules
 from database import db, client
