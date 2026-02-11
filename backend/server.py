@@ -4507,7 +4507,7 @@ async def seasonal_analysis(current_user: dict = Depends(get_current_user)):
         {"$group": {"_id": {"item": "$item_name", "month": "$month"}, "total_wt": {"$sum": "$net_wt"}}},
     ]
     monthly_item_sales = defaultdict(lambda: defaultdict(float))
-    async for doc in db.transactions.aggregate(monthly_pipeline, allowDiskUse=True):
+    async for doc in db.transactions.aggregate(monthly_pipeline):
         item = doc['_id']['item']
         try:
             month = int(doc['_id']['month'])
@@ -4521,7 +4521,7 @@ async def seasonal_analysis(current_user: dict = Depends(get_current_user)):
         {"$project": {"item_name": 1, "net_wt": 1, "month": {"$substr": ["$date", 5, 2]}}},
         {"$group": {"_id": {"item": "$item_name", "month": "$month"}, "total_wt": {"$sum": "$net_wt"}}},
     ]
-    async for doc in db.historical_transactions.aggregate(hist_pipeline, allowDiskUse=True):
+    async for doc in db.historical_transactions.aggregate(hist_pipeline):
         item = doc['_id']['item']
         try:
             month = int(doc['_id']['month'])
@@ -4707,7 +4707,7 @@ async def update_buffers_with_seasonal(current_user: dict = Depends(get_current_
             {"$project": {"item_name": 1, "net_wt": 1, "month": {"$substr": ["$date", 5, 2]}}},
             {"$group": {"_id": {"item": "$item_name", "month": "$month"}, "total_wt": {"$sum": "$net_wt"}}},
         ]
-        async for doc in coll.aggregate(pipeline, allowDiskUse=True):
+        async for doc in coll.aggregate(pipeline):
             item = doc['_id']['item']
             try:
                 month = int(doc['_id']['month'])
