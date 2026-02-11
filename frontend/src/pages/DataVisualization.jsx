@@ -66,7 +66,7 @@ export default function DataVisualization() {
         start_date: startDate || null,
         end_date: endDate || null,
         question: insightQuestion || null
-      });
+      }, { timeout: 0 });
       setInsights(res.data.insights);
     } catch (e) {
       toast.error(e.response?.data?.detail || 'AI insights failed');
