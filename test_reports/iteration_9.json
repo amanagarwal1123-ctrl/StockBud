@@ -1,0 +1,99 @@
+{
+  "summary": "Tested new client-side Excel parsing architecture for historical uploads. All 19 backend API tests passed. Frontend UI (HistoricalUpload and UploadManager pages) verified working correctly with all data-testid attributes present. The new POST /api/upload/client-batch endpoint correctly handles historical_sale and historical_purchase file types with proper column mapping and KG-to-grams weight conversion.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_client_batch_upload.py",
+    "/app/test_reports/pytest/client_batch_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "✓ _parse_raw_rows() function correctly applies column mapping for both sale and purchase types",
+    "✓ KG to grams conversion (* 1000) applied to all weight fields (net_wt, gr_wt, fine, dia_wt, stn_wt)",
+    "✓ Type mapping: 'S' -> 'sale', 'S_RETURN' -> 'sale_return', 'P' -> 'purchase', 'P_RETURN' -> 'purchase_return'",
+    "✓ Client-batch endpoint correctly accumulates records across multiple batches using batch_id",
+    "✓ is_final flag properly returns total count and completion message",
+    "✓ Frontend uses SheetJS (xlsx library) for client-side Excel parsing - no server-side OOM risk",
+    "✓ Progress bar shows real-time batch progress during upload",
+    "✓ BATCH_SIZE of 2000 rows is used consistently in frontend",
+    "✓ Old /api/transactions/upload/{file_type} endpoints still work (return 422 without file, not 404)"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_client_batch_upload.py"
+  ],
+  "success_rate": {
+    "backend": "100% (19/19 tests passed)",
+    "frontend": "100% (All UI elements verified)"
+  },
+  "test_credentials": {
+    "username": "admin",
+    "password": "admin123"
+  },
+  "seed_data_creation": "Test records created with batch_id prefix 'TEST_' for identification during tests",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Client-batch upload feature fully tested. Key endpoints: POST /api/upload/client-batch (new architecture), POST /api/transactions/upload/{file_type} (old endpoints still work). Historical data is stored in historical_transactions collection. Frontend HistoricalUpload page uses SheetJS to parse Excel client-side and sends 2000-row batches. The summary endpoint at GET /api/historical/summary shows uploaded data by year.",
+  "verified_features": {
+    "POST /api/upload/client-batch": {
+      "historical_sale_file_type": "PASSED",
+      "historical_purchase_file_type": "PASSED",
+      "sale_column_mapping": "PASSED - Item Name, Type S/S_RETURN, Party Name, Gold Std., Tunch, Fine, Total, Date",
+      "purchase_column_mapping": "PASSED - Item Name, Type P/P_RETURN, Party Name, Net.Wt, Tunch, Wstg, Fine, Total, Rate",
+      "multi_batch_accumulation": "PASSED - 3 batches with same batch_id correctly accumulated 6 records",
+      "is_final_flag": "PASSED - returns total_so_far and message",
+      "weight_conversion_kg_to_grams": "PASSED - multiplied by 1000"
+    },
+    "GET /api/historical/summary": {
+      "returns_years_and_summary": "PASSED",
+      "reflects_uploaded_data": "PASSED"
+    },
+    "old_endpoints": {
+      "POST /api/transactions/upload/sale": "PASSED - returns 422 without file",
+      "POST /api/transactions/upload/purchase": "PASSED - returns 422 without file"
+    },
+    "frontend": {
+      "HistoricalUpload_page_loads": "PASSED",
+      "data_testid_historical_upload_page": "PRESENT",
+      "data_testid_historical_upload_form": "PRESENT",
+      "data_testid_hist_year": "PRESENT",
+      "data_testid_hist_type": "PRESENT",
+      "data_testid_hist_file": "PRESENT",
+      "data_testid_hist_start_date": "PRESENT",
+      "data_testid_hist_end_date": "PRESENT",
+      "data_testid_upload_progress_section": "PRESENT (shows during upload)",
+      "data_testid_upload_progress_bar": "PRESENT (shows during upload)",
+      "data_testid_upload_percent": "PRESENT (shows during upload)",
+      "UploadManager_page_loads": "PASSED",
+      "UploadManager_tabs": "PASSED - Master Stock, Transactions, Branch Transfer, Physical Stock",
+      "data_testid_upload_page": "PRESENT",
+      "data_testid_upload_title": "PRESENT",
+      "data_testid_upload_zone_purchase": "PRESENT",
+      "data_testid_upload_zone_sale": "PRESENT"
+    }
+  },
+  "production_evidence": {
+    "historical_data_uploaded": "2025: 203,487 sale records (38,852.626 kg), 8,323 purchase records (39,094.84 kg)",
+    "client_side_parsing_working": "SheetJS library imports and parses Excel in browser"
+  },
+  "api_endpoints_tested": [
+    "GET /api/health - 200 OK",
+    "POST /api/upload/client-batch (historical_sale) - 200 OK with correct response",
+    "POST /api/upload/client-batch (historical_purchase) - 200 OK with correct response",
+    "POST /api/upload/client-batch (missing file_type) - 400 Bad Request",
+    "POST /api/upload/client-batch (missing batch_id) - 400 Bad Request",
+    "POST /api/upload/client-batch (empty rows) - 400 Bad Request",
+    "POST /api/upload/client-batch (empty rows + is_final) - 200 OK with totals",
+    "POST /api/upload/client-batch (multi-batch accumulation) - 200 OK, 6 records total",
+    "GET /api/historical/summary - 200 OK with years and summary",
+    "POST /api/transactions/upload/sale - 422 (validates endpoint exists)",
+    "POST /api/transactions/upload/purchase - 422 (validates endpoint exists)"
+  ],
+  "test_execution_time": "2.36 seconds for 19 backend tests"
+}
