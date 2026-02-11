@@ -48,9 +48,16 @@ app = FastAPI()
 
 @app.on_event("startup")
 async def create_upload_indexes():
-    """Create indexes for chunked upload collections (idempotent)"""
+    """Create indexes for chunked upload collections and clean stale tasks"""
     await db.upload_sessions.create_index("upload_id", unique=True)
     await db.upload_chunks.create_index([("upload_id", 1), ("chunk_index", 1)], unique=True)
+    # Mark any orphaned "processing" tasks as failed (from OOM/crash during previous run)
+    stale = await db.upload_sessions.update_many(
+        {"status": "processing"},
+        {"$set": {"status": "error", "error": "Server restarted during processing. Please re-upload."}}
+    )
+    if stale.modified_count > 0:
+        logger.info(f"Cleaned {stale.modified_count} stale upload tasks on startup")
 
 # Health check endpoints
 @app.get("/health")
