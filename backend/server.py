@@ -111,7 +111,17 @@ def _safe_int(val, default=0):
 def _read_excel_once(file_content: bytes):
     """Read Excel file ONCE and detect header row efficiently"""
     df = pd.read_excel(BytesIO(file_content), header=None, dtype=str)
-    
+    return _detect_header_and_clean(df)
+
+
+def _read_excel_from_path(file_path: str):
+    """Read Excel file from disk path (memory-efficient for large files)"""
+    df = pd.read_excel(file_path, header=None, dtype=str, engine='openpyxl')
+    return _detect_header_and_clean(df)
+
+
+def _detect_header_and_clean(df):
+    """Detect header row and clean up DataFrame"""
     header_row_idx = None
     search_limit = min(20, len(df))
     for idx in range(search_limit):
