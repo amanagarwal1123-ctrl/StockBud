@@ -833,18 +833,18 @@ async def _process_upload(upload_id: str, meta: dict):
 @api_router.post("/upload/finalize/{upload_id}")
 async def finalize_chunked_upload(upload_id: str, background_tasks: BackgroundTasks):
     """Reassemble chunks and process the complete file in background"""
-    meta = _load_upload_meta(upload_id)
+    meta = await _load_upload_meta(upload_id)
     if not meta:
         raise HTTPException(status_code=404, detail="Upload session not found")
 
-    upload_dir = UPLOAD_TEMP_DIR / upload_id
-    chunks = sorted([f for f in upload_dir.glob("chunk_*")])
-    if not chunks:
+    # Verify chunks exist in MongoDB
+    chunk_count = await db.upload_chunks.count_documents({"upload_id": upload_id})
+    if chunk_count == 0:
         raise HTTPException(status_code=400, detail="No chunks received")
 
     # Mark as processing and kick off background task
     meta['status'] = 'processing'
-    _save_upload_meta(upload_id, meta)
+    await _save_upload_meta(upload_id, meta)
 
     background_tasks.add_task(_process_upload, upload_id, meta)
 
