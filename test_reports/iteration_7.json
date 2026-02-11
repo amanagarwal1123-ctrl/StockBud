@@ -1,0 +1,114 @@
+{
+  "summary": "Tested Historical Profit Analysis and Chunked Upload features. All 18 backend tests passed (100%). Frontend verified - Profit tab in Visualization page shows all 5 views (Yearly, Customer, Supplier, Item, Month) with charts, tables, pagination, and search functionality.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_historical_profit_and_upload.py",
+    "/app/test_reports/pytest/historical_profit_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Historical profit endpoint handles ~211k records efficiently",
+    "All 5 views (yearly, customer, supplier, item, month) return proper data structure",
+    "Chunked upload init stores metadata in MongoDB upload_sessions collection",
+    "Upload status correctly returns 404 for non-existent sessions",
+    "Dashboard stats (GET /api/stats) correctly excludes historical_transactions data (shows 3989 vs 200k+)"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_historical_profit_and_upload.py"
+  ],
+  "success_rate": {
+    "backend": "100% (18/18 tests passed)",
+    "frontend": "100% (All UI elements verified)"
+  },
+  "test_credentials": {
+    "admin": "admin/admin123"
+  },
+  "seed_data_creation": "None - used existing historical data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Historical profit analysis fully tested. Key endpoints: GET /api/analytics/historical-profit?year=2025&view={yearly|customer|supplier|item|month}. Chunked upload uses MongoDB-backed storage (upload_sessions and upload_chunks collections). Dashboard stats exclude historical_transactions collection.",
+  "verified_features": {
+    "backend_endpoints": {
+      "GET /api/analytics/historical-profit?year=2025&view=yearly": {
+        "returns_summary_cards_data": "PASSED",
+        "fields": ["silver_profit_kg", "labor_profit_inr", "total_sold_kg", "total_transactions", "total_sale_records", "total_purchase_records"]
+      },
+      "GET /api/analytics/historical-profit?year=2025&view=customer": {
+        "returns_customer_breakdown": "PASSED",
+        "sorted_by_silver_profit": "PASSED",
+        "total_customers": 5966
+      },
+      "GET /api/analytics/historical-profit?year=2025&view=supplier": {
+        "returns_supplier_breakdown": "PASSED",
+        "total_suppliers": 139
+      },
+      "GET /api/analytics/historical-profit?year=2025&view=item": {
+        "returns_item_breakdown": "PASSED",
+        "includes_avg_tunch": "PASSED",
+        "total_items": 371
+      },
+      "GET /api/analytics/historical-profit?year=2025&view=month": {
+        "returns_monthly_data": "PASSED",
+        "sorted_chronologically": "PASSED",
+        "total_months": 13
+      },
+      "POST /api/upload/init": {
+        "returns_upload_id": "PASSED",
+        "supports_file_types": ["sale", "purchase", "historical_sale", "historical_purchase"]
+      },
+      "GET /api/upload/status/{id}": {
+        "returns_404_for_nonexistent": "PASSED",
+        "returns_status_for_existing": "PASSED"
+      },
+      "POST /api/upload/finalize/{id}": {
+        "returns_404_for_nonexistent": "PASSED",
+        "returns_400_without_chunks": "PASSED"
+      },
+      "GET /api/stats": {
+        "excludes_historical_data": "PASSED",
+        "total_transactions_value": 3989
+      }
+    },
+    "frontend_ui": {
+      "profit_tab_in_visualization": "PASSED - Located under Data Visualization page",
+      "year_selector": "PASSED - data-testid='hp-year'",
+      "view_selector": "PASSED - data-testid='hp-view' with 5 options",
+      "yearly_summary_cards": "PASSED - 6 cards with Silver Profit, Labour Profit, Total Sold, Transactions Matched, Sale Records, Purchase Records",
+      "customer_wise_view": "PASSED - Bar chart + sortable table with pagination (5966 customers)",
+      "supplier_wise_view": "PASSED - Bar chart + table with Purchased(kg) and Items count",
+      "item_wise_view": "PASSED - Bar chart + table with Buy Tunch and Sell Tunch columns",
+      "month_wise_view": "PASSED - Two charts (bar + line) + data table",
+      "pagination": "PASSED - Prev/Next buttons, shows 'Showing X-Y of Z'",
+      "search_filter": "PASSED - data-testid='hp-search' filters table in Customer/Supplier/Item views"
+    }
+  },
+  "api_endpoints_tested": [
+    "GET /api/health - 200 OK",
+    "GET /api/analytics/historical-profit?year=2025&view=yearly - 200 OK",
+    "GET /api/analytics/historical-profit?view=yearly (no year) - 200 OK",
+    "GET /api/analytics/historical-profit?year=2025&view=customer - 200 OK",
+    "GET /api/analytics/historical-profit?year=2025&view=supplier - 200 OK",
+    "GET /api/analytics/historical-profit?year=2025&view=item - 200 OK",
+    "GET /api/analytics/historical-profit?year=2025&view=month - 200 OK",
+    "GET /api/analytics/historical-profit?view=invalid - 400 Bad Request",
+    "POST /api/upload/init (sale) - 200 OK returns upload_id",
+    "POST /api/upload/init (purchase) - 200 OK returns upload_id",
+    "POST /api/upload/init (historical_sale) - 200 OK returns upload_id",
+    "POST /api/upload/init (historical_purchase) - 200 OK returns upload_id",
+    "POST /api/upload/init (invalid) - 400 Bad Request",
+    "GET /api/upload/status/nonexistent - 404 Not Found",
+    "GET /api/upload/status/{valid_id} - 200 OK with status field",
+    "POST /api/upload/finalize/nonexistent - 404 Not Found",
+    "POST /api/upload/finalize/{id} without chunks - 400 Bad Request",
+    "GET /api/stats - 200 OK (total_transactions: 3989, excludes historical)"
+  ],
+  "test_execution_time": "8.19 seconds for 18 backend tests"
+}
