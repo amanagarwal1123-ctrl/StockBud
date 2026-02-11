@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
+import * as XLSX from 'xlsx';
 import { FileUp, Trash2, Loader2, Calendar } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,14 +16,34 @@ import { toast } from 'sonner';
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
+const BATCH_SIZE = 2000; // rows per batch sent to server
+
+// Detect the header row in sheet data (mirrors server logic)
+function detectHeaderAndData(sheetData) {
+  const headerKeywords = ['item name', 'particular', 'party name', 'lnarr'];
+  let headerIdx = 0;
+
+  const limit = Math.min(20, sheetData.length);
+  for (let i = 0; i < limit; i++) {
+    const rowStr = (sheetData[i] || []).map(v => String(v ?? '').toLowerCase()).join(' ');
+    if (headerKeywords.some(kw => rowStr.includes(kw))) {
+      headerIdx = i;
+      break;
+    }
+  }
+
+  const headers = (sheetData[headerIdx] || []).map(v => String(v ?? '').trim());
+  const dataRows = sheetData.slice(headerIdx + 1);
+  return { headers, dataRows };
+}
+
 export default function HistoricalUpload() {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [uploadPhase, setUploadPhase] = useState(''); // 'chunking' | 'processing'
-  const [chunkProgress, setChunkProgress] = useState(0); // 0-100
-  const [chunkDetail, setChunkDetail] = useState('');
-  const [serverMessage, setServerMessage] = useState('');
+  const [phase, setPhase] = useState(''); // 'reading' | 'sending' | ''
+  const [progressPct, setProgressPct] = useState(0);
+  const [progressMsg, setProgressMsg] = useState('');
   const [year, setYear] = useState('2025');
   const [fileType, setFileType] = useState('sale');
   const [startDate, setStartDate] = useState('');
@@ -38,102 +59,73 @@ export default function HistoricalUpload() {
     finally { setLoading(false); }
   };
 
-  const CHUNK_SIZE = 200 * 1024;
-
-  const pollUploadStatus = async (uploadId) => {
-    for (let attempt = 0; attempt < 180; attempt++) {
-      await new Promise(r => setTimeout(r, 5000));
-      try {
-        const res = await axios.get(`${API}/upload/status/${uploadId}`, { timeout: 10000 });
-        if (res.data.status === 'complete') return res;
-        if (res.data.status === 'error') throw new Error(res.data.detail || 'Processing failed on server');
-        setServerMessage(res.data.message || `Processing... (${(attempt + 1) * 5}s)`);
-      } catch (pollErr) {
-        if (pollErr.message?.includes('Processing failed')) throw pollErr;
-      }
-    }
-    throw new Error('Processing timed out after 15 minutes');
-  };
-
-  const uploadChunkWithRetry = async (url, formData, chunkIdx, totalChunks, maxRetries = 3) => {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const res = await axios.post(url, formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-          timeout: 60000,
-        });
-        return res;
-      } catch (err) {
-        const status = err.response?.status || 'network error';
-        const detail = err.response?.data?.detail || err.message;
-        if (attempt === maxRetries) {
-          throw new Error(`Chunk ${chunkIdx + 1}/${totalChunks} failed after ${maxRetries} retries (${status}: ${detail})`);
-        }
-        setChunkDetail(`Chunk ${chunkIdx + 1}/${totalChunks} - retry ${attempt}/${maxRetries}...`);
-        await new Promise(r => setTimeout(r, 2000 * attempt));
-      }
-    }
-  };
-
-  const handleUpload = async (e) => {
+  const handleUpload = useCallback(async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
     setUploading(true);
-    setUploadPhase('chunking');
-    setChunkProgress(0);
-    setChunkDetail('');
-    setServerMessage('');
+    setPhase('reading');
+    setProgressPct(0);
+    setProgressMsg('Reading Excel file in browser...');
+
     try {
-      const token = localStorage.getItem('token');
-      const useChunked = file.size > CHUNK_SIZE;
+      // ---- STEP 1: Read & parse Excel in the browser ----
+      const arrayBuffer = await file.arrayBuffer();
       const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+      setProgressMsg(`Parsing ${fileSizeMB} MB Excel file...`);
 
-      if (useChunked) {
-        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-        setChunkDetail(`Initializing upload (${fileSizeMB} MB, ${totalChunks} chunks)...`);
-        const initRes = await axios.post(`${API}/upload/init`, {
-          file_type: fileType === 'sale' ? 'historical_sale' : 'historical_purchase',
-          year,
-          start_date: startDate || null,
-          end_date: endDate || null,
-          total_chunks: totalChunks,
-        }, { timeout: 30000 });
-        const uploadId = initRes.data.upload_id;
+      const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: false, cellText: true, raw: false });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
 
-        for (let i = 0; i < totalChunks; i++) {
-          const pct = Math.round(((i + 1) / totalChunks) * 100);
-          setChunkProgress(pct);
-          setChunkDetail(`Uploading chunk ${i + 1} of ${totalChunks} (${pct}%)`);
-          const start = i * CHUNK_SIZE;
-          const end = Math.min(start + CHUNK_SIZE, file.size);
-          const chunk = file.slice(start, end);
-          const fd = new FormData();
-          fd.append('file', chunk, `chunk_${i}`);
-          await uploadChunkWithRetry(
-            `${API}/upload/chunk/${uploadId}?chunk_index=${i}`,
-            fd, i, totalChunks
-          );
-        }
+      // Convert to 2D array (all strings)
+      const sheetData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
 
-        setUploadPhase('processing');
-        setServerMessage('All chunks uploaded. Server is processing the file...');
-        await axios.post(`${API}/upload/finalize/${uploadId}`, {}, { timeout: 30000 });
-        const result = await pollUploadStatus(uploadId);
-        toast.success(result.data.message);
-      } else {
-        setChunkDetail(`Uploading file (${fileSizeMB} MB)...`);
-        setChunkProgress(50);
-        const fd = new FormData();
-        fd.append('file', file);
-        let url = `${API}/historical/upload?file_type=${fileType}&year=${year}`;
-        if (startDate) url += `&start_date=${startDate}`;
-        if (endDate) url += `&end_date=${endDate}`;
-        const res = await axios.post(url, fd, {
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
-          timeout: 600000,
-        });
-        toast.success(res.data.message);
+      const { headers, dataRows } = detectHeaderAndData(sheetData);
+      const totalRows = dataRows.length;
+
+      if (totalRows === 0) {
+        toast.error('No data rows found in the file');
+        return;
       }
+
+      setProgressMsg(`Found ${totalRows.toLocaleString()} rows. Sending to server...`);
+      setPhase('sending');
+
+      // ---- STEP 2: Send rows to server in batches ----
+      const batchId = crypto.randomUUID ? crypto.randomUUID() : `batch-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const totalBatches = Math.ceil(totalRows / BATCH_SIZE);
+      const apiFileType = fileType === 'sale' ? 'historical_sale' : 'historical_purchase';
+      let totalInserted = 0;
+
+      for (let b = 0; b < totalBatches; b++) {
+        const start = b * BATCH_SIZE;
+        const end = Math.min(start + BATCH_SIZE, totalRows);
+        const batchRows = dataRows.slice(start, end);
+        const isFinal = (b === totalBatches - 1);
+        const pct = Math.round(((b + 1) / totalBatches) * 100);
+
+        setProgressPct(pct);
+        setProgressMsg(`Sending batch ${b + 1} of ${totalBatches} (${pct}%) — ${totalInserted.toLocaleString()} records saved`);
+
+        const res = await axios.post(`${API}/upload/client-batch`, {
+          file_type: apiFileType,
+          batch_id: batchId,
+          year,
+          headers,
+          rows: batchRows,
+          batch_index: b,
+          is_final: isFinal,
+        }, { timeout: 120000 });
+
+        totalInserted = res.data.total_so_far || totalInserted + (res.data.batch_records || 0);
+
+        if (isFinal && res.data.message) {
+          toast.success(res.data.message);
+        }
+      }
+
+      setProgressMsg(`Done! ${totalInserted.toLocaleString()} records uploaded.`);
       fetchSummary();
     } catch (err) {
       const detail = err.response?.data?.detail || err.message || 'Upload failed';
@@ -141,13 +133,12 @@ export default function HistoricalUpload() {
       console.error('Upload error:', err);
     } finally {
       setUploading(false);
-      setUploadPhase('');
-      setChunkProgress(0);
-      setChunkDetail('');
-      setServerMessage('');
+      setPhase('');
+      setProgressPct(0);
+      setProgressMsg('');
       e.target.value = '';
     }
-  };
+  }, [fileType, year]);
 
   const handleDelete = async (yr) => {
     if (!window.confirm(`Delete all historical data for ${yr}?`)) return;
@@ -225,24 +216,24 @@ export default function HistoricalUpload() {
 
           {uploading && (
             <div className="space-y-3 pt-2" data-testid="upload-progress-section">
-              {uploadPhase === 'chunking' && (
+              {phase === 'reading' && (
+                <div className="flex items-center gap-2 text-blue-600 text-sm">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>{progressMsg}</span>
+                </div>
+              )}
+              {phase === 'sending' && (
                 <>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-blue-700 font-medium flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Uploading file...
+                      Uploading records...
                     </span>
-                    <span className="text-blue-600 font-mono font-bold" data-testid="upload-percent">{chunkProgress}%</span>
+                    <span className="text-blue-600 font-mono font-bold" data-testid="upload-percent">{progressPct}%</span>
                   </div>
-                  <Progress value={chunkProgress} className="h-3" data-testid="upload-progress-bar" />
-                  <p className="text-xs text-muted-foreground" data-testid="upload-chunk-detail">{chunkDetail}</p>
+                  <Progress value={progressPct} className="h-3" data-testid="upload-progress-bar" />
+                  <p className="text-xs text-muted-foreground" data-testid="upload-detail">{progressMsg}</p>
                 </>
-              )}
-              {uploadPhase === 'processing' && (
-                <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 rounded-md px-3 py-2" data-testid="upload-processing-status">
-                  <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
-                  <span>{serverMessage || 'Server is processing the file...'}</span>
-                </div>
               )}
             </div>
           )}
