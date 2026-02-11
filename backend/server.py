@@ -468,20 +468,21 @@ def parse_excel_streaming(file_path: str, file_type: str) -> List[Dict]:
         elif file_type == 'sale':
             item_col = _resolve_col(cols_set, ['Item Name', 'Particular', 'item name'])
             type_col = _resolve_col(cols_set, ['Type', 'type'])
-            tag_col = _resolve_col(cols_set, ['Tag.No.', 'Tag No', 'tag no'])
-            wt_rs_col = _resolve_col(cols_set, ['Wt/Rs', 'Wt Rs'])
+            tag_col = _resolve_col(cols_set, ['Lbr. On Tag.No.', 'Tag.No.', 'Tag No'])
+            on_col = _resolve_col(cols_set, ['On', 'on'])
             total_col = _resolve_col(cols_set, ['Total', 'total'])
             tunch_col = _resolve_col(cols_set, ['Tunch', 'tunch'])
-            wstg_col = _resolve_col(cols_set, ['Wstg', 'wstg'])
             date_col = _resolve_col(cols_set, ['Date', 'date'])
             refno_col = _resolve_col(cols_set, ['Refno', 'refno', 'Ref No'])
             party_col = _resolve_col(cols_set, ['Party Name', 'party name', 'Party'])
             stamp_col = _resolve_col(cols_set, ['Stamp', 'stamp'])
             gr_col = _resolve_col(cols_set, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'])
-            net_col = _resolve_col(cols_set, ['Gold Std.', 'Net.Wt.', 'Net Wt', 'Gold Std'])
-            fine_col = _resolve_col(cols_set, ['Fine', 'Sil.Fine', 'Sil Fine', 'Silver Fine'])
-            rate_col = _resolve_col(cols_set, ['Rate', 'rate'])
-            pc_col = _resolve_col(cols_set, ['Pc', 'pc', 'Pieces'])
+            net_col = _resolve_col(cols_set, ['Gold Std.', 'Net.Wt.', 'Net Wt'])
+            fine_col = _resolve_col(cols_set, ['Fine', 'Sil.Fine', 'Sil Fine'])
+            dia_col = _resolve_col(cols_set, ['Dia.Wt.', 'Dia Wt'])
+            stn_col = _resolve_col(cols_set, ['Stn.Wt.', 'Stn Wt'])
+            taxable_col = _resolve_col(cols_set, ['Taxable Val.', 'Taxable Value'])
+            pc_col = _resolve_col(cols_set, ['Pc', 'pc'])
 
             col_map = {name: idx for idx, name in enumerate(header_names)}
 
@@ -502,16 +503,14 @@ def parse_excel_streaming(file_path: str, file_type: str) -> List[Dict]:
                     continue
                 tag_no = _safe_str(_get(tag_col))
                 labor_val, labor_on = parse_labor_value(tag_no)
-                wt_rs = _get(wt_rs_col)
-                if wt_rs and str(wt_rs).replace('.', '').isdigit():
-                    labor_val = float(wt_rs)
+                on_val = _get(on_col)
+                if on_val and str(on_val).replace('.', '').isdigit():
+                    labor_val = float(on_val)
                 total_labor = _safe_float(_get(total_col))
-                tunch_v = _safe_float(_get(tunch_col))
-                wstg_v = _safe_float(_get(wstg_col))
-                sale_tunch = tunch_v + wstg_v
+                sale_tunch = _safe_float(_get(tunch_col))
                 records.append({
-                    'date': normalize_date(_get(date_col) or ''),
                     'type': 'sale' if trans_type in ('S', 'SALE') else 'sale_return',
+                    'date': normalize_date(_get(date_col) or ''),
                     'refno': _safe_str(_get(refno_col)),
                     'party_name': _safe_str(_get(party_col)),
                     'item_name': item_name,
@@ -522,8 +521,11 @@ def parse_excel_streaming(file_path: str, file_type: str) -> List[Dict]:
                     'fine': _safe_float(_get(fine_col)) * KG_TO_GRAMS,
                     'labor': total_labor,
                     'labor_on': labor_on,
+                    'dia_wt': _safe_float(_get(dia_col)) * KG_TO_GRAMS,
+                    'stn_wt': _safe_float(_get(stn_col)) * KG_TO_GRAMS,
                     'tunch': str(sale_tunch),
-                    'rate': _safe_float(_get(rate_col)),
+                    'total_amount': total_labor,
+                    'taxable_value': _safe_float(_get(taxable_col)),
                     'total_pc': _safe_int(_get(pc_col)),
                 })
         elif file_type == 'opening_stock':
