@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -18,7 +19,10 @@ export default function HistoricalUpload() {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState('');
+  const [uploadPhase, setUploadPhase] = useState(''); // 'chunking' | 'processing'
+  const [chunkProgress, setChunkProgress] = useState(0); // 0-100
+  const [chunkDetail, setChunkDetail] = useState('');
+  const [serverMessage, setServerMessage] = useState('');
   const [year, setYear] = useState('2025');
   const [fileType, setFileType] = useState('sale');
   const [startDate, setStartDate] = useState('');
@@ -34,7 +38,7 @@ export default function HistoricalUpload() {
     finally { setLoading(false); }
   };
 
-  const CHUNK_SIZE = 200 * 1024; // 200KB — safe for any deployment proxy
+  const CHUNK_SIZE = 200 * 1024;
 
   const pollUploadStatus = async (uploadId) => {
     for (let attempt = 0; attempt < 180; attempt++) {
@@ -43,10 +47,9 @@ export default function HistoricalUpload() {
         const res = await axios.get(`${API}/upload/status/${uploadId}`, { timeout: 10000 });
         if (res.data.status === 'complete') return res;
         if (res.data.status === 'error') throw new Error(res.data.detail || 'Processing failed on server');
-        setUploadProgress(`Processing on server... (${(attempt + 1) * 5}s elapsed)`);
+        setServerMessage(res.data.message || `Processing... (${(attempt + 1) * 5}s)`);
       } catch (pollErr) {
         if (pollErr.message?.includes('Processing failed')) throw pollErr;
-        // Network hiccup during polling — retry
       }
     }
     throw new Error('Processing timed out after 15 minutes');
@@ -66,7 +69,7 @@ export default function HistoricalUpload() {
         if (attempt === maxRetries) {
           throw new Error(`Chunk ${chunkIdx + 1}/${totalChunks} failed after ${maxRetries} retries (${status}: ${detail})`);
         }
-        setUploadProgress(`Chunk ${chunkIdx + 1}/${totalChunks} retry ${attempt}/${maxRetries}...`);
+        setChunkDetail(`Chunk ${chunkIdx + 1}/${totalChunks} - retry ${attempt}/${maxRetries}...`);
         await new Promise(r => setTimeout(r, 2000 * attempt));
       }
     }
@@ -76,13 +79,18 @@ export default function HistoricalUpload() {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
+    setUploadPhase('chunking');
+    setChunkProgress(0);
+    setChunkDetail('');
+    setServerMessage('');
     try {
       const token = localStorage.getItem('token');
       const useChunked = file.size > CHUNK_SIZE;
+      const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
 
       if (useChunked) {
         const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-        setUploadProgress(`Initializing upload (${totalChunks} chunks)...`);
+        setChunkDetail(`Initializing upload (${fileSizeMB} MB, ${totalChunks} chunks)...`);
         const initRes = await axios.post(`${API}/upload/init`, {
           file_type: fileType === 'sale' ? 'historical_sale' : 'historical_purchase',
           year,
@@ -93,7 +101,9 @@ export default function HistoricalUpload() {
         const uploadId = initRes.data.upload_id;
 
         for (let i = 0; i < totalChunks; i++) {
-          setUploadProgress(`Uploading chunk ${i + 1} of ${totalChunks} (${Math.round((i / totalChunks) * 100)}%)...`);
+          const pct = Math.round(((i + 1) / totalChunks) * 100);
+          setChunkProgress(pct);
+          setChunkDetail(`Uploading chunk ${i + 1} of ${totalChunks} (${pct}%)`);
           const start = i * CHUNK_SIZE;
           const end = Math.min(start + CHUNK_SIZE, file.size);
           const chunk = file.slice(start, end);
@@ -105,12 +115,14 @@ export default function HistoricalUpload() {
           );
         }
 
-        setUploadProgress('All chunks uploaded. Processing file on server...');
+        setUploadPhase('processing');
+        setServerMessage('All chunks uploaded. Server is processing the file...');
         await axios.post(`${API}/upload/finalize/${uploadId}`, {}, { timeout: 30000 });
         const result = await pollUploadStatus(uploadId);
         toast.success(result.data.message);
       } else {
-        // Direct upload for small files
+        setChunkDetail(`Uploading file (${fileSizeMB} MB)...`);
+        setChunkProgress(50);
         const fd = new FormData();
         fd.append('file', file);
         let url = `${API}/historical/upload?file_type=${fileType}&year=${year}`;
@@ -129,7 +141,10 @@ export default function HistoricalUpload() {
       console.error('Upload error:', err);
     } finally {
       setUploading(false);
-      setUploadProgress('');
+      setUploadPhase('');
+      setChunkProgress(0);
+      setChunkDetail('');
+      setServerMessage('');
       e.target.value = '';
     }
   };
@@ -167,7 +182,6 @@ export default function HistoricalUpload() {
         </AlertDescription>
       </Alert>
 
-      {/* Upload Form */}
       <Card data-testid="historical-upload-form">
         <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center gap-2">
@@ -208,15 +222,33 @@ export default function HistoricalUpload() {
               <Input type="file" accept=".xlsx,.xls" onChange={handleUpload} disabled={uploading} data-testid="hist-file" />
             </div>
           </div>
+
           {uploading && (
-            <div className="flex items-center gap-2 text-blue-600 text-sm">
-              <Loader2 className="h-4 w-4 animate-spin" />{uploadProgress || 'Uploading and parsing...'}
+            <div className="space-y-3 pt-2" data-testid="upload-progress-section">
+              {uploadPhase === 'chunking' && (
+                <>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-blue-700 font-medium flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Uploading file...
+                    </span>
+                    <span className="text-blue-600 font-mono font-bold" data-testid="upload-percent">{chunkProgress}%</span>
+                  </div>
+                  <Progress value={chunkProgress} className="h-3" data-testid="upload-progress-bar" />
+                  <p className="text-xs text-muted-foreground" data-testid="upload-chunk-detail">{chunkDetail}</p>
+                </>
+              )}
+              {uploadPhase === 'processing' && (
+                <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 rounded-md px-3 py-2" data-testid="upload-processing-status">
+                  <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
+                  <span>{serverMessage || 'Server is processing the file...'}</span>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Uploaded Data Summary */}
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Uploaded Historical Data</CardTitle>
