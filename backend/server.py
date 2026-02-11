@@ -363,6 +363,215 @@ def parse_excel_file(file_content, file_type: str) -> List[Dict]:
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error parsing Excel file: {str(e)}")
 
+
+def parse_excel_streaming(file_path: str, file_type: str) -> List[Dict]:
+    """Memory-efficient Excel parser using openpyxl read-only/streaming mode.
+    Avoids loading entire DataFrame into memory — critical for large files on constrained pods."""
+    from openpyxl import load_workbook
+    try:
+        wb = load_workbook(file_path, read_only=True, data_only=True)
+        ws = wb.active
+
+        # Step 1: Read first 20 rows to detect header
+        header_names = None
+        header_row_idx = None
+        first_rows = []
+        for i, row in enumerate(ws.iter_rows(max_row=25, values_only=True)):
+            str_vals = [str(v).strip() if v is not None else '' for v in row]
+            first_rows.append(str_vals)
+            if header_row_idx is None:
+                row_str = ' '.join(s.lower() for s in str_vals if s)
+                if 'item name' in row_str or 'particular' in row_str or 'party name' in row_str or 'lnarr' in row_str:
+                    header_row_idx = i
+                    header_names = str_vals
+
+        if header_names is None:
+            header_names = first_rows[0] if first_rows else []
+            header_row_idx = 0
+
+        wb.close()
+
+        # Step 2: Re-open and stream all rows after header, converting each to a dict
+        wb = load_workbook(file_path, read_only=True, data_only=True)
+        ws = wb.active
+        records = []
+        KG_TO_GRAMS = 1000
+
+        # Build column name set for resolver
+        cols_set = set(header_names)
+
+        if file_type == 'purchase':
+            item_col = _resolve_col(cols_set, ['Item Name', 'Particular', 'item name'])
+            type_col = _resolve_col(cols_set, ['Type', 'type'])
+            tag_col = _resolve_col(cols_set, ['Tag.No.', 'Tag No', 'tag no'])
+            wt_rs_col = _resolve_col(cols_set, ['Wt/Rs', 'Wt Rs'])
+            total_col = _resolve_col(cols_set, ['Total', 'total'])
+            tunch_col = _resolve_col(cols_set, ['Tunch', 'tunch'])
+            wstg_col = _resolve_col(cols_set, ['Wstg', 'wstg'])
+            date_col = _resolve_col(cols_set, ['Date', 'date'])
+            refno_col = _resolve_col(cols_set, ['Refno', 'refno', 'Ref No'])
+            party_col = _resolve_col(cols_set, ['Party Name', 'party name', 'Party'])
+            stamp_col = _resolve_col(cols_set, ['Stamp', 'stamp'])
+            gr_col = _resolve_col(cols_set, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'])
+            net_col = _resolve_col(cols_set, ['Net.Wt.', 'Net Wt'])
+            fine_col = _resolve_col(cols_set, ['Fine', 'Sil.Fine', 'Sil Fine', 'Silver Fine'])
+            dia_col = _resolve_col(cols_set, ['Dia.Wt.', 'Dia Wt'])
+            stn_col = _resolve_col(cols_set, ['Stn.Wt.', 'Stn Wt'])
+            rate_col = _resolve_col(cols_set, ['Rate', 'rate'])
+            pc_col = _resolve_col(cols_set, ['Pc', 'pc', 'Pieces'])
+
+            col_map = {name: idx for idx, name in enumerate(header_names)}
+
+            for row_num, row in enumerate(ws.iter_rows(values_only=True)):
+                if row_num <= header_row_idx:
+                    continue
+                def _get(col_name):
+                    if not col_name or col_name not in col_map:
+                        return None
+                    idx = col_map[col_name]
+                    return str(row[idx]).strip() if idx < len(row) and row[idx] is not None else None
+
+                item_name = _safe_str(_get(item_col))
+                if len(item_name) < 2:
+                    continue
+                trans_type = _safe_str(_get(type_col), 'P').upper()
+                if trans_type.isdigit():
+                    continue
+                tag_no = _safe_str(_get(tag_col))
+                labor_val, labor_on = parse_labor_value(tag_no)
+                wt_rs = _get(wt_rs_col)
+                if wt_rs and str(wt_rs).replace('.', '').isdigit():
+                    labor_val = float(wt_rs)
+                total_labor = _safe_float(_get(total_col))
+                tunch_v = _safe_float(_get(tunch_col))
+                wstg_v = _safe_float(_get(wstg_col))
+                purchase_tunch = tunch_v + wstg_v
+                records.append({
+                    'date': normalize_date(_get(date_col) or ''),
+                    'type': 'purchase' if trans_type in ('P', 'PURCHASE') else 'purchase_return',
+                    'refno': _safe_str(_get(refno_col)),
+                    'party_name': _safe_str(_get(party_col)),
+                    'item_name': item_name,
+                    'stamp': normalize_stamp(_get(stamp_col) or ''),
+                    'tag_no': tag_no,
+                    'gr_wt': _safe_float(_get(gr_col)) * KG_TO_GRAMS,
+                    'net_wt': _safe_float(_get(net_col)) * KG_TO_GRAMS,
+                    'fine': _safe_float(_get(fine_col)) * KG_TO_GRAMS,
+                    'labor': total_labor,
+                    'labor_on': labor_on,
+                    'dia_wt': _safe_float(_get(dia_col)) * KG_TO_GRAMS,
+                    'stn_wt': _safe_float(_get(stn_col)) * KG_TO_GRAMS,
+                    'tunch': str(purchase_tunch),
+                    'rate': _safe_float(_get(rate_col)),
+                    'total_pc': _safe_int(_get(pc_col)),
+                })
+        elif file_type == 'sale':
+            item_col = _resolve_col(cols_set, ['Item Name', 'Particular', 'item name'])
+            type_col = _resolve_col(cols_set, ['Type', 'type'])
+            tag_col = _resolve_col(cols_set, ['Tag.No.', 'Tag No', 'tag no'])
+            wt_rs_col = _resolve_col(cols_set, ['Wt/Rs', 'Wt Rs'])
+            total_col = _resolve_col(cols_set, ['Total', 'total'])
+            tunch_col = _resolve_col(cols_set, ['Tunch', 'tunch'])
+            wstg_col = _resolve_col(cols_set, ['Wstg', 'wstg'])
+            date_col = _resolve_col(cols_set, ['Date', 'date'])
+            refno_col = _resolve_col(cols_set, ['Refno', 'refno', 'Ref No'])
+            party_col = _resolve_col(cols_set, ['Party Name', 'party name', 'Party'])
+            stamp_col = _resolve_col(cols_set, ['Stamp', 'stamp'])
+            gr_col = _resolve_col(cols_set, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'])
+            net_col = _resolve_col(cols_set, ['Gold Std.', 'Net.Wt.', 'Net Wt', 'Gold Std'])
+            fine_col = _resolve_col(cols_set, ['Fine', 'Sil.Fine', 'Sil Fine', 'Silver Fine'])
+            rate_col = _resolve_col(cols_set, ['Rate', 'rate'])
+            pc_col = _resolve_col(cols_set, ['Pc', 'pc', 'Pieces'])
+
+            col_map = {name: idx for idx, name in enumerate(header_names)}
+
+            for row_num, row in enumerate(ws.iter_rows(values_only=True)):
+                if row_num <= header_row_idx:
+                    continue
+                def _get(col_name):
+                    if not col_name or col_name not in col_map:
+                        return None
+                    idx = col_map[col_name]
+                    return str(row[idx]).strip() if idx < len(row) and row[idx] is not None else None
+
+                item_name = _safe_str(_get(item_col))
+                if len(item_name) < 2:
+                    continue
+                trans_type = _safe_str(_get(type_col), 'S').upper()
+                if trans_type.isdigit():
+                    continue
+                tag_no = _safe_str(_get(tag_col))
+                labor_val, labor_on = parse_labor_value(tag_no)
+                wt_rs = _get(wt_rs_col)
+                if wt_rs and str(wt_rs).replace('.', '').isdigit():
+                    labor_val = float(wt_rs)
+                total_labor = _safe_float(_get(total_col))
+                tunch_v = _safe_float(_get(tunch_col))
+                wstg_v = _safe_float(_get(wstg_col))
+                sale_tunch = tunch_v + wstg_v
+                records.append({
+                    'date': normalize_date(_get(date_col) or ''),
+                    'type': 'sale' if trans_type in ('S', 'SALE') else 'sale_return',
+                    'refno': _safe_str(_get(refno_col)),
+                    'party_name': _safe_str(_get(party_col)),
+                    'item_name': item_name,
+                    'stamp': normalize_stamp(_get(stamp_col) or ''),
+                    'tag_no': tag_no,
+                    'gr_wt': _safe_float(_get(gr_col)) * KG_TO_GRAMS,
+                    'net_wt': _safe_float(_get(net_col)) * KG_TO_GRAMS,
+                    'fine': _safe_float(_get(fine_col)) * KG_TO_GRAMS,
+                    'labor': total_labor,
+                    'labor_on': labor_on,
+                    'tunch': str(sale_tunch),
+                    'rate': _safe_float(_get(rate_col)),
+                    'total_pc': _safe_int(_get(pc_col)),
+                })
+        elif file_type == 'opening_stock':
+            item_col = _resolve_col(cols_set, ['Item Name', 'Particular', 'item name'])
+            stamp_col = _resolve_col(cols_set, ['Stamp', 'stamp'])
+            unit_col = _resolve_col(cols_set, ['Unit', 'unit'])
+            gr_col = _resolve_col(cols_set, ['Gr.Wt.', 'Gr Wt', 'Gross Wt', 'Gross Weight'])
+            net_col = _resolve_col(cols_set, ['Net.Wt.', 'Net Wt', 'Net Weight'])
+            fine_col = _resolve_col(cols_set, ['Fine', 'Sil.Fine', 'Silver Fine'])
+            pc_col = _resolve_col(cols_set, ['Pc', 'pc', 'Pieces', 'Pcs'])
+            rate_col = _resolve_col(cols_set, ['Rate', 'rate'])
+            total_col = _resolve_col(cols_set, ['Total', 'total', 'Amount'])
+
+            col_map = {name: idx for idx, name in enumerate(header_names)}
+
+            for row_num, row in enumerate(ws.iter_rows(values_only=True)):
+                if row_num <= header_row_idx:
+                    continue
+                def _get(col_name):
+                    if not col_name or col_name not in col_map:
+                        return None
+                    idx = col_map[col_name]
+                    return str(row[idx]).strip() if idx < len(row) and row[idx] is not None else None
+
+                item_name = _safe_str(_get(item_col))
+                if len(item_name) < 2:
+                    continue
+                records.append({
+                    'item_name': item_name,
+                    'stamp': normalize_stamp(_get(stamp_col) or ''),
+                    'unit': _safe_str(_get(unit_col)),
+                    'pc': _safe_int(_get(pc_col)),
+                    'gr_wt': _safe_float(_get(gr_col)) * KG_TO_GRAMS,
+                    'net_wt': _safe_float(_get(net_col)) * KG_TO_GRAMS,
+                    'fine': _safe_float(_get(fine_col)) * KG_TO_GRAMS,
+                    'labor_wt': 0.0,
+                    'labor_rs': 0.0,
+                    'rate': _safe_float(_get(rate_col)),
+                    'total': _safe_float(_get(total_col)),
+                })
+
+        wb.close()
+        logger.info(f"[Streaming parser] Parsed {len(records)} {file_type} records from {file_path}")
+        return records
+    except Exception as e:
+        logger.error(f"[Streaming parser] Error: {e}", exc_info=True)
+        return []
+
 # ==================== UPLOAD ENDPOINTS ====================
 
 @api_router.post("/opening-stock/upload")
