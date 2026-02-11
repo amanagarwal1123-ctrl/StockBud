@@ -3355,7 +3355,10 @@ async def categorize_items(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Admin only")
     
     # Get all sales transactions
-    sales = await db.transactions.find({"type": {"$in": ["sale", "sale_return"]}}, {"_id": 0}).to_list(50000)
+    sales = await db.transactions.find(
+        {"type": {"$in": ["sale", "sale_return"]}}, 
+        {"_id": 0, "item_name": 1, "net_wt": 1, "date": 1, "type": 1}
+    ).to_list(50000)
     
     # Get all master items for the full item list
     master_items = await db.master_items.find({}, {"_id": 0}).to_list(10000)
