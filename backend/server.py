@@ -631,23 +631,20 @@ def _prepare_transactions(records: list, batch_id: str) -> list:
     return docs
 
 
-# ==================== CHUNKED UPLOAD ====================
-UPLOAD_TEMP_DIR = Path(tempfile.gettempdir()) / "stockbud_uploads"
-UPLOAD_TEMP_DIR.mkdir(exist_ok=True)
+# ==================== CHUNKED UPLOAD (MongoDB-backed for multi-pod deployments) ====================
 
+async def _save_upload_meta(upload_id: str, meta: dict):
+    """Persist upload metadata to MongoDB (works across all pods)"""
+    await db.upload_sessions.update_one(
+        {"upload_id": upload_id},
+        {"$set": {**meta, "upload_id": upload_id}},
+        upsert=True
+    )
 
-def _save_upload_meta(upload_id: str, meta: dict):
-    """Persist upload metadata to disk (survives process restarts)"""
-    meta_path = UPLOAD_TEMP_DIR / upload_id / "meta.json"
-    meta_path.write_text(json.dumps(meta))
-
-
-def _load_upload_meta(upload_id: str) -> dict:
-    """Load upload metadata from disk"""
-    meta_path = UPLOAD_TEMP_DIR / upload_id / "meta.json"
-    if not meta_path.exists():
-        return None
-    return json.loads(meta_path.read_text())
+async def _load_upload_meta(upload_id: str) -> dict:
+    """Load upload metadata from MongoDB"""
+    doc = await db.upload_sessions.find_one({"upload_id": upload_id}, {"_id": 0})
+    return doc
 
 
 @api_router.post("/upload/init")
