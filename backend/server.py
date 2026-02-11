@@ -4695,6 +4695,11 @@ Be specific with numbers. Format as actionable bullet points."""
         "ai_insights": ai_response,
         "festival_calendar": {k: v['label'] for k, v in HINDU_CALENDAR_SEASONS.items()}
     }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Seasonal analysis failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Seasonal analysis failed: {str(e)}")
 
 
 @api_router.post("/ai/update-buffers-seasonal")
