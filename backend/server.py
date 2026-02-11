@@ -975,10 +975,10 @@ async def _process_upload(upload_id: str, meta: dict):
         elif file_type == 'historical_purchase':
             parse_type = 'purchase'
 
-        # Pass file PATH (not bytes) so Pandas reads directly from disk
-        # This avoids loading the entire file into Python memory (prevents OOM on large files)
+        # Use streaming parser for large file uploads (avoids loading entire file into memory)
+        # This is critical for deployed environments with limited memory
         loop = asyncio.get_event_loop()
-        records = await loop.run_in_executor(_parse_executor, parse_excel_file, tmp_path, parse_type)
+        records = await loop.run_in_executor(_parse_executor, parse_excel_streaming, tmp_path, parse_type)
 
         logger.info(f"[Upload {upload_id}] Parsed {len(records) if records else 0} records")
 
