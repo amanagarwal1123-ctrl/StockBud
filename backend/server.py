@@ -832,7 +832,6 @@ async def finalize_chunked_upload(upload_id: str):
     finally:
         # Cleanup temp files
         shutil.rmtree(upload_dir, ignore_errors=True)
-        _active_uploads.pop(upload_id, None)
 
 
 @api_router.post("/transactions/upload/{file_type}")
