@@ -27,16 +27,21 @@ export default function HistoricalProfit({ years = [] }) {
   const [year, setYear] = useState(years[0] || '2025');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState('silver_profit_kg');
   const [sortAsc, setSortAsc] = useState(false);
 
   const fetchProfit = useCallback(async () => {
     setLoading(true);
+    setError('');
     try {
-      const res = await axios.get(`${API}/analytics/historical-profit?year=${year}&view=${view}`);
+      const res = await axios.get(`${API}/analytics/historical-profit?year=${year}&view=${view}`, { timeout: 0 });
       setData(res.data);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      setError(e.response?.data?.detail || e.message || 'Failed to load profit data');
+    }
     finally { setLoading(false); }
   }, [year, view]);
 
