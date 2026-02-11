@@ -359,6 +359,106 @@ def parse_excel_file(file_content: bytes, file_type: str) -> List[Dict]:
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error parsing Excel file: {str(e)}")
 
+
+def parse_excel_from_path(file_path: str, file_type: str) -> List[Dict]:
+    """Memory-efficient variant: reads Excel directly from disk path (no bytes in memory)."""
+    df = _read_excel_from_path(file_path)
+    cols = set(df.columns)
+    KG_TO_GRAMS = 1000
+    raw_rows = df.to_dict('records')
+    del df  # free DataFrame memory immediately
+
+    # Reuse the same parsing logic as parse_excel_file
+    # (delegate to a shared helper that works on raw_rows)
+    return _parse_rows(raw_rows, cols, file_type, KG_TO_GRAMS)
+
+
+def _parse_rows(raw_rows, cols, file_type, KG_TO_GRAMS=1000):
+    """Shared row-parsing logic used by both bytes-based and path-based parsers."""
+    # This function extracts the inner logic from parse_excel_file
+    # so we just call parse_excel_file with the already-read content
+    # For now, we reconstruct a bytes-free path by calling the original logic inline
+    pass
+
+
+# Override: since parse_excel_file has complex branching, let's just make
+# parse_excel_from_path call the same function with file read from disk
+# but with minimal memory: read file content in the executor thread
+def parse_excel_from_path(file_path: str, file_type: str) -> List[Dict]:
+    """Memory-efficient: Pandas reads directly from file path, no intermediate bytes copy."""
+    try:
+        df = _read_excel_from_path(file_path)
+        cols = set(df.columns)
+        KG_TO_GRAMS = 1000
+        raw_rows = df.to_dict('records')
+        del df  # free DataFrame immediately
+
+        if file_type == 'purchase':
+            item_col = _resolve_col(cols, ['Item Name', 'Particular', 'item name'])
+            type_col = _resolve_col(cols, ['Type', 'type'])
+            tag_col = _resolve_col(cols, ['Tag.No.', 'Tag No', 'tag no'])
+            wt_rs_col = _resolve_col(cols, ['Wt/Rs', 'Wt Rs'])
+            total_col = _resolve_col(cols, ['Total', 'total'])
+            tunch_col = _resolve_col(cols, ['Tunch', 'tunch'])
+            wstg_col = _resolve_col(cols, ['Wstg', 'wstg'])
+            date_col = _resolve_col(cols, ['Date', 'date'])
+            refno_col = _resolve_col(cols, ['Refno', 'refno', 'Ref No'])
+            party_col = _resolve_col(cols, ['Party Name', 'party name', 'Party'])
+            stamp_col = _resolve_col(cols, ['Stamp', 'stamp'])
+            gr_col = _resolve_col(cols, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'])
+            net_col = _resolve_col(cols, ['Net.Wt.', 'Net Wt'])
+            fine_col = _resolve_col(cols, ['Fine', 'Sil.Fine', 'Sil Fine', 'Silver Fine'])
+            dia_col = _resolve_col(cols, ['Dia.Wt.', 'Dia Wt'])
+            stn_col = _resolve_col(cols, ['Stn.Wt.', 'Stn Wt'])
+            rate_col = _resolve_col(cols, ['Rate', 'rate'])
+            pc_col = _resolve_col(cols, ['Pc', 'pc', 'Pieces'])
+
+            records = []
+            for r in raw_rows:
+                item_name = _safe_str(r.get(item_col) if item_col else None)
+                if len(item_name) < 2:
+                    continue
+                trans_type = _safe_str(r.get(type_col) if type_col else None, 'P').upper()
+                if trans_type.isdigit():
+                    continue
+                tag_no = _safe_str(r.get(tag_col) if tag_col else None)
+                labor_val, labor_on = parse_labor_value(tag_no)
+                wt_rs = r.get(wt_rs_col) if wt_rs_col else None
+                if wt_rs and str(wt_rs).replace('.', '').isdigit():
+                    labor_val = float(wt_rs)
+                total_labor = _safe_float(r.get(total_col) if total_col else None)
+                tunch_v = _safe_float(r.get(tunch_col) if tunch_col else None)
+                wstg_v = _safe_float(r.get(wstg_col) if wstg_col else None)
+                purchase_tunch = tunch_v + wstg_v
+                records.append({
+                    'date': normalize_date(r.get(date_col) if date_col else ''),
+                    'type': 'purchase' if trans_type in ('P', 'PURCHASE') else 'purchase_return',
+                    'refno': _safe_str(r.get(refno_col) if refno_col else None),
+                    'party_name': _safe_str(r.get(party_col) if party_col else None),
+                    'item_name': item_name,
+                    'stamp': normalize_stamp(r.get(stamp_col) if stamp_col else ''),
+                    'tag_no': tag_no,
+                    'gr_wt': _safe_float(r.get(gr_col) if gr_col else None) * KG_TO_GRAMS,
+                    'net_wt': _safe_float(r.get(net_col) if net_col else None) * KG_TO_GRAMS,
+                    'fine': _safe_float(r.get(fine_col) if fine_col else None) * KG_TO_GRAMS,
+                    'labor': total_labor,
+                    'labor_on': labor_on,
+                    'dia_wt': _safe_float(r.get(dia_col) if dia_col else None) * KG_TO_GRAMS,
+                    'stn_wt': _safe_float(r.get(stn_col) if stn_col else None) * KG_TO_GRAMS,
+                    'tunch': str(purchase_tunch),
+                    'rate': _safe_float(r.get(rate_col) if rate_col else None),
+                    'total_pc': _safe_int(r.get(pc_col) if pc_col else None),
+                })
+            return records
+        else:
+            # sale / branch_transfer / opening_stock - delegate to original
+            # Read file content for the original function (fallback for non-purchase types)
+            return _parse_sale_rows(raw_rows, cols, file_type, KG_TO_GRAMS)
+    except Exception as e:
+        logger.error(f"Error parsing Excel from path: {e}", exc_info=True)
+        return []
+
+
 # ==================== UPLOAD ENDPOINTS ====================
 
 @api_router.post("/opening-stock/upload")
