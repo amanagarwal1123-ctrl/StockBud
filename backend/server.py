@@ -4224,35 +4224,44 @@ async def get_smart_insights(request: SmartInsightsRequest):
     if not llm_key:
         raise HTTPException(status_code=500, detail="LLM key not configured")
     
-    # Gather data for context
+    # Gather data using aggregation (memory-efficient, no 50k docs in memory)
     query = {}
     if request.start_date and request.end_date:
         query['date'] = {'$gte': request.start_date, '$lte': request.end_date + ' 23:59:59'}
     
-    transactions = await db.transactions.find(query, {"_id": 0}).to_list(50000)
-    buffers = await db.item_buffers.find({}, {"_id": 0}).to_list(10000)
+    # Get counts and totals via aggregation
+    pipeline = [{"$match": query}, {"$group": {
+        "_id": "$type",
+        "count": {"$sum": 1},
+        "total_wt": {"$sum": "$net_wt"}
+    }}]
+    type_stats = {}
+    async for doc in db.transactions.aggregate(pipeline):
+        type_stats[doc['_id']] = doc
+
+    sale_count = type_stats.get('sale', {}).get('count', 0) + type_stats.get('sale_return', {}).get('count', 0)
+    purchase_count = type_stats.get('purchase', {}).get('count', 0) + type_stats.get('purchase_return', {}).get('count', 0)
+    total_sale_wt = type_stats.get('sale', {}).get('total_wt', 0) / 1000
+    total_purchase_wt = type_stats.get('purchase', {}).get('total_wt', 0) / 1000
     
-    # Summarize data for the LLM
-    sale_count = sum(1 for t in transactions if t['type'] in ['sale', 'sale_return'])
-    purchase_count = sum(1 for t in transactions if t['type'] in ['purchase', 'purchase_return'])
-    total_sale_wt = sum(t.get('net_wt', 0) for t in transactions if t['type'] == 'sale') / 1000
-    total_purchase_wt = sum(t.get('net_wt', 0) for t in transactions if t['type'] == 'purchase') / 1000
+    # Top items by sales via aggregation
+    item_pipeline = [
+        {"$match": {**query, "type": "sale"}},
+        {"$group": {"_id": "$item_name", "wt_kg": {"$sum": {"$divide": ["$net_wt", 1000]}}}},
+        {"$sort": {"wt_kg": -1}}, {"$limit": 15}
+    ]
+    top_items = [(doc['_id'], doc['wt_kg']) async for doc in db.transactions.aggregate(item_pipeline)]
     
-    # Top items by sales
-    item_sales = defaultdict(float)
-    for t in transactions:
-        if t['type'] == 'sale':
-            item_sales[t.get('item_name', '')] += t.get('net_wt', 0) / 1000
-    top_items = sorted(item_sales.items(), key=lambda x: x[1], reverse=True)[:15]
-    
-    # Top customers
-    cust_sales = defaultdict(float)
-    for t in transactions:
-        if t['type'] == 'sale':
-            cust_sales[t.get('party_name', '')] += t.get('net_wt', 0) / 1000
-    top_customers = sorted(cust_sales.items(), key=lambda x: x[1], reverse=True)[:10]
+    # Top customers via aggregation
+    cust_pipeline = [
+        {"$match": {**query, "type": "sale"}},
+        {"$group": {"_id": "$party_name", "wt_kg": {"$sum": {"$divide": ["$net_wt", 1000]}}}},
+        {"$sort": {"wt_kg": -1}}, {"$limit": 10}
+    ]
+    top_customers = [(doc['_id'], doc['wt_kg']) async for doc in db.transactions.aggregate(cust_pipeline)]
     
     # Buffer status
+    buffers = await db.item_buffers.find({}, {"_id": 0, "item_name": 1, "status": 1, "tier": 1}).to_list(10000)
     red_items = [b['item_name'] for b in buffers if b.get('status') == 'red'][:10]
     yellow_items = [b['item_name'] for b in buffers if b.get('status') == 'yellow'][:10]
     tier_counts = defaultdict(int)
