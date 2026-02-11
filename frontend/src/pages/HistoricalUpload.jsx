@@ -34,7 +34,7 @@ export default function HistoricalUpload() {
     finally { setLoading(false); }
   };
 
-  const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB per chunk
+  const CHUNK_SIZE = 768 * 1024; // 768KB per chunk — stays under deployment proxy limits
 
   const pollUploadStatus = async (uploadId) => {
     for (let attempt = 0; attempt < 120; attempt++) {
