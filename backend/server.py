@@ -3431,6 +3431,197 @@ async def auto_stock_alerts(current_user: dict = Depends(get_current_user)):
     
     return {"alerts": alerts, "count": len(alerts)}
 
+# ==================== HISTORICAL PROFIT ANALYSIS ====================
+
+@api_router.get("/analytics/historical-profit")
+async def get_historical_profit(
+    year: Optional[str] = None,
+    view: str = "yearly"
+):
+    """
+    Profit analysis from historical_transactions.
+    Views: customer, supplier, item, month, yearly
+    """
+    query = {}
+    if year:
+        query["historical_year"] = year
+
+    all_txns = await db.historical_transactions.find(query, {"_id": 0}).to_list(300000)
+
+    purchases = [t for t in all_txns if t["type"] in ("purchase", "purchase_return")]
+    sales = [t for t in all_txns if t["type"] in ("sale", "sale_return")]
+
+    # Build per-item purchase cost basis
+    item_purchase = defaultdict(lambda: {"wt": 0.0, "tunch_wt": 0.0, "labor_wt": 0.0})
+    for p in purchases:
+        item = p.get("item_name", "")
+        nw = abs(p.get("net_wt", 0))
+        if nw < 0.001:
+            continue
+        tunch = float(p.get("tunch", 0) or 0)
+        labor = abs(p.get("labor", 0))
+        sign = -1 if p["type"] == "purchase_return" else 1
+        item_purchase[item]["wt"] += nw * sign
+        item_purchase[item]["tunch_wt"] += tunch * nw * sign
+        item_purchase[item]["labor_wt"] += labor * sign
+
+    purchase_basis = {}
+    for item, d in item_purchase.items():
+        w = abs(d["wt"])
+        if w < 0.001:
+            continue
+        purchase_basis[item] = {
+            "avg_tunch": d["tunch_wt"] / w,
+            "labor_per_gram": d["labor_wt"] / w,
+        }
+
+    def _calc_profit(sale_list):
+        silver_kg = 0.0
+        labor_inr = 0.0
+        total_wt_kg = 0.0
+        count = 0
+        for s in sale_list:
+            item = s.get("item_name", "")
+            basis = purchase_basis.get(item)
+            if not basis:
+                continue
+            nw = s.get("net_wt", 0)
+            sign = -1 if s["type"] == "sale_return" else 1
+            nw_signed = nw * sign
+            sale_tunch = float(s.get("tunch", 0) or 0)
+            sale_labor = s.get("labor", 0) * sign
+
+            silver_g = (sale_tunch - basis["avg_tunch"]) * abs(nw) * sign / 100
+            silver_kg += silver_g / 1000
+
+            sale_labor_pg = abs(sale_labor) / abs(nw) if abs(nw) > 0.001 else 0
+            labor_inr += (sale_labor_pg - basis["labor_per_gram"]) * abs(nw) * sign
+
+            total_wt_kg += nw_signed / 1000
+            count += 1
+        return round(silver_kg, 3), round(labor_inr, 2), round(total_wt_kg, 3), count
+
+    if view == "yearly":
+        sk, li, wt, cnt = _calc_profit(sales)
+        total_sale_val = sum(s.get("total_amount", 0) for s in sales if s["type"] == "sale")
+        total_purchase_val = sum(p.get("total_amount", 0) for p in purchases if p["type"] == "purchase")
+        return {
+            "view": "yearly", "year": year,
+            "silver_profit_kg": sk, "labor_profit_inr": li,
+            "total_sold_kg": wt, "total_transactions": cnt,
+            "total_sales_value": round(total_sale_val, 2),
+            "total_purchase_value": round(total_purchase_val, 2),
+            "total_sale_records": len([s for s in sales if s["type"] == "sale"]),
+            "total_purchase_records": len([p for p in purchases if p["type"] == "purchase"]),
+        }
+
+    if view == "customer":
+        cust_map = defaultdict(list)
+        for s in sales:
+            cust_map[s.get("party_name", "Unknown") or "Unknown"].append(s)
+        rows = []
+        for cname, slist in cust_map.items():
+            sk, li, wt, cnt = _calc_profit(slist)
+            if cnt == 0:
+                continue
+            rows.append({"name": cname, "silver_profit_kg": sk, "labor_profit_inr": li,
+                         "total_sold_kg": wt, "transactions": cnt})
+        rows.sort(key=lambda x: x["silver_profit_kg"], reverse=True)
+        return {"view": "customer", "year": year, "data": rows, "total": len(rows)}
+
+    if view == "supplier":
+        supplier_items = defaultdict(lambda: defaultdict(lambda: {"wt": 0.0, "tunch_wt": 0.0, "labor_wt": 0.0}))
+        for p in purchases:
+            supplier = p.get("party_name", "Unknown") or "Unknown"
+            item = p.get("item_name", "")
+            nw = abs(p.get("net_wt", 0))
+            if nw < 0.001:
+                continue
+            tunch = float(p.get("tunch", 0) or 0)
+            labor = abs(p.get("labor", 0))
+            sign = -1 if p["type"] == "purchase_return" else 1
+            supplier_items[supplier][item]["wt"] += nw * sign
+            supplier_items[supplier][item]["tunch_wt"] += tunch * nw * sign
+            supplier_items[supplier][item]["labor_wt"] += labor * sign
+
+        item_sale_agg = defaultdict(lambda: {"wt": 0.0, "tunch_wt": 0.0, "labor_wt": 0.0})
+        for s in sales:
+            item = s.get("item_name", "")
+            nw = abs(s.get("net_wt", 0))
+            if nw < 0.001:
+                continue
+            tunch = float(s.get("tunch", 0) or 0)
+            labor = abs(s.get("labor", 0))
+            sign = -1 if s["type"] == "sale_return" else 1
+            item_sale_agg[item]["wt"] += nw * sign
+            item_sale_agg[item]["tunch_wt"] += tunch * nw * sign
+            item_sale_agg[item]["labor_wt"] += labor * sign
+
+        rows = []
+        for supplier, items in supplier_items.items():
+            sp_silver = 0.0
+            sp_labor = 0.0
+            sp_wt = 0.0
+            item_count = 0
+            for item, pd_ in items.items():
+                pw = abs(pd_["wt"])
+                if pw < 0.001:
+                    continue
+                sa = item_sale_agg.get(item)
+                if not sa or abs(sa["wt"]) < 0.001:
+                    continue
+                p_tunch = pd_["tunch_wt"] / pw
+                s_tunch = sa["tunch_wt"] / abs(sa["wt"])
+                p_lpg = pd_["labor_wt"] / pw
+                s_lpg = sa["labor_wt"] / abs(sa["wt"])
+                sp_silver += (s_tunch - p_tunch) * pw / 100 / 1000
+                sp_labor += (s_lpg - p_lpg) * pw
+                sp_wt += pw / 1000
+                item_count += 1
+            if item_count > 0:
+                rows.append({"name": supplier, "silver_profit_kg": round(sp_silver, 3),
+                             "labor_profit_inr": round(sp_labor, 2),
+                             "total_purchased_kg": round(sp_wt, 3), "items_count": item_count})
+        rows.sort(key=lambda x: x["silver_profit_kg"], reverse=True)
+        return {"view": "supplier", "year": year, "data": rows, "total": len(rows)}
+
+    if view == "item":
+        item_sales = defaultdict(list)
+        for s in sales:
+            item_sales[s.get("item_name", "")].append(s)
+        rows = []
+        for item, slist in item_sales.items():
+            basis = purchase_basis.get(item)
+            if not basis:
+                continue
+            sk, li, wt, cnt = _calc_profit(slist)
+            if cnt == 0:
+                continue
+            total_snw = max(sum(abs(s.get("net_wt", 0)) for s in slist), 0.001)
+            avg_st = sum(float(s.get("tunch", 0) or 0) * abs(s.get("net_wt", 0)) for s in slist) / total_snw
+            rows.append({"name": item, "silver_profit_kg": sk, "labor_profit_inr": li,
+                         "total_sold_kg": wt, "transactions": cnt,
+                         "avg_purchase_tunch": round(basis["avg_tunch"], 2),
+                         "avg_sale_tunch": round(avg_st, 2)})
+        rows.sort(key=lambda x: x["silver_profit_kg"], reverse=True)
+        return {"view": "item", "year": year, "data": rows, "total": len(rows)}
+
+    if view == "month":
+        month_sales = defaultdict(list)
+        for s in sales:
+            d = s.get("date", "")
+            month_key = d[:7] if len(d) >= 7 else "Unknown"
+            month_sales[month_key].append(s)
+        rows = []
+        for mk, slist in sorted(month_sales.items()):
+            sk, li, wt, cnt = _calc_profit(slist)
+            rows.append({"month": mk, "silver_profit_kg": sk, "labor_profit_inr": li,
+                         "total_sold_kg": wt, "transactions": cnt})
+        return {"view": "month", "year": year, "data": rows, "total": len(rows)}
+
+    raise HTTPException(status_code=400, detail="Invalid view. Use: customer, supplier, item, month, yearly")
+
+
 # ==================== DATA VISUALIZATION ====================
 
 @api_router.get("/analytics/visualization")
