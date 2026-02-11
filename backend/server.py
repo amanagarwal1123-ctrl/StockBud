@@ -1348,6 +1348,9 @@ async def client_batch_upload(request: Dict):
         actual_type = parse_type
         result["message"] = f"Uploaded {total} historical {actual_type} records for {year}"
     return result
+
+
+@api_router.post("/transactions/upload/{file_type}")
 async def upload_transaction_file(
     file_type: str, 
     file: UploadFile = File(...),
