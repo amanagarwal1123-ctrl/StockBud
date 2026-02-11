@@ -5,54 +5,51 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 
 ## Architecture
 - **Backend:** FastAPI, Motor (async MongoDB), JWT auth, emergentintegrations (Claude AI)
-- **Frontend:** React, TailwindCSS, shadcn/ui, Recharts, Axios
+- **Frontend:** React, TailwindCSS, shadcn/ui, Recharts, Axios, SheetJS (xlsx)
 - **Database:** MongoDB (test_database)
 
 ## Data Architecture
-- `transactions` collection: Current operational data (daily sales, purchases, branch transfers) — used for dashboard stats, profit calculations, inventory
-- `historical_transactions` collection: Historical data for analytics, seasonal patterns, buffer calculations — does NOT affect dashboard or profit
+- `transactions` collection: Current operational data (daily sales, purchases, branch transfers)
+- `historical_transactions` collection: Historical data for analytics — does NOT affect dashboard
 - Upload Files page → `transactions` (current operations)
 - Historical Upload page → `historical_transactions` (analytics only)
 
-## Chunked Upload with MongoDB Storage (Feb 11, 2026)
-- Files >200KB auto-chunked into 200KB binary chunks (safe for deployment proxy limits)
-- 3-step API: init -> chunk(s) -> finalize
-- **Finalize returns immediately**, processing runs in background via FastAPI BackgroundTasks
-- Frontend polls `GET /api/upload/status/{upload_id}` every 5s until complete/error
-- Upload metadata and chunks stored in **MongoDB** (`upload_sessions` + `upload_chunks` collections) — works across multiple pods in deployment
-- Supports: sale, purchase, branch_transfer, opening_stock, physical_stock, historical_sale, historical_purchase
-- **Memory-efficient streaming parser** using openpyxl read-only mode (avoids loading entire file into memory)
-- Progress bar with percentage shown during upload, server processing status shown during parsing
+## Client-Side Excel Parsing Architecture (Feb 11, 2026 - OOM fix)
+- **Problem:** 24MB XLSX files caused OOM crashes in deployed pods (256-512MB memory limit)
+- **Solution:** Excel parsed in the BROWSER using SheetJS, rows sent as JSON batches
+- **Flow:** File → SheetJS parse in browser → detect headers → send 2000-row JSON batches → server applies column mapping → MongoDB insert
+- **Endpoint:** `POST /api/upload/client-batch` — accepts headers + row arrays, returns batch_records + total_so_far
+- **Zero server-side Excel parsing** — no pandas, no openpyxl, no OOM
+- **Progress bar** shows real-time batch progress with percentage
 
-## Memory-Efficient Streaming Excel Parser (Feb 11, 2026)
-- `parse_excel_streaming()` in server.py uses openpyxl read-only mode
-- Chunks written to temp file on disk, then parsed row-by-row
-- Avoids pandas DataFrame memory overhead (critical for 24MB+ files on 256-512MB pods)
-- Supports sale, purchase, and opening_stock file types
-- ThreadPoolExecutor limited to 1 worker to prevent concurrent large file processing
+## Legacy Chunked Upload (still available for non-historical files)
+- Files >200KB auto-chunked into 200KB binary chunks
+- 3-step API: init → chunk(s) → finalize → background processing
+- MongoDB-backed chunk storage for multi-pod deployments
+- Used by UploadManager for regular transaction files
 
 ## Historical Profit Analysis (Feb 11, 2026)
 - Endpoint: `GET /api/analytics/historical-profit?year=2025&view={yearly|customer|supplier|item|month}`
-- Views: Yearly summary (6 KPI cards), Customer-wise (chart + table), Supplier-wise, Item-wise (with tunch comparison), Month-wise (bar + line charts)
-- Frontend: New "Profit" tab in Data Visualization page with year/view selectors, charts, sortable/searchable/paginated tables
-- Uses only `historical_transactions` — zero impact on current operations
-
-## Historical Summary Fix (Feb 11, 2026)  
-- Aggregation groups sale+sale_return as "sale", purchase+purchase_return as "purchase"
-
-## Date-Based Stock Entry Model (Feb 10, 2026)
-- Entries keyed by {stamp, entered_by, entry_day}
-- Same day = update, different day = new entry, old approvals untouched
+- Frontend: "Profit" tab in Data Visualization page
 
 ## Key Credentials
 - Admin: admin / admin123  
 - Manager: SMANAGER / manager123
 - SEE: SEE1 / executive123
 
+## Key Endpoints
+- `POST /api/upload/client-batch` - Client-parsed batch upload (NEW - OOM-safe)
+- `POST /api/upload/init` - Chunked upload init
+- `POST /api/upload/chunk/{upload_id}` - Chunk upload
+- `POST /api/upload/finalize/{upload_id}` - Finalize chunked upload
+- `GET /api/upload/status/{upload_id}` - Poll upload status
+- `GET /api/historical/summary` - Historical data summary
+- `GET /api/analytics/historical-profit` - Profit analysis
+
 ## Backlog
 - (P0) User to verify large sales file upload in deployed environment
 - (P1) User-guided Item Mapping: Help user map 219 unmapped historical items
-- (P1) Upload queue UI lock — block concurrent uploads with user-facing message
-- (P1) Complete Browser Notifications integration
+- (P1) Upload queue UI lock — block concurrent uploads
 - (P1) Further split server.py into route modules
 - (P2) Implement Core AI Seasonal Analysis Logic
+- (P2) Browser Notifications integration
