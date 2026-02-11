@@ -34,17 +34,42 @@ export default function HistoricalUpload() {
     finally { setLoading(false); }
   };
 
-  const CHUNK_SIZE = 768 * 1024; // 768KB per chunk — stays under deployment proxy limits
+  const CHUNK_SIZE = 200 * 1024; // 200KB — safe for any deployment proxy
 
   const pollUploadStatus = async (uploadId) => {
-    for (let attempt = 0; attempt < 120; attempt++) {
+    for (let attempt = 0; attempt < 180; attempt++) {
       await new Promise(r => setTimeout(r, 5000));
-      const res = await axios.get(`${API}/upload/status/${uploadId}`, { timeout: 10000 });
-      if (res.data.status === 'complete') return res;
-      if (res.data.status === 'error') throw new Error(res.data.detail || 'Processing failed');
-      setUploadProgress(`Processing on server... (${attempt * 5}s elapsed)`);
+      try {
+        const res = await axios.get(`${API}/upload/status/${uploadId}`, { timeout: 10000 });
+        if (res.data.status === 'complete') return res;
+        if (res.data.status === 'error') throw new Error(res.data.detail || 'Processing failed on server');
+        setUploadProgress(`Processing on server... (${(attempt + 1) * 5}s elapsed)`);
+      } catch (pollErr) {
+        if (pollErr.message?.includes('Processing failed')) throw pollErr;
+        // Network hiccup during polling — retry
+      }
     }
-    throw new Error('Processing timed out');
+    throw new Error('Processing timed out after 15 minutes');
+  };
+
+  const uploadChunkWithRetry = async (url, formData, chunkIdx, totalChunks, maxRetries = 3) => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await axios.post(url, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          timeout: 60000,
+        });
+        return res;
+      } catch (err) {
+        const status = err.response?.status || 'network error';
+        const detail = err.response?.data?.detail || err.message;
+        if (attempt === maxRetries) {
+          throw new Error(`Chunk ${chunkIdx + 1}/${totalChunks} failed after ${maxRetries} retries (${status}: ${detail})`);
+        }
+        setUploadProgress(`Chunk ${chunkIdx + 1}/${totalChunks} retry ${attempt}/${maxRetries}...`);
+        await new Promise(r => setTimeout(r, 2000 * attempt));
+      }
+    }
   };
 
   const handleUpload = async (e) => {
@@ -57,7 +82,7 @@ export default function HistoricalUpload() {
 
       if (useChunked) {
         const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-        setUploadProgress('Initializing upload...');
+        setUploadProgress(`Initializing upload (${totalChunks} chunks)...`);
         const initRes = await axios.post(`${API}/upload/init`, {
           file_type: fileType === 'sale' ? 'historical_sale' : 'historical_purchase',
           year,
@@ -68,19 +93,19 @@ export default function HistoricalUpload() {
         const uploadId = initRes.data.upload_id;
 
         for (let i = 0; i < totalChunks; i++) {
-          setUploadProgress(`Uploading chunk ${i + 1} of ${totalChunks}...`);
+          setUploadProgress(`Uploading chunk ${i + 1} of ${totalChunks} (${Math.round((i / totalChunks) * 100)}%)...`);
           const start = i * CHUNK_SIZE;
           const end = Math.min(start + CHUNK_SIZE, file.size);
           const chunk = file.slice(start, end);
           const fd = new FormData();
           fd.append('file', chunk, `chunk_${i}`);
-          await axios.post(`${API}/upload/chunk/${uploadId}?chunk_index=${i}`, fd, {
-            headers: { 'Content-Type': 'multipart/form-data' },
-            timeout: 120000,
-          });
+          await uploadChunkWithRetry(
+            `${API}/upload/chunk/${uploadId}?chunk_index=${i}`,
+            fd, i, totalChunks
+          );
         }
 
-        setUploadProgress('Processing file on server...');
+        setUploadProgress('All chunks uploaded. Processing file on server...');
         await axios.post(`${API}/upload/finalize/${uploadId}`, {}, { timeout: 30000 });
         const result = await pollUploadStatus(uploadId);
         toast.success(result.data.message);
