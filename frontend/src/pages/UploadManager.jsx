@@ -160,7 +160,7 @@ export default function UploadManager() {
       setUploadedFiles((prev) => ({ ...prev, [fileType]: file.name }));
       toast.success(response.data.message || 'File uploaded successfully!');
     } catch (error) {
-      const msg = error.code === 'ECONNABORTED' ? 'Upload timed out. Try a smaller date range or split the file.' : (error.response?.data?.detail || 'Upload failed');
+      const msg = error.message || error.response?.data?.detail || error.code === 'ECONNABORTED' ? 'Upload timed out.' : 'Upload failed';
       toast.error(msg);
     } finally {
       setUploading(false);
