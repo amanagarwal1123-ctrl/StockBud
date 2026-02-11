@@ -4485,11 +4485,39 @@ async def seasonal_analysis(current_user: dict = Depends(get_current_user)):
     if not llm_key:
         raise HTTPException(status_code=500, detail="LLM key not configured")
     
-    # Gather ALL data: current transactions + historical
-    current_txns = await db.transactions.find({"type": {"$in": ["sale", "sale_return"]}}, {"_id": 0}).to_list(50000)
-    historical_txns = await db.historical_transactions.find({"type": {"$in": ["sale", "sale_return"]}}, {"_id": 0}).to_list(100000)
-    
-    all_sales = current_txns + historical_txns
+    # Gather data via aggregation (memory-efficient, not loading 100k+ docs)
+    # Monthly item sales from current transactions
+    monthly_pipeline = [
+        {"$match": {"type": {"$in": ["sale", "sale_return"]}}},
+        {"$project": {"item_name": 1, "net_wt": 1, "month": {"$substr": ["$date", 5, 2]}}},
+        {"$group": {"_id": {"item": "$item_name", "month": "$month"}, "total_wt": {"$sum": "$net_wt"}}},
+    ]
+    monthly_item_sales = defaultdict(lambda: defaultdict(float))
+    async for doc in db.transactions.aggregate(monthly_pipeline, allowDiskUse=True):
+        item = doc['_id']['item']
+        try:
+            month = int(doc['_id']['month'])
+        except (ValueError, TypeError):
+            continue
+        monthly_item_sales[item][month] += abs(doc['total_wt']) / 1000
+
+    # Add historical data via aggregation
+    hist_pipeline = [
+        {"$match": {"type": {"$in": ["sale", "sale_return"]}}},
+        {"$project": {"item_name": 1, "net_wt": 1, "month": {"$substr": ["$date", 5, 2]}}},
+        {"$group": {"_id": {"item": "$item_name", "month": "$month"}, "total_wt": {"$sum": "$net_wt"}}},
+    ]
+    async for doc in db.historical_transactions.aggregate(hist_pipeline, allowDiskUse=True):
+        item = doc['_id']['item']
+        try:
+            month = int(doc['_id']['month'])
+        except (ValueError, TypeError):
+            continue
+        monthly_item_sales[item][month] += abs(doc['total_wt']) / 1000
+
+    total_txn_count = await db.transactions.count_documents({"type": {"$in": ["sale", "sale_return"]}})
+    total_hist_count = await db.historical_transactions.count_documents({"type": {"$in": ["sale", "sale_return"]}})
+    all_sales_count = total_txn_count + total_hist_count
     
     # Get buffer info
     buffers = await db.item_buffers.find({}, {"_id": 0}).to_list(10000)
