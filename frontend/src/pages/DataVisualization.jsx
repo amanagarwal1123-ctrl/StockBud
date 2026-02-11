@@ -372,6 +372,23 @@ export default function DataVisualization() {
           </Card>
         </TabsContent>
 
+        {/* Historical Profit Analysis Tab */}
+        <TabsContent value="profit" className="space-y-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <TrendingUp className="h-5 w-5 text-emerald-500" />Historical Profit Analysis
+              </CardTitle>
+              <CardDescription>
+                Profit breakdown from uploaded historical data — does not affect current operations
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <HistoricalProfit years={historicalSummary?.years || ['2025']} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {/* Seasonal Analysis Tab */}
         <TabsContent value="seasonal" className="space-y-4">
           <Card>
