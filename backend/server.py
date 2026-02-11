@@ -855,7 +855,7 @@ async def finalize_chunked_upload(upload_id: str, background_tasks: BackgroundTa
 @api_router.get("/upload/status/{upload_id}")
 async def get_upload_status(upload_id: str):
     """Poll processing status of a chunked upload"""
-    meta = _load_upload_meta(upload_id)
+    meta = await _load_upload_meta(upload_id)
     if not meta:
         raise HTTPException(status_code=404, detail="Upload session not found")
 
@@ -863,14 +863,13 @@ async def get_upload_status(upload_id: str):
 
     if status == 'complete':
         result = meta.get('result', {})
-        # Cleanup temp files now that processing is done
-        upload_dir = UPLOAD_TEMP_DIR / upload_id
-        shutil.rmtree(upload_dir, ignore_errors=True)
+        # Clean up session from MongoDB
+        await db.upload_sessions.delete_one({"upload_id": upload_id})
         return {"status": "complete", **result}
     elif status == 'error':
-        upload_dir = UPLOAD_TEMP_DIR / upload_id
-        shutil.rmtree(upload_dir, ignore_errors=True)
-        return {"status": "error", "detail": meta.get('error', 'Unknown error')}
+        error_detail = meta.get('error', 'Unknown error')
+        await db.upload_sessions.delete_one({"upload_id": upload_id})
+        return {"status": "error", "detail": error_detail}
     else:
         return {"status": "processing", "message": "Still processing..."}
 
