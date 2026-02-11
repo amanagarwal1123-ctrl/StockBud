@@ -780,6 +780,9 @@ async def _process_upload(upload_id: str, meta: dict):
         batch_id = str(uuid.uuid4())
         start_date = meta.get('start_date')
         end_date = meta.get('end_date')
+        rec_count = len(records)
+        meta['progress'] = f'Saving {rec_count} records to database...'
+        await _save_upload_meta(upload_id, meta)
 
         if file_type in ('purchase', 'sale', 'branch_transfer'):
             deleted_count = 0
