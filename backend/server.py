@@ -3934,15 +3934,13 @@ async def get_historical_profit(
     projection = {"_id": 0, "type": 1, "item_name": 1, "net_wt": 1, "fine": 1, 
                   "labor": 1, "gr_wt": 1, "party_name": 1, "date": 1, "tunch": 1, "total_amount": 1}
     
-    # Stream into categorized lists instead of one giant list
-    purchases = []
-    sales = []
-    async for doc in db.historical_transactions.find(query, projection):
-        t = doc.get("type", "")
-        if t == "purchase":
-            purchases.append(doc)
-        elif t == "sale":
-            sales.append(doc)
+    # Load purchases and sales separately with projection
+    purchases = await db.historical_transactions.find(
+        {**query, "type": {"$in": ["purchase", "purchase_return"]}}, projection
+    ).to_list(50000)
+    sales = await db.historical_transactions.find(
+        {**query, "type": {"$in": ["sale", "sale_return"]}}, projection
+    ).to_list(None)
 
     # Load item mappings: transaction_name -> master_name
     all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
