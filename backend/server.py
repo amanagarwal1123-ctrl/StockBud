@@ -943,7 +943,8 @@ async def get_upload_status(upload_id: str):
         await db.upload_sessions.delete_one({"upload_id": upload_id})
         return {"status": "error", "detail": error_detail}
     else:
-        return {"status": "processing", "message": "Still processing..."}
+        progress = meta.get('progress', 'Processing...')
+        return {"status": "processing", "message": progress}
 
 
 @api_router.post("/transactions/upload/{file_type}")
