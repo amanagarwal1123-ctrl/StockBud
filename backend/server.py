@@ -699,29 +699,38 @@ async def upload_chunk(upload_id: str, chunk_index: int, file: UploadFile = File
 
 
 async def _process_upload(upload_id: str, meta: dict):
-    """Background task: reassemble chunks from MongoDB, parse, and insert into DB"""
+    """Background task: reassemble chunks to temp file, parse, and insert into DB"""
+    import tempfile as _tempfile
+    tmp_path = None
     try:
         logger.info(f"[Upload {upload_id}] Starting processing, file_type={meta['file_type']}")
         
-        # Reassemble chunks from MongoDB
+        # Write chunks directly to a temp file (avoids holding entire file in memory)
+        tmp_fd, tmp_path = _tempfile.mkstemp(suffix='.xlsx')
+        chunk_count = 0
+        total_bytes = 0
+        
         cursor = db.upload_chunks.find(
             {"upload_id": upload_id},
             {"chunk_index": 1, "data": 1, "_id": 0}
         ).sort("chunk_index", 1)
         
-        assembled = bytearray()
-        chunk_count = 0
-        async for chunk_doc in cursor:
-            assembled.extend(chunk_doc['data'])
-            chunk_count += 1
+        import os as _os
+        with _os.fdopen(tmp_fd, 'wb') as f:
+            async for chunk_doc in cursor:
+                data = chunk_doc['data']
+                f.write(data)
+                total_bytes += len(data)
+                chunk_count += 1
         
-        logger.info(f"[Upload {upload_id}] Reassembled {chunk_count} chunks, total {len(assembled)} bytes")
+        logger.info(f"[Upload {upload_id}] Wrote {chunk_count} chunks to disk ({total_bytes} bytes)")
         
         # Delete chunks from MongoDB immediately to free DB space
         await db.upload_chunks.delete_many({"upload_id": upload_id})
 
-        file_content = bytes(assembled)
-        del assembled  # Free memory
+        # Read file from disk (Pandas reads from disk more efficiently than from bytes)
+        with open(tmp_path, 'rb') as f:
+            file_content = f.read()
 
         file_type = meta['file_type']
 
