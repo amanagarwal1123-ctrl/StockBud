@@ -69,7 +69,9 @@ export default function UploadManager() {
   const uploadChunked = async (fileType, file) => {
     const range = dateRanges[fileType] || {};
     const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-    setUploadProgress(`Initializing upload (${totalChunks} chunks)...`);
+    const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+    setUploadProgress(`Initializing upload (${fileSizeMB} MB, ${totalChunks} chunks)...`);
+    setUploadPercent(0);
     const initRes = await axios.post(`${API}/upload/init`, {
       file_type: fileType,
       start_date: range.start || null,
@@ -80,7 +82,9 @@ export default function UploadManager() {
     const uploadId = initRes.data.upload_id;
 
     for (let i = 0; i < totalChunks; i++) {
-      setUploadProgress(`Uploading chunk ${i + 1} of ${totalChunks} (${Math.round((i / totalChunks) * 100)}%)...`);
+      const pct = Math.round(((i + 1) / totalChunks) * 100);
+      setUploadPercent(pct);
+      setUploadProgress(`Uploading chunk ${i + 1} of ${totalChunks} (${pct}%)`);
       const start = i * CHUNK_SIZE;
       const end = Math.min(start + CHUNK_SIZE, file.size);
       const chunk = file.slice(start, end);
@@ -92,7 +96,8 @@ export default function UploadManager() {
       );
     }
 
-    setUploadProgress('All chunks uploaded. Processing file on server...');
+    setUploadPercent(100);
+    setUploadProgress('All chunks uploaded. Server is processing...');
     await axios.post(`${API}/upload/finalize/${uploadId}`, {}, { timeout: 30000 });
 
     return await pollUploadStatus(uploadId);
