@@ -3926,9 +3926,10 @@ async def get_historical_profit(
     Clubs mapped items together using item_mappings + master_items.
     Uses fine/net_wt for tunch, raw labor sums for labour rate.
     """
-    query = {}
-    if year:
-        query["historical_year"] = year
+    try:
+        query = {}
+        if year:
+            query["historical_year"] = year
 
     # Only fetch fields needed for profit calculation (saves ~70% memory vs full docs)
     projection = {"_id": 0, "type": 1, "item_name": 1, "net_wt": 1, "fine": 1, 
