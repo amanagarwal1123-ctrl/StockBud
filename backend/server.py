@@ -3972,6 +3972,41 @@ async def delete_historical_year(year: str, current_user: dict = Depends(get_cur
     return {"success": True, "deleted_count": result.deleted_count}
 
 
+@api_router.get("/historical/debug")
+async def debug_historical():
+    """Diagnostic endpoint — shows raw DB state for historical data"""
+    total = await db.historical_transactions.count_documents({})
+    with_year = await db.historical_transactions.count_documents({"historical_year": {"$exists": True, "$ne": None}})
+    without_year = total - with_year
+    years = await db.historical_transactions.distinct("historical_year")
+    types = await db.historical_transactions.distinct("type")
+    
+    by_year_type = {}
+    for yr in (years or []):
+        if not yr:
+            continue
+        by_year_type[yr] = {}
+        for t in (types or []):
+            c = await db.historical_transactions.count_documents({"historical_year": yr, "type": t})
+            if c > 0:
+                by_year_type[yr][t] = c
+    
+    # Check upload sessions
+    active_sessions = await db.upload_sessions.count_documents({})
+    pending_chunks = await db.upload_chunks.count_documents({})
+    
+    return {
+        "total_records": total,
+        "with_historical_year": with_year,
+        "without_historical_year": without_year,
+        "years": [y for y in years if y],
+        "types": types,
+        "breakdown": by_year_type,
+        "active_upload_sessions": active_sessions,
+        "pending_chunks": pending_chunks,
+    }
+
+
 @api_router.post("/ai/seasonal-analysis")
 async def seasonal_analysis(current_user: dict = Depends(get_current_user)):
     """AI-powered seasonal analysis combining current + historical data.
