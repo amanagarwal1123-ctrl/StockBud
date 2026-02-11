@@ -18,7 +18,7 @@ import numpy as np
 import re
 
 # Thread pool for CPU-bound Excel parsing
-_parse_executor = ThreadPoolExecutor(max_workers=2)
+_parse_executor = ThreadPoolExecutor(max_workers=1)
 
 BATCH_INSERT_SIZE = 2000
 
