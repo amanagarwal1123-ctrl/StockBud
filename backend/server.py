@@ -826,24 +826,26 @@ async def _process_upload(upload_id: str, meta: dict):
                 record['historical_year'] = year
                 record['is_historical'] = True
             hist_docs = _prepare_transactions(records, batch_id)
+            logger.info(f"[Upload {upload_id}] Inserting {len(hist_docs)} historical records into DB...")
             await batch_insert(db.historical_transactions, hist_docs)
             actual_type = 'sale' if file_type == 'historical_sale' else 'purchase'
+            # Verify insertion
+            verify_count = await db.historical_transactions.count_documents({"batch_id": batch_id})
+            logger.info(f"[Upload {upload_id}] Verified {verify_count} records in DB for batch {batch_id}")
             meta['status'] = 'complete'
-            meta['result'] = {"success": True, "count": len(hist_docs), "year": year,
-                              "message": f"Uploaded {len(hist_docs)} historical {actual_type} records for {year}"}
+            meta['result'] = {"success": True, "count": verify_count, "year": year,
+                              "message": f"Uploaded {verify_count} historical {actual_type} records for {year}"}
         else:
             meta['status'] = 'error'
             meta['error'] = f"Unsupported file_type: {file_type}"
 
         await _save_upload_meta(upload_id, meta)
-        # Clean up chunk data from MongoDB after successful processing
-        await db.upload_chunks.delete_many({"upload_id": upload_id})
 
     except Exception as e:
+        logger.error(f"[Upload {upload_id}] FAILED: {e}", exc_info=True)
         meta['status'] = 'error'
         meta['error'] = str(e)
         await _save_upload_meta(upload_id, meta)
-        await db.upload_chunks.delete_many({"upload_id": upload_id})
 
 
 @api_router.post("/upload/finalize/{upload_id}")
