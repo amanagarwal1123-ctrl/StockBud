@@ -101,12 +101,13 @@ export default function ItemGroupManagement() {
   );
 
   const availableItems = useMemo(() => {
+    const editMembers = editingGroup ? (groups.find(g => g.group_name === editingGroup)?.members || []) : [];
     return allItems.filter(i =>
-      !alreadyGrouped.includes(i.item_name) || selectedItems.includes(i.item_name)
+      !alreadyGrouped.includes(i.item_name) || selectedItems.includes(i.item_name) || editMembers.includes(i.item_name)
     ).filter(i =>
       !createSearch || i.item_name.toLowerCase().includes(createSearch.toLowerCase())
     );
-  }, [allItems, alreadyGrouped, selectedItems, createSearch]);
+  }, [allItems, alreadyGrouped, selectedItems, createSearch, editingGroup, groups]);
 
   if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading...</div>;
 
