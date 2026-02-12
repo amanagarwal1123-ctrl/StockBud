@@ -4031,7 +4031,7 @@ async def get_historical_profit(
         return {"view": "customer", "year": year, "data": rows, "total": len(rows)}
 
     if view == "supplier":
-        # Group purchases by supplier → master item, using fine for tunch
+        # Group purchases by supplier → master item
         supplier_items = defaultdict(lambda: defaultdict(lambda: {"fine": 0.0, "net_wt": 0.0, "labor": 0.0}))
         for p in purchases:
             supplier = p.get("party_name", "Unknown") or "Unknown"
@@ -4043,7 +4043,9 @@ async def get_historical_profit(
             supplier_items[supplier][master]["net_wt"] += nw
             supplier_items[supplier][master]["labor"] += p.get("labor", 0)
 
-        # Aggregate sales by master item using fine
+        # Global average sale tunch & labor per gram for each master item
+        # (what we earn on average when selling this item to any customer)
+        item_sale_avg = {}
         item_sale_agg = defaultdict(lambda: {"fine": 0.0, "net_wt": 0.0, "labor": 0.0})
         for s in sales:
             master = resolve(s.get("item_name", ""))
@@ -4053,7 +4055,17 @@ async def get_historical_profit(
             item_sale_agg[master]["fine"] += s.get("fine", 0)
             item_sale_agg[master]["net_wt"] += nw
             item_sale_agg[master]["labor"] += s.get("labor", 0)
+        for master, sa in item_sale_agg.items():
+            snw = sa["net_wt"]
+            if snw < 0.001:
+                continue
+            item_sale_avg[master] = {
+                "avg_tunch": (sa["fine"] / snw) * 100 if sa["fine"] > 0 else 0,
+                "labor_per_gram": sa["labor"] / snw,
+            }
 
+        # For each supplier: profit = (avg_sale_tunch - supplier_purchase_tunch) × kg_from_supplier
+        # This is directly proportional to how much we bought from this supplier
         rows = []
         for supplier, items in supplier_items.items():
             sp_silver = 0.0
@@ -4061,18 +4073,23 @@ async def get_historical_profit(
             sp_wt = 0.0
             item_count = 0
             for master, pd_ in items.items():
-                pw = pd_["net_wt"]
+                pw = pd_["net_wt"]  # grams purchased from this supplier for this item
                 if pw < 0.001:
                     continue
-                sa = item_sale_agg.get(master)
-                if not sa or sa["net_wt"] < 0.001:
+                avg_sale = item_sale_avg.get(master)
+                if not avg_sale:
                     continue
+                # Supplier's purchase tunch for this item
                 p_tunch = (pd_["fine"] / pw) * 100 if pd_["fine"] > 0 else 0
-                s_tunch = (sa["fine"] / sa["net_wt"]) * 100 if sa["fine"] > 0 else 0
                 p_lpg = pd_["labor"] / pw
-                s_lpg = sa["labor"] / sa["net_wt"]
-                sp_silver += (s_tunch - p_tunch) * pw / 100 / 1000
-                sp_labor += (s_lpg - p_lpg) * pw
+
+                # Silver profit: (sale_tunch - purchase_tunch) × purchase_weight_from_supplier
+                # Result in grams, convert to kg
+                sp_silver += (avg_sale["avg_tunch"] - p_tunch) * pw / 100 / 1000
+
+                # Labor profit: (sale_labor/g - purchase_labor/g) × purchase_weight_from_supplier
+                sp_labor += (avg_sale["labor_per_gram"] - p_lpg) * pw
+
                 sp_wt += pw / 1000
                 item_count += 1
             if item_count > 0:
