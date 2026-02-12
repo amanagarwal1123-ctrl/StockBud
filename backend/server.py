@@ -3373,15 +3373,20 @@ async def categorize_items(current_user: dict = Depends(get_current_user)):
     if not current_season_key:
         current_season_key = 'off_season'
 
-    # 1. Load item groups for merging
+    # 1. Load item mappings + item groups for full resolution chain
+    all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
+    mapping_dict = {m['transaction_name']: m['master_name'] for m in all_mappings}
+
     groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
     member_to_group = {}
     for g in groups:
         for member in g.get('members', []):
             member_to_group[member] = g['group_name']
 
-    def resolve_group(name):
-        return member_to_group.get(name, name)
+    def resolve(name):
+        """Resolve: transaction name → master name → group leader"""
+        master = mapping_dict.get(name, name)
+        return member_to_group.get(master, master)
 
     # 2. Get master items and current inventory
     master_items = await db.master_items.find({}, {"_id": 0}).to_list(10000)
