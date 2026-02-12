@@ -3403,7 +3403,7 @@ async def categorize_items(current_user: dict = Depends(get_current_user)):
     ]
     item_monthly = defaultdict(lambda: defaultdict(float))
     async for doc in db.transactions.aggregate(monthly_pipeline):
-        item = resolve_group(doc['_id']['item'])
+        item = resolve(doc['_id']['item'])
         try:
             m = int(doc['_id']['month'])
         except (ValueError, TypeError):
@@ -3411,7 +3411,7 @@ async def categorize_items(current_user: dict = Depends(get_current_user)):
         item_monthly[item][m] += abs(doc['total_wt']) / 1000
 
     async for doc in db.historical_transactions.aggregate(monthly_pipeline):
-        item = resolve_group(doc['_id']['item'])
+        item = resolve(doc['_id']['item'])
         try:
             m = int(doc['_id']['month'])
         except (ValueError, TypeError):
