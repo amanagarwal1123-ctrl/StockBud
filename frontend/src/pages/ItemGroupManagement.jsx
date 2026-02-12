@@ -118,7 +118,7 @@ export default function ItemGroupManagement() {
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Item Groups</h1>
           <p className="text-sm text-muted-foreground mt-1">Merge similar items for combined buffer & order calculations</p>
         </div>
-        <Button onClick={() => setShowCreate(true)} data-testid="create-group-btn">
+        <Button onClick={() => { setEditingGroup(null); setSelectedItems([]); setLeaderItem(''); setCreateSearch(''); setShowCreate(true); }} data-testid="create-group-btn">
           <Plus className="h-4 w-4 mr-2" />New Group
         </Button>
       </div>
