@@ -3357,72 +3357,104 @@ async def assign_stamp_to_item(item_name: str, stamp: str = Query(...)):
 
 @api_router.post("/item-buffers/categorize")
 async def categorize_items(current_user: dict = Depends(get_current_user)):
-    """Analyze sales data and auto-categorize items into movement tiers with buffers"""
+    """Analyze sales data and auto-categorize items into movement tiers with seasonal buffers.
+    Uses historical data to determine seasonal velocity. Item groups are merged."""
     if current_user['role'] != 'admin':
         raise HTTPException(status_code=403, detail="Admin only")
-    
-    # Get all sales transactions
-    sales = await db.transactions.find(
-        {"type": {"$in": ["sale", "sale_return"]}}, 
-        {"_id": 0, "item_name": 1, "net_wt": 1, "date": 1, "type": 1}
-    ).to_list(50000)
-    
-    # Get all master items for the full item list
+
+    # Determine current Indian season
+    now = datetime.now(timezone.utc)
+    current_month = now.month
+    current_season_key = None
+    for sk, si in HINDU_CALENDAR_SEASONS.items():
+        if current_month in si['months']:
+            current_season_key = sk
+            break
+    if not current_season_key:
+        current_season_key = 'off_season'
+
+    # 1. Load item groups for merging
+    groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    member_to_group = {}
+    for g in groups:
+        for member in g.get('members', []):
+            member_to_group[member] = g['group_name']
+
+    def resolve_group(name):
+        return member_to_group.get(name, name)
+
+    # 2. Get master items and current inventory
     master_items = await db.master_items.find({}, {"_id": 0}).to_list(10000)
     master_dict = {m['item_name']: m for m in master_items}
-    
-    # Get current inventory for stock levels
     inv_response = await get_current_inventory()
     inv_dict = {item['item_name']: item for item in inv_response['inventory']}
     inv_dict.update({item['item_name']: item for item in inv_response.get('negative_items', [])})
-    
-    # Calculate sales velocity per item (net weight sold per month)
-    item_sales = defaultdict(lambda: {'total_net_wt': 0.0, 'count': 0, 'dates': []})
-    for sale in sales:
-        name = sale.get('item_name', '')
-        if not name:
-            continue
-        wt = sale.get('net_wt', 0)
-        item_sales[name]['total_net_wt'] += abs(wt)
-        item_sales[name]['count'] += 1
-        if sale.get('date'):
-            item_sales[name]['dates'].append(sale['date'])
-    
-    # Calculate date range for monthly rate
-    all_dates = []
-    for s in sales:
-        if s.get('date'):
-            all_dates.append(s['date'])
-    
-    if all_dates:
-        all_dates.sort()
-        first_date = all_dates[0][:10]
-        last_date = all_dates[-1][:10]
+
+    # 3. Aggregate monthly sales from BOTH current + historical transactions (via MongoDB)
+    monthly_pipeline = [
+        {"$match": {"type": {"$in": ["sale", "sale_return"]}}},
+        {"$project": {"item_name": 1, "net_wt": 1, "month": {"$substr": ["$date", 5, 2]}}},
+        {"$group": {"_id": {"item": "$item_name", "month": "$month"}, "total_wt": {"$sum": "$net_wt"}}},
+    ]
+    item_monthly = defaultdict(lambda: defaultdict(float))
+    async for doc in db.transactions.aggregate(monthly_pipeline):
+        item = resolve_group(doc['_id']['item'])
         try:
-            d1 = datetime.strptime(first_date, '%Y-%m-%d')
-            d2 = datetime.strptime(last_date, '%Y-%m-%d')
-            months = max((d2 - d1).days / 30.0, 1.0)
-        except:
-            months = 1.0
-    else:
-        months = 1.0
-    
-    # Build velocity list for all master items
+            m = int(doc['_id']['month'])
+        except (ValueError, TypeError):
+            continue
+        item_monthly[item][m] += abs(doc['total_wt']) / 1000
+
+    async for doc in db.historical_transactions.aggregate(monthly_pipeline):
+        item = resolve_group(doc['_id']['item'])
+        try:
+            m = int(doc['_id']['month'])
+        except (ValueError, TypeError):
+            continue
+        item_monthly[item][m] += abs(doc['total_wt']) / 1000
+
+    # Count how many years of data we have for averaging
+    years_with_data = await db.historical_transactions.distinct("historical_year")
+    num_years = max(len(years_with_data), 1)
+
+    # 4. Calculate seasonal velocity for each item/group
+    all_items = set(master_dict.keys())
+    # Group stock: sum stock of all group members
+    group_stock = defaultdict(float)
+    group_stamps = {}
+    for name in all_items:
+        gname = resolve_group(name)
+        inv = inv_dict.get(name)
+        if inv:
+            group_stock[gname] += inv.get('net_wt', 0) / 1000
+        if gname not in group_stamps:
+            group_stamps[gname] = master_dict.get(name, {}).get('stamp', 'Unassigned')
+
     velocities = []
-    for item_name, master in master_dict.items():
-        sale_data = item_sales.get(item_name, {'total_net_wt': 0, 'count': 0})
-        monthly_velocity = (sale_data['total_net_wt'] / 1000) / months  # kg per month
+    for gname in set(list(group_stock.keys()) + list(item_monthly.keys())):
+        month_data = item_monthly.get(gname, {})
+        # Current season velocity (kg/month averaged over years)
+        current_season_months = HINDU_CALENDAR_SEASONS.get(current_season_key, {}).get('months', [current_month])
+        season_total = sum(month_data.get(m, 0) for m in current_season_months)
+        season_velocity = (season_total / num_years) / max(len(current_season_months), 1)
+        # Overall average velocity
+        total_all = sum(month_data.values())
+        overall_velocity = (total_all / num_years) / 12.0
+        # Use the HIGHER of seasonal vs overall (so buffers are season-aware)
+        effective_velocity = max(season_velocity, overall_velocity)
+
         velocities.append({
-            'item_name': item_name,
-            'stamp': master.get('stamp', 'Unassigned'),
-            'monthly_velocity_kg': monthly_velocity,
-            'total_sold_kg': sale_data['total_net_wt'] / 1000,
-            'sale_count': sale_data['count']
+            'item_name': gname,
+            'stamp': group_stamps.get(gname, 'Unassigned'),
+            'monthly_velocity_kg': effective_velocity,
+            'season_velocity_kg': season_velocity,
+            'overall_velocity_kg': overall_velocity,
+            'total_sold_kg': total_all / num_years,
+            'current_stock_kg': round(group_stock.get(gname, 0), 3),
         })
-    
-    # Sort by velocity and assign tiers using quartiles
+
+    # 5. Quartile-based tier assignment
     vel_values = [v['monthly_velocity_kg'] for v in velocities if v['monthly_velocity_kg'] > 0]
-    
     if vel_values:
         sorted_vals = sorted(vel_values)
         n = len(sorted_vals)
@@ -3431,100 +3463,90 @@ async def categorize_items(current_user: dict = Depends(get_current_user)):
         q75 = float(sorted_vals[max(0, int(n * 0.75) - 1)])
     else:
         q25 = q50 = q75 = 0
-    
-    # Categorize and calculate buffers
+
+    season_boost = HINDU_CALENDAR_SEASONS.get(current_season_key, {}).get('boost', 1.0)
+
     buffer_docs = []
     for v in velocities:
         vel = v['monthly_velocity_kg']
-        
         if vel <= 0:
-            tier = 'dead'
-            tier_num = 4
+            tier, tier_num = 'dead', 4
         elif vel <= q25:
-            tier = 'slow'
-            tier_num = 3
+            tier, tier_num = 'slow', 3
         elif vel <= q50:
-            tier = 'medium'
-            tier_num = 2
+            tier, tier_num = 'medium', 2
         elif vel <= q75:
-            tier = 'fast'
-            tier_num = 1
+            tier, tier_num = 'fast', 1
         else:
-            tier = 'fastest'
-            tier_num = 0
-        
-        # Calculate buffers: based on monthly velocity
-        # Lower buffer = 2 weeks of stock for fast, 1 month for slow
-        # Upper buffer = 1 month for fast, 3 months for slow
+            tier, tier_num = 'fastest', 0
+
+        # Seasonal buffers: boost during festival seasons
         if tier == 'fastest':
-            lower_buffer = round(vel * 0.5, 3)  # 2 weeks
-            upper_buffer = round(vel * 1.5, 3)  # 6 weeks
+            lower_buffer = round(vel * 0.5 * season_boost, 3)
+            upper_buffer = round(vel * 1.5 * season_boost, 3)
         elif tier == 'fast':
-            lower_buffer = round(vel * 0.75, 3)  # 3 weeks
-            upper_buffer = round(vel * 2.0, 3)  # 2 months
+            lower_buffer = round(vel * 0.75 * season_boost, 3)
+            upper_buffer = round(vel * 2.0 * season_boost, 3)
         elif tier == 'medium':
-            lower_buffer = round(vel * 1.0, 3)  # 1 month
-            upper_buffer = round(vel * 3.0, 3)  # 3 months
+            lower_buffer = round(vel * 1.0 * season_boost, 3)
+            upper_buffer = round(vel * 3.0 * season_boost, 3)
         elif tier == 'slow':
-            lower_buffer = round(vel * 1.5, 3)  # 6 weeks
-            upper_buffer = round(vel * 4.0, 3)  # 4 months
-        else:  # dead
-            lower_buffer = 0
-            upper_buffer = 0
-        
-        # Current stock
-        inv_item = inv_dict.get(v['item_name'])
-        current_stock_kg = round(inv_item['net_wt'] / 1000, 3) if inv_item else 0
-        
-        # Default minimum = lower buffer
+            lower_buffer = round(vel * 1.5, 3)
+            upper_buffer = round(vel * 4.0, 3)
+        else:
+            lower_buffer = upper_buffer = 0
+
+        current_stock_kg = v['current_stock_kg']
         minimum_stock = lower_buffer
-        
-        # Determine status color
-        if current_stock_kg < minimum_stock - lower_buffer:
-            status = 'red'  # Below minimum - buffer
-        elif current_stock_kg < minimum_stock:
-            status = 'red'  # Below minimum
-        elif current_stock_kg >= minimum_stock and current_stock_kg <= upper_buffer:
+
+        if current_stock_kg < minimum_stock:
+            status = 'red'
+        elif current_stock_kg <= upper_buffer:
             status = 'green'
         else:
-            status = 'yellow'  # Above upper buffer
-        
+            status = 'yellow'
+
         buffer_docs.append({
             'item_name': v['item_name'],
             'stamp': v['stamp'],
-            'tier': tier,
-            'tier_num': tier_num,
+            'tier': tier, 'tier_num': tier_num,
             'monthly_velocity_kg': round(vel, 3),
+            'season_velocity_kg': round(v['season_velocity_kg'], 3),
+            'overall_velocity_kg': round(v['overall_velocity_kg'], 3),
             'total_sold_kg': round(v['total_sold_kg'], 3),
-            'sale_count': v['sale_count'],
             'lower_buffer_kg': lower_buffer,
             'upper_buffer_kg': upper_buffer,
             'minimum_stock_kg': minimum_stock,
             'current_stock_kg': current_stock_kg,
             'status': status,
+            'current_season': current_season_key,
+            'season_boost': season_boost,
+            'is_group': v['item_name'] in [g['group_name'] for g in groups],
             'updated_at': datetime.now(timezone.utc).isoformat()
         })
-    
-    # Save to database (upsert each item)
+
+    # Save to DB
     for doc in buffer_docs:
         await db.item_buffers.update_one(
             {'item_name': doc['item_name']},
             {'$set': doc},
             upsert=True
         )
-    
+
     tier_counts = defaultdict(int)
     for d in buffer_docs:
         tier_counts[d['tier']] += 1
-    
-    await save_action('categorize_items', f"Categorized {len(buffer_docs)} items into tiers", user=current_user)
-    
+
+    await save_action('categorize_items', f"Categorized {len(buffer_docs)} items (seasonal, {current_season_key})", user=current_user)
+
     return {
         "success": True,
         "total_items": len(buffer_docs),
         "tiers": dict(tier_counts),
         "thresholds": {"q25": round(q25, 3), "q50": round(q50, 3), "q75": round(q75, 3)},
-        "months_analyzed": round(months, 1)
+        "current_season": current_season_key,
+        "season_boost": season_boost,
+        "years_analyzed": num_years
     }
 
 @api_router.get("/item-buffers")
