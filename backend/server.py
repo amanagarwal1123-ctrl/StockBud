@@ -131,7 +131,7 @@ def _detect_header_and_clean(df):
     header_row_idx = None
     search_limit = min(20, len(df))
     for idx in range(search_limit):
-        row_str = ' '.join(str(val).lower() for val in df.iloc[idx] if pd.notna(val))
+        row_str = ' '.join(str(val).lower() for val in df.iloc[idx] if val is not None and str(val) != 'nan')
         if 'item name' in row_str or 'particular' in row_str or 'party name' in row_str or 'lnarr' in row_str:
             header_row_idx = idx
             break
