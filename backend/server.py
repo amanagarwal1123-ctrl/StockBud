@@ -7,16 +7,14 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone, timedelta
-import pandas as pd
 from io import BytesIO
 import json
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
-from emergentintegrations.llm.chat import LlmChat, UserMessage
-import numpy as np
 import re
 import gc
+import math
 
 # Thread pool for CPU-bound Excel parsing
 _parse_executor = ThreadPoolExecutor(max_workers=1)
