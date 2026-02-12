@@ -4360,11 +4360,23 @@ async def get_visualization_data(
     buffers = await db.item_buffers.find({}, {"_id": 0}).to_list(10000)
     tier_map = {b['item_name']: b.get('tier', 'unknown') for b in buffers}
     
-    # 1. Sales by item (top 20)
+    # Load mappings + groups for resolving to leaders
+    all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
+    mapping_dict = {m['transaction_name']: m['master_name'] for m in all_mappings}
+    groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    member_to_leader = {}
+    for g in groups:
+        for member in g.get('members', []):
+            member_to_leader[member] = g['group_name']
+    def _resolve(name):
+        master = mapping_dict.get(name, name)
+        return member_to_leader.get(master, master)
+
+    # 1. Sales by item (top 20) — resolved to leaders
     item_sales = defaultdict(lambda: {'net_wt': 0, 'amount': 0, 'count': 0})
     for t in transactions:
         if t['type'] in ['sale', 'sale_return']:
-            name = t.get('item_name', '')
+            name = _resolve(t.get('item_name', ''))
             item_sales[name]['net_wt'] += t.get('net_wt', 0)
             item_sales[name]['amount'] += t.get('total_amount', 0)
             item_sales[name]['count'] += 1
