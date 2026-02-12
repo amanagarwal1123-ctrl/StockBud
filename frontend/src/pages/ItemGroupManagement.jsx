@@ -42,24 +42,39 @@ export default function ItemGroupManagement() {
     finally { setLoading(false); }
   };
 
-  const handleCreate = async () => {
+  const handleSave = async () => {
     if (!leaderItem || selectedItems.length < 2) {
       toast.error('Select a leader and at least 2 items');
       return;
     }
     try {
       const token = localStorage.getItem('token');
+      // If editing and leader changed, delete old group first
+      if (editingGroup && editingGroup !== leaderItem) {
+        await axios.delete(`${API}/item-groups/${encodeURIComponent(editingGroup)}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+      }
       await axios.post(`${API}/item-groups`, {
         group_name: leaderItem,
         members: selectedItems
       }, { headers: { Authorization: `Bearer ${token}` } });
-      toast.success(`Group "${leaderItem}" created`);
+      toast.success(editingGroup ? `Group updated` : `Group "${leaderItem}" created`);
       setShowCreate(false);
       setSelectedItems([]);
       setLeaderItem('');
       setCreateSearch('');
+      setEditingGroup(null);
       fetchAll();
     } catch (e) { toast.error(e.response?.data?.detail || 'Failed'); }
+  };
+
+  const openEdit = (group) => {
+    setEditingGroup(group.group_name);
+    setSelectedItems([...group.members]);
+    setLeaderItem(group.group_name);
+    setCreateSearch('');
+    setShowCreate(true);
   };
 
   const handleDelete = async (name) => {
