@@ -53,13 +53,19 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 - **Functions modified:** `_read_excel_once`, `_read_excel_from_path`, `upload_master_stock`, `upload_purchase_ledger`, smart-insights endpoint, seasonal-analysis endpoint
 - **Also replaced:** `pd.isna()` → `math.isnan()`, `np.percentile()` → pure Python sorted percentile
 
+## Item Groups (Feb 12, 2026)
+- Manual grouping of similar items for combined buffer & order calculations
+- Leader item displayed everywhere, shows mapped transaction names per member
+- CRUD: POST/GET/DELETE /api/item-groups, GET /api/item-groups/suggestions
+
+## Stamp Detail Page (Feb 12, 2026)
+- Clickable stamps → /stamp/{stampName} detail page with items, stock, executive assignment
+- One stamp → one executive, one executive can have multiple stamps
+
+## Seasonal Item Buffers (Feb 12, 2026)
+- Categorization uses historical data + Hindu calendar seasons for velocity
+- Item groups merged during categorization, season boost applied
+
 ## Backlog
-- (P0) User to verify analytics pages (Profit, Smart Insights, Seasonal Analysis) in deployed app
-- (P0) AI Budget: User needs to add balance to Emergent Universal Key (Profile → Universal Key → Add Balance)
-- (P1) Item Mapping: 219 unmapped historical items need mapping for better profit accuracy
-- (P2) Refactor server.py (4800+ lines) into proper FastAPI structure (/routes, /models, /services)
-- (P1) User-guided Item Mapping: Help user map 219 unmapped historical items
-- (P1) Upload queue UI lock — block concurrent uploads
-- (P1) Further split server.py into route modules
-- (P2) Implement Core AI Seasonal Analysis Logic
-- (P2) Browser Notifications integration
+- (P1) Item Mapping: 219 unmapped historical items need mapping
+- (P2) Refactor server.py into proper FastAPI structure
