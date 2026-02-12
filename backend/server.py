@@ -52,6 +52,11 @@ async def create_upload_indexes():
     """Create indexes for chunked upload collections and clean stale tasks"""
     await db.upload_sessions.create_index("upload_id", unique=True)
     await db.upload_chunks.create_index([("upload_id", 1), ("chunk_index", 1)], unique=True)
+    # Indexes for fast aggregation on historical_transactions (200k+ docs)
+    await db.historical_transactions.create_index([("historical_year", 1), ("type", 1)])
+    await db.historical_transactions.create_index([("type", 1), ("item_name", 1)])
+    await db.historical_transactions.create_index("batch_id")
+    await db.transactions.create_index([("type", 1), ("item_name", 1)])
     # Mark any orphaned "processing" tasks as failed (from OOM/crash during previous run)
     stale = await db.upload_sessions.update_many(
         {"status": "processing"},
