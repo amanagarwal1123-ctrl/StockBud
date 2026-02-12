@@ -2356,6 +2356,7 @@ async def upload_master_stock(file: UploadFile = File(...)):
     content = await file.read()
     
     try:
+        import pandas as pd
         df = pd.read_excel(BytesIO(content), header=0)
         df = df.fillna('')
         df.columns = df.columns.str.strip()
@@ -2426,6 +2427,7 @@ async def upload_purchase_ledger(file: UploadFile = File(...)):
     content = await file.read()
     
     try:
+        import pandas as pd
         df = pd.read_excel(BytesIO(content), header=2)
         df = df.fillna(0)
         df.columns = df.columns.str.strip()
