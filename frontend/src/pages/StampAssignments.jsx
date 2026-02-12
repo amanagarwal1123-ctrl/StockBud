@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Users, Save, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,6 +15,7 @@ const API = `${BACKEND_URL}/api`;
 
 export default function StampAssignments() {
   const { isAdmin } = useAuth();
+  const navigate = useNavigate();
   const [assignments, setAssignments] = useState([]);
   const [users, setUsers] = useState([]);
   const [stamps, setStamps] = useState([]);
@@ -143,7 +145,9 @@ export default function StampAssignments() {
             <TableBody>
               {stamps.map(stamp => (
                 <TableRow key={stamp} data-testid={`assignment-row-${stamp}`}>
-                  <TableCell className="font-medium">{stamp}</TableCell>
+                  <TableCell className="font-medium cursor-pointer hover:text-blue-600 hover:underline"
+                    onClick={() => navigate(`/stamp/${encodeURIComponent(stamp)}`)}
+                    data-testid={`stamp-link-${stamp}`}>{stamp}</TableCell>
                   <TableCell>
                     {assignmentMap[stamp] ? (
                       <Badge variant="outline">{assignmentMap[stamp]}</Badge>
