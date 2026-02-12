@@ -3424,14 +3424,19 @@ async def categorize_items(current_user: dict = Depends(get_current_user)):
 
     # 4. Calculate seasonal velocity for each item/group
     all_items = set(master_dict.keys())
-    # Group stock: sum stock of all group members
+    # Group stock: use inventory (which already resolves mappings+groups)
     group_stock = defaultdict(float)
     group_stamps = {}
+    # Stock from inventory (already merged by get_current_inventory)
+    for inv_item in list(inv_response['inventory']) + list(inv_response.get('negative_items', [])):
+        name = inv_item['item_name']
+        gname = resolve(name)
+        group_stock[gname] += inv_item.get('net_wt', 0) / 1000
+        if gname not in group_stamps:
+            group_stamps[gname] = inv_item.get('stamp', 'Unassigned')
+    # Ensure all master items have an entry (even if 0 stock)
     for name in all_items:
         gname = resolve(name)
-        inv = inv_dict.get(name)
-        if inv:
-            group_stock[gname] += inv.get('net_wt', 0) / 1000
         if gname not in group_stamps:
             group_stamps[gname] = master_dict.get(name, {}).get('stamp', 'Unassigned')
 
