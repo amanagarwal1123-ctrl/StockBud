@@ -3424,9 +3424,11 @@ async def categorize_items(current_user: dict = Depends(get_current_user)):
     vel_values = [v['monthly_velocity_kg'] for v in velocities if v['monthly_velocity_kg'] > 0]
     
     if vel_values:
-        q25 = float(np.percentile(vel_values, 25))
-        q50 = float(np.percentile(vel_values, 50))
-        q75 = float(np.percentile(vel_values, 75))
+        sorted_vals = sorted(vel_values)
+        n = len(sorted_vals)
+        q25 = float(sorted_vals[max(0, int(n * 0.25) - 1)])
+        q50 = float(sorted_vals[max(0, int(n * 0.50) - 1)])
+        q75 = float(sorted_vals[max(0, int(n * 0.75) - 1)])
     else:
         q25 = q50 = q75 = 0
     
