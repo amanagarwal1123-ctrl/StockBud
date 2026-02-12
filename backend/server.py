@@ -3578,6 +3578,97 @@ async def update_item_buffer(item_name: str, minimum_stock_kg: float = Query(...
         raise HTTPException(status_code=404, detail="Item not found in buffers")
     return {"success": True, "message": f"Minimum stock for '{item_name}' set to {minimum_stock_kg} kg"}
 
+# ==================== ITEM GROUPS (merge similar items) ====================
+
+@api_router.get("/item-groups")
+async def get_item_groups():
+    """Get all item groups with their members and mapped items"""
+    groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    # Also get item mappings to show which items map to each member
+    mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
+    mapping_by_master = defaultdict(list)
+    for m in mappings:
+        mapping_by_master[m['master_name']].append(m['transaction_name'])
+    for g in groups:
+        g['mapped_items'] = {}
+        for member in g.get('members', []):
+            g['mapped_items'][member] = mapping_by_master.get(member, [])
+    return {"groups": groups}
+
+
+@api_router.post("/item-groups")
+async def save_item_group(group: ItemGroup, current_user: dict = Depends(get_current_user)):
+    """Create or update an item group"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    if len(group.members) < 2:
+        raise HTTPException(status_code=400, detail="Group needs at least 2 members")
+    await db.item_groups.update_one(
+        {'group_name': group.group_name},
+        {'$set': {'group_name': group.group_name, 'members': group.members,
+                  'updated_at': datetime.now(timezone.utc).isoformat()}},
+        upsert=True
+    )
+    return {"success": True, "message": f"Group '{group.group_name}' saved with {len(group.members)} members"}
+
+
+@api_router.delete("/item-groups/{group_name}")
+async def delete_item_group(group_name: str, current_user: dict = Depends(get_current_user)):
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    await db.item_groups.delete_one({'group_name': group_name})
+    return {"success": True}
+
+
+@api_router.get("/item-groups/suggestions")
+async def suggest_item_groups():
+    """List all master items for manual grouping selection"""
+    items = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(10000)
+    existing = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    grouped_items = set()
+    for g in existing:
+        grouped_items.update(g.get('members', []))
+    return {"items": items, "already_grouped": list(grouped_items)}
+
+
+# ==================== STAMP DETAIL (click a stamp to see items + assign) ====================
+
+@api_router.get("/stamps/{stamp_name}/detail")
+async def get_stamp_detail(stamp_name: str):
+    """Get all items in a stamp with stock info"""
+    master_items = await db.master_items.find(
+        {"stamp": stamp_name}, {"_id": 0}
+    ).to_list(10000)
+    inv_response = await get_current_inventory()
+    inv_dict = {}
+    for item in inv_response.get('inventory', []):
+        inv_dict[item['item_name']] = item
+    for item in inv_response.get('negative_items', []):
+        inv_dict[item['item_name']] = item
+
+    items_with_stock = []
+    total_net_wt = 0
+    for mi in master_items:
+        inv = inv_dict.get(mi['item_name'])
+        net_wt = round(inv['net_wt'] / 1000, 3) if inv else 0
+        total_net_wt += net_wt
+        items_with_stock.append({
+            'item_name': mi['item_name'],
+            'net_wt_kg': net_wt,
+            'gr_wt_kg': round(inv['gr_wt'] / 1000, 3) if inv else 0,
+        })
+    items_with_stock.sort(key=lambda x: x['net_wt_kg'], reverse=True)
+
+    assignment = await db.stamp_assignments.find_one({"stamp": stamp_name}, {"_id": 0})
+    return {
+        "stamp": stamp_name,
+        "items": items_with_stock,
+        "total_items": len(items_with_stock),
+        "total_net_wt_kg": round(total_net_wt, 3),
+        "assigned_user": assignment.get('assigned_user') if assignment else None
+    }
+
+
 # ==================== STAMP-USER ASSIGNMENT ====================
 
 @api_router.get("/stamp-assignments")
