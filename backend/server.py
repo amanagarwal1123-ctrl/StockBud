@@ -3644,13 +3644,30 @@ async def delete_item_group(group_name: str, current_user: dict = Depends(get_cu
 
 @api_router.get("/item-groups/suggestions")
 async def suggest_item_groups():
-    """List all master items for manual grouping selection"""
+    """List all master items + auto-detected groups from mappings"""
     items = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(10000)
     existing = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
     grouped_items = set()
     for g in existing:
         grouped_items.update(g.get('members', []))
-    return {"items": items, "already_grouped": list(grouped_items)}
+
+    # Auto-detect: master items that have mappings pointing to them
+    mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
+    master_names = {i['item_name'] for i in items}
+    mapping_by_master = defaultdict(list)
+    for m in mappings:
+        mapping_by_master[m['master_name']].append(m['transaction_name'])
+    # Items that have transaction names mapping to them AND those names are also master items
+    auto_suggestions = []
+    for master, txn_names in mapping_by_master.items():
+        related_masters = [t for t in txn_names if t in master_names and t != master]
+        if related_masters:
+            auto_suggestions.append({
+                'leader': master,
+                'members': [master] + related_masters
+            })
+
+    return {"items": items, "already_grouped": list(grouped_items), "auto_suggestions": auto_suggestions}
 
 
 # ==================== STAMP DETAIL (click a stamp to see items + assign) ====================
