@@ -4180,10 +4180,21 @@ async def get_historical_profit(
             month_profit[mk]["wt"] += nw / 1000
             month_profit[mk]["cnt"] += doc["count"]
 
-        rows = [{"month": mk, "silver_profit_kg": round(v["silver"], 3),
-                 "labor_profit_inr": round(v["labor"], 2),
-                 "total_sold_kg": round(v["wt"], 3), "transactions": v["cnt"]}
-                for mk, v in sorted(month_profit.items())]
+        MONTH_NAMES = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        rows = []
+        for mk, v in sorted(month_profit.items()):
+            parts = mk.split("-")
+            if len(parts) == 2:
+                yr_short = parts[0][2:]  # "2025" → "25"
+                mi = int(parts[1]) if parts[1].isdigit() else 0
+                label = f"{MONTH_NAMES[mi]} {yr_short}" if 1 <= mi <= 12 else mk
+            else:
+                label = mk
+            rows.append({"month": mk, "month_name": label,
+                         "silver_profit_kg": round(v["silver"], 3),
+                         "labor_profit_inr": round(v["labor"], 2),
+                         "total_sold_kg": round(v["wt"], 3), "transactions": v["cnt"]})
         return {"view": "month", "year": year, "data": rows, "total": len(rows)}
 
     raise HTTPException(status_code=400, detail="Invalid view. Use: customer, supplier, item, month, yearly")
