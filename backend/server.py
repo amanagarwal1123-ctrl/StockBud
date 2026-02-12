@@ -4362,6 +4362,10 @@ Provide your analysis in a clear, actionable format with specific numbers. Use b
     try:
         from emergentintegrations.llm.chat import LlmChat, UserMessage
         chat = LlmChat(
+            api_key=llm_key,
+            session_id=f"insights-{datetime.now().strftime('%Y%m%d%H%M')}",
+            system_message="You are a silver jewelry wholesale business analyst. Provide concise, data-driven insights. Use specific numbers from the data. Be direct and actionable."
+        ).with_model("anthropic", "claude-sonnet-4-5")
         
         response = await chat.send_message(UserMessage(text=prompt))
         
