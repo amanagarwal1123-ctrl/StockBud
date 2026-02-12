@@ -24,6 +24,7 @@ export default function ItemGroupManagement() {
   const [leaderItem, setLeaderItem] = useState('');
   const [createSearch, setCreateSearch] = useState('');
   const [expandedGroup, setExpandedGroup] = useState(null);
+  const [editingGroup, setEditingGroup] = useState(null); // null = create mode, string = editing group name
 
   useEffect(() => { fetchAll(); }, []);
 
