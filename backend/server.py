@@ -3535,7 +3535,9 @@ async def categorize_items(current_user: dict = Depends(get_current_user)):
             'updated_at': datetime.now(timezone.utc).isoformat()
         })
 
-    # Save to DB
+    # Save to DB — clear old entries first, then upsert new ones
+    new_names = {doc['item_name'] for doc in buffer_docs}
+    await db.item_buffers.delete_many({'item_name': {'$nin': list(new_names)}})
     for doc in buffer_docs:
         await db.item_buffers.update_one(
             {'item_name': doc['item_name']},
