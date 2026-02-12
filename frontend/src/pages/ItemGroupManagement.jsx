@@ -114,6 +114,44 @@ export default function ItemGroupManagement() {
         </div>
       )}
 
+      {/* Auto-suggested groups from mappings */}
+      {autoSuggestions.filter(s => !alreadyGrouped.includes(s.leader)).length > 0 && (
+        <Card className="border-amber-200 bg-amber-50/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Link2 className="h-4 w-4 text-amber-600" />
+              Auto-detected from Mappings
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">These items share mappings and can be quickly grouped</p>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {autoSuggestions.filter(s => !alreadyGrouped.includes(s.leader)).map(s => (
+                <div key={s.leader} className="flex items-center justify-between p-2.5 bg-white rounded border border-amber-100"
+                  data-testid={`auto-suggest-${s.leader}`}>
+                  <div>
+                    <span className="font-medium text-sm">{s.leader}</span>
+                    <span className="text-xs text-muted-foreground ml-2">+ {s.members.filter(m => m !== s.leader).join(', ')}</span>
+                  </div>
+                  <Button size="sm" variant="outline" className="border-amber-300 text-amber-700"
+                    onClick={async () => {
+                      try {
+                        const token = localStorage.getItem('token');
+                        await axios.post(`${API}/item-groups`, { group_name: s.leader, members: s.members },
+                          { headers: { Authorization: `Bearer ${token}` } });
+                        toast.success(`Group "${s.leader}" created from mappings`);
+                        fetchAll();
+                      } catch (e) { toast.error(e.response?.data?.detail || 'Failed'); }
+                    }} data-testid={`auto-group-${s.leader}`}>
+                    <Plus className="h-3.5 w-3.5 mr-1" />Group
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {filteredGroups.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="py-12 text-center">
