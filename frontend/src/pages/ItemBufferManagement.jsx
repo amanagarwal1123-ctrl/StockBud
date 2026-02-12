@@ -62,7 +62,9 @@ export default function ItemBufferManagement() {
       const res = await axios.post(`${API}/item-buffers/categorize`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      toast.success(`Categorized ${res.data.total_items} items into ${Object.keys(res.data.tiers).length} tiers`);
+      const season = res.data.current_season || '';
+      const boost = res.data.season_boost || 1;
+      toast.success(`Categorized ${res.data.total_items} items | Season: ${season} (${boost}x boost) | ${res.data.years_analyzed} years analyzed`);
       fetchItems();
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Categorization failed');
