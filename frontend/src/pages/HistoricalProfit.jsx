@@ -136,7 +136,7 @@ function YearlySummary({ data }) {
 
 function MonthView({ rows }) {
   const chartData = rows.map(r => ({
-    month: r.month?.slice(5) || r.month,
+    month: r.month_name || r.month,
     silver: r.silver_profit_kg,
     labor: Math.round(r.labor_profit_inr / 1000),
   }));
@@ -189,7 +189,7 @@ function MonthView({ rows }) {
             <TableBody>
               {rows.map(r => (
                 <TableRow key={r.month}>
-                  <TableCell className="font-medium text-sm">{r.month}</TableCell>
+                  <TableCell className="font-medium text-sm">{r.month_name || r.month}</TableCell>
                   <TableCell className={`text-right text-sm ${r.silver_profit_kg >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{fmtKg(r.silver_profit_kg)}</TableCell>
                   <TableCell className={`text-right text-sm ${r.labor_profit_inr >= 0 ? 'text-blue-600' : 'text-red-600'}`}>{fmtInr(r.labor_profit_inr)}</TableCell>
                   <TableCell className="text-right text-sm">{fmtKg(r.total_sold_kg)}</TableCell>
