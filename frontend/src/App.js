@@ -25,6 +25,8 @@ import ItemBufferManagement from './pages/ItemBufferManagement';
 import OrderManagement from './pages/OrderManagement';
 import DataVisualization from './pages/DataVisualization';
 import StampAssignments from './pages/StampAssignments';
+import StampDetail from './pages/StampDetail';
+import ItemGroupManagement from './pages/ItemGroupManagement';
 import HistoricalUpload from './pages/HistoricalUpload';
 import Login from './pages/Login';
 import Layout from './components/Layout';
