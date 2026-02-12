@@ -234,10 +234,10 @@ export default function ItemGroupManagement() {
         </div>
       )}
 
-      {/* Create Group Dialog */}
-      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+      {/* Create/Edit Group Dialog */}
+      <Dialog open={showCreate} onOpenChange={(open) => { setShowCreate(open); if (!open) setEditingGroup(null); }}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Create Item Group</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editingGroup ? `Edit Group: ${editingGroup}` : 'Create Item Group'}</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -269,9 +269,9 @@ export default function ItemGroupManagement() {
               ))}
               {availableItems.length === 0 && <p className="text-sm text-muted-foreground p-4 text-center">No items match</p>}
             </div>
-            <Button onClick={handleCreate} className="w-full" disabled={!leaderItem || selectedItems.length < 2}
+            <Button onClick={handleSave} className="w-full" disabled={!leaderItem || selectedItems.length < 2}
               data-testid="save-group-btn">
-              Create Group ({selectedItems.length} items)
+              {editingGroup ? 'Update Group' : 'Create Group'} ({selectedItems.length} items)
             </Button>
           </div>
         </DialogContent>
