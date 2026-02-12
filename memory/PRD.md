@@ -46,8 +46,17 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 - `GET /api/historical/summary` - Historical data summary
 - `GET /api/analytics/historical-profit` - Profit analysis
 
+## Lazy Import Optimization (Feb 12, 2026 - Deployment Crash Fix)
+- **Problem:** Backend crashed on startup in deployed environment (connection refused on port 8001) due to heavy top-level imports consuming ~135MB at startup
+- **Solution:** Converted pandas (~32MB), numpy (~7MB), and emergentintegrations (~96MB) from top-level imports to lazy imports inside the functions that use them
+- **Result:** Startup memory reduced from ~152MB to ~17.5MB, preventing OOM kills in memory-constrained pods
+- **Functions modified:** `_read_excel_once`, `_read_excel_from_path`, `upload_master_stock`, `upload_purchase_ledger`, smart-insights endpoint, seasonal-analysis endpoint
+- **Also replaced:** `pd.isna()` → `math.isnan()`, `np.percentile()` → pure Python sorted percentile
+
 ## Backlog
-- (P0) User to verify large sales file upload in deployed environment
+- (P0) User to verify analytics pages (Profit, Smart Insights, Seasonal Analysis) in deployed app
+- (P1) Item Mapping: 219 unmapped historical items need mapping for better profit accuracy
+- (P2) Refactor server.py (4800+ lines) into proper FastAPI structure (/routes, /models, /services)
 - (P1) User-guided Item Mapping: Help user map 219 unmapped historical items
 - (P1) Upload queue UI lock — block concurrent uploads
 - (P1) Further split server.py into route modules
