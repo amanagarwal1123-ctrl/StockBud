@@ -90,7 +90,7 @@ def _safe_float(val, default=0.0):
         return default
     try:
         f = float(val)
-        return default if pd.isna(f) else f
+        return default if math.isnan(f) else f
     except (ValueError, TypeError):
         return default
 
@@ -107,19 +107,21 @@ def _safe_int(val, default=0):
     """Fast int conversion"""
     try:
         f = float(val) if val not in (None, '', 'nan') else default
-        return default if pd.isna(f) else int(f)
+        return default if math.isnan(f) else int(f)
     except (ValueError, TypeError):
         return default
 
 
 def _read_excel_once(file_content: bytes):
     """Read Excel file ONCE and detect header row efficiently"""
+    import pandas as pd
     df = pd.read_excel(BytesIO(file_content), header=None, dtype=str)
     return _detect_header_and_clean(df)
 
 
 def _read_excel_from_path(file_path: str):
     """Read Excel file from disk path (memory-efficient for large files)"""
+    import pandas as pd
     df = pd.read_excel(file_path, header=None, dtype=str, engine='openpyxl')
     return _detect_header_and_clean(df)
 
