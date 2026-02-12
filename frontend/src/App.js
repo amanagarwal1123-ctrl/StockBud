@@ -96,6 +96,8 @@ function App() {
                       <Route path="/orders" element={<OrderManagement />} />
                       <Route path="/visualization" element={<DataVisualization />} />
                       <Route path="/stamp-assignments" element={<StampAssignments />} />
+                      <Route path="/stamp/:stampName" element={<StampDetail />} />
+                      <Route path="/item-groups" element={<ItemGroupManagement />} />
                       <Route path="/historical-upload" element={<HistoricalUpload />} />
                       <Route path="/item/:itemName" element={<ItemDetail />} />
                     </Routes>
