@@ -16,6 +16,7 @@ export default function ItemGroupManagement() {
   const [groups, setGroups] = useState([]);
   const [allItems, setAllItems] = useState([]);
   const [alreadyGrouped, setAlreadyGrouped] = useState([]);
+  const [autoSuggestions, setAutoSuggestions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState('');
@@ -35,6 +36,7 @@ export default function ItemGroupManagement() {
       setGroups(gRes.data.groups || []);
       setAllItems(sRes.data.items || []);
       setAlreadyGrouped(sRes.data.already_grouped || []);
+      setAutoSuggestions(sRes.data.auto_suggestions || []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
