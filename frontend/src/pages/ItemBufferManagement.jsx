@@ -236,7 +236,10 @@ export default function ItemBufferManagement() {
                         <TableCell>
                           <div className={`w-3 h-3 rounded-full ${STATUS_COLORS[item.status]}`} title={item.status} />
                         </TableCell>
-                        <TableCell className="font-medium text-sm">{item.item_name}</TableCell>
+                        <TableCell className="font-medium text-sm">
+                          {item.item_name}
+                          {item.is_group && <Badge className="ml-1.5 text-[10px] bg-purple-100 text-purple-700">Group</Badge>}
+                        </TableCell>
                         <TableCell><Badge variant="outline" className="text-xs font-mono">{item.stamp}</Badge></TableCell>
                         <TableCell><Badge className={`text-xs ${TIER_COLORS[item.tier]}`}>{item.tier}</Badge></TableCell>
                         <TableCell className="text-right font-mono text-sm">{item.monthly_velocity_kg}</TableCell>
