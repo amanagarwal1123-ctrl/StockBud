@@ -3,7 +3,8 @@ from database import db
 
 
 async def get_current_inventory():
-    """Calculate current inventory: Opening Stock + Purchases - Sales"""
+    """Calculate current inventory: Opening Stock + Purchases - Sales.
+    Merges item group members into their leader for consolidated view."""
     EXCLUDED_ITEMS = ["SILVER ORNAMENTS"]
 
     opening = await db.opening_stock.find({}, {"_id": 0}).to_list(10000)
@@ -14,6 +15,14 @@ async def get_current_inventory():
 
     master_items = await db.master_items.find({}, {"_id": 0}).to_list(10000)
     master_stamp_dict = {m['item_name']: m['stamp'] for m in master_items}
+
+    # Load item groups for merging into leaders
+    groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    member_to_leader = {}
+    for g in groups:
+        for member in g.get('members', []):
+            if member != g['group_name']:
+                member_to_leader[member] = g['group_name']
 
     opening = [item for item in opening if item['item_name'] not in EXCLUDED_ITEMS]
     transactions = [t for t in transactions if t['item_name'] not in EXCLUDED_ITEMS]
