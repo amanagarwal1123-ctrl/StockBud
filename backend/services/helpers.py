@@ -45,14 +45,14 @@ def parse_labor_value(tag_no):
 
 
 def normalize_date(date_value):
-    """Normalize date to YYYY-MM-DD format"""
+    """Normalize date to YYYY-MM-DD format. Uses dayfirst=True for DD/MM/YYYY (Indian format)."""
     if not date_value or pd.isna(date_value):
         return ''
     date_str = str(date_value).strip()
     if ' ' in date_str:
         date_str = date_str.split(' ')[0]
     try:
-        dt = pd.to_datetime(date_str)
+        dt = pd.to_datetime(date_str, dayfirst=True)
         return dt.strftime('%Y-%m-%d')
     except:
         return date_str
