@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import axios from 'axios';
-import { Search, Plus, Trash2, Users, Link2, ChevronDown, ChevronRight } from 'lucide-react';
+import { Search, Plus, Trash2, Users, Link2, ChevronDown, ChevronRight, Pencil } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
