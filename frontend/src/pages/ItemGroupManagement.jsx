@@ -188,9 +188,15 @@ export default function ItemGroupManagement() {
                     <CardTitle className="text-base">{g.group_name}</CardTitle>
                     <Badge variant="secondary" className="text-xs">{g.members.length} items</Badge>
                   </div>
-                  <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleDelete(g.group_name); }}>
-                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                  </Button>
+                  <div className="flex gap-1">
+                    <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); openEdit(g); }}
+                      data-testid={`edit-group-${g.group_name}`}>
+                      <Pencil className="h-3.5 w-3.5 text-blue-600" />
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleDelete(g.group_name); }}>
+                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               {expandedGroup === g.group_name && (
