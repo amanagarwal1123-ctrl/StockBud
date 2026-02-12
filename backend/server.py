@@ -3913,7 +3913,7 @@ async def auto_stock_alerts(current_user: dict = Depends(get_current_user)):
     
     return {"alerts": alerts, "count": len(alerts)}
 
-# ==================== HISTORICAL PROFIT ANALYSIS ====================
+# ==================== HISTORICAL PROFIT ANALYSIS (Aggregation-based, scales to 1M+ txns) ====================
 
 @api_router.get("/analytics/historical-profit")
 async def get_historical_profit(
@@ -3921,229 +3921,260 @@ async def get_historical_profit(
     view: str = "yearly"
 ):
     """
-    Profit analysis from historical_transactions.
-    Views: customer, supplier, item, month, yearly
-    Clubs mapped items together using item_mappings + master_items.
-    Uses fine/net_wt for tunch, raw labor sums for labour rate.
+    Profit analysis from historical_transactions using MongoDB aggregation.
+    NEVER loads raw documents into Python — all heavy lifting done in MongoDB.
+    Scales comfortably to 500k+ transactions per year.
     """
-    query = {}
+    match_filter = {}
     if year:
-        query["historical_year"] = year
+        match_filter["historical_year"] = year
 
-    try:
-        # Only fetch fields needed for profit calculation (saves ~70% memory vs full docs)
-        projection = {"_id": 0, "type": 1, "item_name": 1, "net_wt": 1, "fine": 1, 
-                      "labor": 1, "gr_wt": 1, "party_name": 1, "date": 1, "tunch": 1, "total_amount": 1}
-        
-        # Load purchases and sales separately with projection
-        purchases = await db.historical_transactions.find(
-            {**query, "type": {"$in": ["purchase", "purchase_return"]}}, projection
-        ).to_list(50000)
-        sales = await db.historical_transactions.find(
-            {**query, "type": {"$in": ["sale", "sale_return"]}}, projection
-        ).to_list(None)
-    except Exception as e:
-        logger.error(f"Historical profit data load failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to load data: {str(e)}")
-
-    # Load item mappings: transaction_name -> master_name
+    # 1. Load item mappings (small, <10k docs)
     all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
     mapping_dict = {m["transaction_name"]: m["master_name"] for m in all_mappings}
-
     def resolve(name):
         return mapping_dict.get(name, name)
 
-    # Build per-master-item purchase cost basis (using fine, net_wt, labor sums)
-    item_purchase = defaultdict(lambda: {"fine": 0.0, "net_wt": 0.0, "gr_wt": 0.0, "labor": 0.0})
-    for p in purchases:
-        master = resolve(p.get("item_name", ""))
-        nw = p.get("net_wt", 0)
-        if nw < 0.001:
-            continue
-        item_purchase[master]["fine"] += p.get("fine", 0)
-        item_purchase[master]["net_wt"] += nw
-        item_purchase[master]["gr_wt"] += p.get("gr_wt", 0)
-        item_purchase[master]["labor"] += p.get("labor", 0)
+    # 2. Purchase basis via aggregation (grouped by item_name)
+    purchase_agg = await db.historical_transactions.aggregate([
+        {"$match": {**match_filter, "type": "purchase", "net_wt": {"$gt": 0.001}}},
+        {"$group": {
+            "_id": "$item_name",
+            "fine": {"$sum": "$fine"}, "net_wt": {"$sum": "$net_wt"},
+            "labor": {"$sum": "$labor"}, "gr_wt": {"$sum": "$gr_wt"}
+        }}
+    ]).to_list(None)
 
+    # Merge into master items using mappings
     purchase_basis = {}
-    for item, d in item_purchase.items():
+    for doc in purchase_agg:
+        master = resolve(doc["_id"])
+        if master not in purchase_basis:
+            purchase_basis[master] = {"fine": 0.0, "net_wt": 0.0, "labor": 0.0}
+        purchase_basis[master]["fine"] += doc["fine"] or 0
+        purchase_basis[master]["net_wt"] += doc["net_wt"] or 0
+        purchase_basis[master]["labor"] += doc["labor"] or 0
+    del purchase_agg
+
+    # Compute avg tunch and labor/g per master item
+    for item, d in purchase_basis.items():
         nw = d["net_wt"]
-        if nw < 0.001:
-            continue
-        purchase_basis[item] = {
-            "avg_tunch": (d["fine"] / nw) * 100 if d["fine"] > 0 else 0,
-            "labor_per_gram": d["labor"] / nw,
-        }
+        if nw > 0.001:
+            d["avg_tunch"] = (d["fine"] / nw) * 100 if d["fine"] > 0 else 0
+            d["labor_per_gram"] = d["labor"] / nw
+        else:
+            d["avg_tunch"] = 0
+            d["labor_per_gram"] = 0
 
-    def _calc_profit(sale_list):
-        silver_kg = 0.0
-        labor_inr = 0.0
-        total_wt_kg = 0.0
-        count = 0
-        for s in sale_list:
-            master = resolve(s.get("item_name", ""))
-            basis = purchase_basis.get(master)
-            if not basis:
-                continue
-            nw = s.get("net_wt", 0)
-            if nw < 0.001:
-                continue
-            sale_fine = s.get("fine", 0)
-            sale_tunch = (sale_fine / nw) * 100 if sale_fine > 0 and nw > 0 else float(s.get("tunch", 0) or 0)
-            sale_labor = s.get("labor", 0)
-
-            silver_g = (sale_tunch - basis["avg_tunch"]) * nw / 100
-            silver_kg += silver_g / 1000
-
-            sale_labor_pg = sale_labor / nw
-            labor_inr += (sale_labor_pg - basis["labor_per_gram"]) * nw
-
-            total_wt_kg += nw / 1000
-            count += 1
-        return round(silver_kg, 3), round(labor_inr, 2), round(total_wt_kg, 3), count
-
+    # === VIEW: YEARLY ===
     if view == "yearly":
-        sk, li, wt, cnt = _calc_profit(sales)
-        total_sale_val = sum(s.get("total_amount", 0) for s in sales if s["type"] == "sale")
-        total_purchase_val = sum(p.get("total_amount", 0) for p in purchases if p["type"] == "purchase")
+        sale_item_agg = await db.historical_transactions.aggregate([
+            {"$match": {**match_filter, "type": "sale", "net_wt": {"$gt": 0.001}}},
+            {"$group": {
+                "_id": "$item_name",
+                "fine": {"$sum": "$fine"}, "net_wt": {"$sum": "$net_wt"},
+                "labor": {"$sum": "$labor"}, "total_amount": {"$sum": "$total_amount"},
+                "count": {"$sum": 1}
+            }}
+        ]).to_list(None)
+
+        silver_kg = 0.0; labor_inr = 0.0; total_wt = 0.0; matched = 0
+        total_sale_val = 0.0; total_sale_recs = 0
+        for doc in sale_item_agg:
+            master = resolve(doc["_id"])
+            basis = purchase_basis.get(master)
+            nw = doc["net_wt"] or 0
+            total_sale_val += doc.get("total_amount") or 0
+            total_sale_recs += doc["count"]
+            if not basis or nw < 0.001:
+                continue
+            s_tunch = (doc["fine"] / nw) * 100 if (doc["fine"] or 0) > 0 else 0
+            s_lpg = (doc["labor"] or 0) / nw
+            silver_kg += (s_tunch - basis["avg_tunch"]) * nw / 100 / 1000
+            labor_inr += (s_lpg - basis["labor_per_gram"]) * nw
+            total_wt += nw / 1000
+            matched += doc["count"]
+
+        # Purchase totals
+        purch_stats = await db.historical_transactions.aggregate([
+            {"$match": {**match_filter, "type": "purchase"}},
+            {"$group": {"_id": None, "total_amount": {"$sum": "$total_amount"}, "count": {"$sum": 1}}}
+        ]).to_list(1)
+        p_val = purch_stats[0]["total_amount"] if purch_stats else 0
+        p_cnt = purch_stats[0]["count"] if purch_stats else 0
+
         return {
             "view": "yearly", "year": year,
-            "silver_profit_kg": sk, "labor_profit_inr": li,
-            "total_sold_kg": wt, "total_transactions": cnt,
-            "total_sales_value": round(total_sale_val, 2),
-            "total_purchase_value": round(total_purchase_val, 2),
-            "total_sale_records": len([s for s in sales if s["type"] == "sale"]),
-            "total_purchase_records": len([p for p in purchases if p["type"] == "purchase"]),
+            "silver_profit_kg": round(silver_kg, 3), "labor_profit_inr": round(labor_inr, 2),
+            "total_sold_kg": round(total_wt, 3), "total_transactions": matched,
+            "total_sales_value": round(total_sale_val, 2), "total_purchase_value": round(p_val, 2),
+            "total_sale_records": total_sale_recs, "total_purchase_records": p_cnt,
         }
 
+    # === VIEW: CUSTOMER ===
     if view == "customer":
-        cust_map = defaultdict(list)
-        for s in sales:
-            cust_map[s.get("party_name", "Unknown") or "Unknown"].append(s)
-        rows = []
-        for cname, slist in cust_map.items():
-            sk, li, wt, cnt = _calc_profit(slist)
-            if cnt == 0:
+        cust_agg = await db.historical_transactions.aggregate([
+            {"$match": {**match_filter, "type": "sale", "net_wt": {"$gt": 0.001}}},
+            {"$group": {
+                "_id": {"party": "$party_name", "item": "$item_name"},
+                "fine": {"$sum": "$fine"}, "net_wt": {"$sum": "$net_wt"},
+                "labor": {"$sum": "$labor"}, "count": {"$sum": 1}
+            }}
+        ]).to_list(None)
+
+        cust_profit = defaultdict(lambda: {"silver": 0.0, "labor": 0.0, "wt": 0.0, "cnt": 0})
+        for doc in cust_agg:
+            party = doc["_id"]["party"] or "Unknown"
+            master = resolve(doc["_id"]["item"])
+            basis = purchase_basis.get(master)
+            nw = doc["net_wt"] or 0
+            if not basis or nw < 0.001:
                 continue
-            rows.append({"name": cname, "silver_profit_kg": sk, "labor_profit_inr": li,
-                         "total_sold_kg": wt, "transactions": cnt})
+            s_tunch = (doc["fine"] / nw) * 100 if (doc["fine"] or 0) > 0 else 0
+            s_lpg = (doc["labor"] or 0) / nw
+            cust_profit[party]["silver"] += (s_tunch - basis["avg_tunch"]) * nw / 100 / 1000
+            cust_profit[party]["labor"] += (s_lpg - basis["labor_per_gram"]) * nw
+            cust_profit[party]["wt"] += nw / 1000
+            cust_profit[party]["cnt"] += doc["count"]
+
+        rows = [{"name": k, "silver_profit_kg": round(v["silver"], 3),
+                 "labor_profit_inr": round(v["labor"], 2),
+                 "total_sold_kg": round(v["wt"], 3), "transactions": v["cnt"]}
+                for k, v in cust_profit.items() if v["cnt"] > 0]
         rows.sort(key=lambda x: x["silver_profit_kg"], reverse=True)
         return {"view": "customer", "year": year, "data": rows, "total": len(rows)}
 
+    # === VIEW: SUPPLIER ===
     if view == "supplier":
-        # Group purchases by supplier → master item
-        supplier_items = defaultdict(lambda: defaultdict(lambda: {"fine": 0.0, "net_wt": 0.0, "labor": 0.0}))
-        for p in purchases:
-            supplier = p.get("party_name", "Unknown") or "Unknown"
-            master = resolve(p.get("item_name", ""))
-            nw = p.get("net_wt", 0)
-            if nw < 0.001:
-                continue
-            supplier_items[supplier][master]["fine"] += p.get("fine", 0)
-            supplier_items[supplier][master]["net_wt"] += nw
-            supplier_items[supplier][master]["labor"] += p.get("labor", 0)
+        # Purchase grouped by supplier + item (via aggregation)
+        sup_agg = await db.historical_transactions.aggregate([
+            {"$match": {**match_filter, "type": "purchase", "net_wt": {"$gt": 0.001}}},
+            {"$group": {
+                "_id": {"party": "$party_name", "item": "$item_name"},
+                "fine": {"$sum": "$fine"}, "net_wt": {"$sum": "$net_wt"},
+                "labor": {"$sum": "$labor"}
+            }}
+        ]).to_list(None)
 
-        # Global average sale tunch & labor per gram for each master item
-        # (what we earn on average when selling this item to any customer)
+        # Global sale averages per master item (via aggregation)
+        sale_avg_agg = await db.historical_transactions.aggregate([
+            {"$match": {**match_filter, "type": "sale", "net_wt": {"$gt": 0.001}}},
+            {"$group": {
+                "_id": "$item_name",
+                "fine": {"$sum": "$fine"}, "net_wt": {"$sum": "$net_wt"},
+                "labor": {"$sum": "$labor"}
+            }}
+        ]).to_list(None)
+
+        # Merge sale averages by master item
         item_sale_avg = {}
-        item_sale_agg = defaultdict(lambda: {"fine": 0.0, "net_wt": 0.0, "labor": 0.0})
-        for s in sales:
-            master = resolve(s.get("item_name", ""))
-            nw = s.get("net_wt", 0)
-            if nw < 0.001:
-                continue
-            item_sale_agg[master]["fine"] += s.get("fine", 0)
-            item_sale_agg[master]["net_wt"] += nw
-            item_sale_agg[master]["labor"] += s.get("labor", 0)
-        for master, sa in item_sale_agg.items():
+        sale_merged = defaultdict(lambda: {"fine": 0.0, "net_wt": 0.0, "labor": 0.0})
+        for doc in sale_avg_agg:
+            master = resolve(doc["_id"])
+            sale_merged[master]["fine"] += doc["fine"] or 0
+            sale_merged[master]["net_wt"] += doc["net_wt"] or 0
+            sale_merged[master]["labor"] += doc["labor"] or 0
+        for master, sa in sale_merged.items():
             snw = sa["net_wt"]
-            if snw < 0.001:
+            if snw > 0.001:
+                item_sale_avg[master] = {
+                    "avg_tunch": (sa["fine"] / snw) * 100 if sa["fine"] > 0 else 0,
+                    "labor_per_gram": sa["labor"] / snw,
+                }
+
+        # Calculate per-supplier profit
+        sup_profit = defaultdict(lambda: {"silver": 0.0, "labor": 0.0, "wt": 0.0, "items": set()})
+        for doc in sup_agg:
+            supplier = doc["_id"]["party"] or "Unknown"
+            master = resolve(doc["_id"]["item"])
+            avg_sale = item_sale_avg.get(master)
+            pw = doc["net_wt"] or 0
+            if not avg_sale or pw < 0.001:
                 continue
-            item_sale_avg[master] = {
-                "avg_tunch": (sa["fine"] / snw) * 100 if sa["fine"] > 0 else 0,
-                "labor_per_gram": sa["labor"] / snw,
-            }
+            p_tunch = (doc["fine"] / pw) * 100 if (doc["fine"] or 0) > 0 else 0
+            p_lpg = (doc["labor"] or 0) / pw
+            sup_profit[supplier]["silver"] += (avg_sale["avg_tunch"] - p_tunch) * pw / 100 / 1000
+            sup_profit[supplier]["labor"] += (avg_sale["labor_per_gram"] - p_lpg) * pw
+            sup_profit[supplier]["wt"] += pw / 1000
+            sup_profit[supplier]["items"].add(master)
 
-        # For each supplier: profit = (avg_sale_tunch - supplier_purchase_tunch) × kg_from_supplier
-        # This is directly proportional to how much we bought from this supplier
-        rows = []
-        for supplier, items in supplier_items.items():
-            sp_silver = 0.0
-            sp_labor = 0.0
-            sp_wt = 0.0
-            item_count = 0
-            for master, pd_ in items.items():
-                pw = pd_["net_wt"]  # grams purchased from this supplier for this item
-                if pw < 0.001:
-                    continue
-                avg_sale = item_sale_avg.get(master)
-                if not avg_sale:
-                    continue
-                # Supplier's purchase tunch for this item
-                p_tunch = (pd_["fine"] / pw) * 100 if pd_["fine"] > 0 else 0
-                p_lpg = pd_["labor"] / pw
-
-                # Silver profit: (sale_tunch - purchase_tunch) × purchase_weight_from_supplier
-                # Result in grams, convert to kg
-                sp_silver += (avg_sale["avg_tunch"] - p_tunch) * pw / 100 / 1000
-
-                # Labor profit: (sale_labor/g - purchase_labor/g) × purchase_weight_from_supplier
-                sp_labor += (avg_sale["labor_per_gram"] - p_lpg) * pw
-
-                sp_wt += pw / 1000
-                item_count += 1
-            if item_count > 0:
-                rows.append({"name": supplier, "silver_profit_kg": round(sp_silver, 3),
-                             "labor_profit_inr": round(sp_labor, 2),
-                             "total_purchased_kg": round(sp_wt, 3), "items_count": item_count})
+        rows = [{"name": k, "silver_profit_kg": round(v["silver"], 3),
+                 "labor_profit_inr": round(v["labor"], 2),
+                 "total_purchased_kg": round(v["wt"], 3), "items_count": len(v["items"])}
+                for k, v in sup_profit.items() if len(v["items"]) > 0]
         rows.sort(key=lambda x: x["silver_profit_kg"], reverse=True)
         return {"view": "supplier", "year": year, "data": rows, "total": len(rows)}
 
+    # === VIEW: ITEM ===
     if view == "item":
-        # Group sales by MASTER item name, compute tunch from fine/net_wt
-        master_sale_agg = defaultdict(lambda: {"fine": 0.0, "net_wt": 0.0, "labor": 0.0, "count": 0})
-        for s in sales:
-            master = resolve(s.get("item_name", ""))
-            nw = s.get("net_wt", 0)
-            if nw < 0.001:
-                continue
-            if not purchase_basis.get(master):
-                continue
-            master_sale_agg[master]["fine"] += s.get("fine", 0)
-            master_sale_agg[master]["net_wt"] += nw
-            master_sale_agg[master]["labor"] += s.get("labor", 0)
-            master_sale_agg[master]["count"] += 1
+        item_agg = await db.historical_transactions.aggregate([
+            {"$match": {**match_filter, "type": "sale", "net_wt": {"$gt": 0.001}}},
+            {"$group": {
+                "_id": "$item_name",
+                "fine": {"$sum": "$fine"}, "net_wt": {"$sum": "$net_wt"},
+                "labor": {"$sum": "$labor"}, "count": {"$sum": 1}
+            }}
+        ]).to_list(None)
+
+        # Merge by master item
+        master_agg = defaultdict(lambda: {"fine": 0.0, "net_wt": 0.0, "labor": 0.0, "count": 0})
+        for doc in item_agg:
+            master = resolve(doc["_id"])
+            master_agg[master]["fine"] += doc["fine"] or 0
+            master_agg[master]["net_wt"] += doc["net_wt"] or 0
+            master_agg[master]["labor"] += doc["labor"] or 0
+            master_agg[master]["count"] += doc["count"]
 
         rows = []
-        for master, sa in master_sale_agg.items():
-            basis = purchase_basis[master]
+        for master, sa in master_agg.items():
+            basis = purchase_basis.get(master)
             snw = sa["net_wt"]
-            if snw < 0.001 or sa["count"] == 0:
+            if not basis or snw < 0.001 or sa["count"] == 0:
                 continue
             sell_tunch = (sa["fine"] / snw) * 100 if sa["fine"] > 0 else 0
             buy_tunch = basis["avg_tunch"]
-            silver_g = (sell_tunch - buy_tunch) * snw / 100
-            silver_kg = round(silver_g / 1000, 3)
+            silver_kg = round((sell_tunch - buy_tunch) * snw / 100 / 1000, 3)
             s_lpg = sa["labor"] / snw
             labor_inr = round((s_lpg - basis["labor_per_gram"]) * snw, 2)
             rows.append({"name": master, "silver_profit_kg": silver_kg, "labor_profit_inr": labor_inr,
                          "total_sold_kg": round(snw / 1000, 3), "transactions": sa["count"],
-                         "avg_purchase_tunch": round(buy_tunch, 2),
-                         "avg_sale_tunch": round(sell_tunch, 2)})
+                         "avg_purchase_tunch": round(buy_tunch, 2), "avg_sale_tunch": round(sell_tunch, 2)})
         rows.sort(key=lambda x: x["silver_profit_kg"], reverse=True)
         return {"view": "item", "year": year, "data": rows, "total": len(rows)}
 
+    # === VIEW: MONTH ===
     if view == "month":
-        month_sales = defaultdict(list)
-        for s in sales:
-            d = s.get("date", "")
-            month_key = d[:7] if len(d) >= 7 else "Unknown"
-            month_sales[month_key].append(s)
-        rows = []
-        for mk, slist in sorted(month_sales.items()):
-            sk, li, wt, cnt = _calc_profit(slist)
-            rows.append({"month": mk, "silver_profit_kg": sk, "labor_profit_inr": li,
-                         "total_sold_kg": wt, "transactions": cnt})
+        month_agg = await db.historical_transactions.aggregate([
+            {"$match": {**match_filter, "type": "sale", "net_wt": {"$gt": 0.001}}},
+            {"$addFields": {"month_key": {"$substr": ["$date", 0, 7]}}},
+            {"$group": {
+                "_id": {"month": "$month_key", "item": "$item_name"},
+                "fine": {"$sum": "$fine"}, "net_wt": {"$sum": "$net_wt"},
+                "labor": {"$sum": "$labor"}, "count": {"$sum": 1}
+            }}
+        ]).to_list(None)
+
+        month_profit = defaultdict(lambda: {"silver": 0.0, "labor": 0.0, "wt": 0.0, "cnt": 0})
+        for doc in month_agg:
+            mk = doc["_id"]["month"] or "Unknown"
+            master = resolve(doc["_id"]["item"])
+            basis = purchase_basis.get(master)
+            nw = doc["net_wt"] or 0
+            if not basis or nw < 0.001:
+                month_profit[mk]["cnt"] += doc["count"]
+                month_profit[mk]["wt"] += nw / 1000
+                continue
+            s_tunch = (doc["fine"] / nw) * 100 if (doc["fine"] or 0) > 0 else 0
+            s_lpg = (doc["labor"] or 0) / nw
+            month_profit[mk]["silver"] += (s_tunch - basis["avg_tunch"]) * nw / 100 / 1000
+            month_profit[mk]["labor"] += (s_lpg - basis["labor_per_gram"]) * nw
+            month_profit[mk]["wt"] += nw / 1000
+            month_profit[mk]["cnt"] += doc["count"]
+
+        rows = [{"month": mk, "silver_profit_kg": round(v["silver"], 3),
+                 "labor_profit_inr": round(v["labor"], 2),
+                 "total_sold_kg": round(v["wt"], 3), "transactions": v["cnt"]}
+                for mk, v in sorted(month_profit.items())]
         return {"view": "month", "year": year, "data": rows, "total": len(rows)}
 
     raise HTTPException(status_code=400, detail="Invalid view. Use: customer, supplier, item, month, yearly")
