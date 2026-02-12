@@ -4728,6 +4728,8 @@ Be specific with numbers. Format as actionable bullet points."""
     try:
         from emergentintegrations.llm.chat import LlmChat, UserMessage
         chat = LlmChat(
+            api_key=llm_key,
+            session_id=f"seasonal-{datetime.now().strftime('%Y%m%d%H%M')}",
             system_message="You are an expert silver jewelry wholesale inventory analyst specializing in the Indian market. You understand Hindu calendar festivals and their impact on jewelry demand. Provide data-driven, actionable insights with specific numbers."
         ).with_model("anthropic", "claude-sonnet-4-5")
         
