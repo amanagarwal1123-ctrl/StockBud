@@ -30,10 +30,13 @@ async def get_current_inventory():
     inventory_map = {}
 
     for item in opening:
-        key = item['item_name'].strip().lower()
+        raw_name = item['item_name'].strip()
+        # Resolve to group leader if in a group
+        display_name = member_to_leader.get(raw_name, raw_name)
+        key = display_name.strip().lower()
         if key not in inventory_map:
             inventory_map[key] = {
-                'item_name': item['item_name'],
+                'item_name': display_name,
                 'stamp': item.get('stamp', '') or 'Unassigned',
                 'stamp_locked': bool(item.get('stamp')),
                 'gr_wt': 0.0, 'net_wt': 0.0, 'fine': 0.0,
@@ -51,7 +54,9 @@ async def get_current_inventory():
     for trans in transactions:
         trans_name = trans['item_name'].strip()
         master_name = mapping_dict.get(trans_name, trans_name)
-        key = master_name.strip().lower()
+        # Resolve to group leader if in a group
+        display_name = member_to_leader.get(master_name, master_name)
+        key = display_name.strip().lower()
 
         if key not in inventory_map:
             item_stamp = master_stamp_dict.get(master_name, trans.get('stamp', 'Unassigned'))
