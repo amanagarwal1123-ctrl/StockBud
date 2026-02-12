@@ -3428,7 +3428,7 @@ async def categorize_items(current_user: dict = Depends(get_current_user)):
     group_stock = defaultdict(float)
     group_stamps = {}
     for name in all_items:
-        gname = resolve_group(name)
+        gname = resolve(name)
         inv = inv_dict.get(name)
         if inv:
             group_stock[gname] += inv.get('net_wt', 0) / 1000
