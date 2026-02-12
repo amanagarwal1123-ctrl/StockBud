@@ -55,6 +55,7 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 
 ## Backlog
 - (P0) User to verify analytics pages (Profit, Smart Insights, Seasonal Analysis) in deployed app
+- (P0) AI Budget: User needs to add balance to Emergent Universal Key (Profile → Universal Key → Add Balance)
 - (P1) Item Mapping: 219 unmapped historical items need mapping for better profit accuracy
 - (P2) Refactor server.py (4800+ lines) into proper FastAPI structure (/routes, /models, /services)
 - (P1) User-guided Item Mapping: Help user map 219 unmapped historical items
