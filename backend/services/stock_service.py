@@ -59,11 +59,11 @@ async def get_current_inventory():
         key = display_name.strip().lower()
 
         if key not in inventory_map:
-            item_stamp = master_stamp_dict.get(master_name, trans.get('stamp', 'Unassigned'))
+            item_stamp = master_stamp_dict.get(display_name, master_stamp_dict.get(master_name, trans.get('stamp', 'Unassigned')))
             inventory_map[key] = {
-                'item_name': master_name,
+                'item_name': display_name,
                 'stamp': item_stamp,
-                'stamp_locked': master_name in master_stamp_dict,
+                'stamp_locked': display_name in master_stamp_dict or master_name in master_stamp_dict,
                 'gr_wt': 0.0, 'net_wt': 0.0, 'fine': 0.0,
                 'total_pc': 0, 'labor': 0.0, 'stamps_seen': set()
             }
