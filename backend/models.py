@@ -158,3 +158,9 @@ class SmartInsightsRequest(BaseModel):
 class HistoricalUploadRequest(BaseModel):
     year: str
     file_type: str  # 'sale' or 'purchase'
+
+
+
+class ItemGroup(BaseModel):
+    group_name: str  # Display name (leader item)
+    members: List[str]  # All item names in this group
