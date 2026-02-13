@@ -5011,7 +5011,7 @@ Be specific with numbers. Format as actionable bullet points."""
             reverse=True
         )[:50]),
         "ai_insights": ai_response,
-        "festival_calendar": {k: v['label'] for k, v in HINDU_CALENDAR_SEASONS.items()}
+        "festival_calendar": {k: v['label'] for k, v in SEASON_PROFILES.items()}
     }
 
 
