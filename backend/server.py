@@ -3270,13 +3270,16 @@ async def reset_system(request: ResetRequest):
         results['master_stock'] = f"{r1.modified_count} items zeroed, {r2.modified_count} opening stock zeroed"
     
     if 'all_data' in request.categories:
-        # Nuclear option: clear everything except users
+        # Nuclear option: clear everything except users, keep master items structure intact
         for coll in ['transactions', 'polythene_adjustments', 'item_mappings',
                       'physical_inventory', 'stock_entries', 'purchase_ledger',
                       'notifications', 'activity_log', 'action_history',
-                      'stamp_approvals', 'inventory_snapshots', 'master_items']:
+                      'stamp_approvals', 'inventory_snapshots']:
             await db[coll].delete_many({})
-        results['all_data'] = 'All cleared (users preserved)'
+        # Zero out master stock quantities but keep items & stamps
+        await db.master_items.update_many({}, {"$set": {"gr_wt": 0, "net_wt": 0}})
+        await db.opening_stock.update_many({}, {"$set": {"gr_wt": 0, "net_wt": 0, "fine": 0, "labor_wt": 0, "labor_rs": 0, "rate": 0, "total": 0, "pc": 0}})
+        results['all_data'] = 'All cleared, master stock zeroed (items/stamps/mappings preserved)'
     
     desc = ', '.join(f"{k}: {v}" for k, v in results.items())
     await save_action('system_reset', f"Selective reset: {desc}")
