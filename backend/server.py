@@ -1792,10 +1792,12 @@ async def approve_stamp(
             notification_message += f' - Message: "{rejection_msg}"'
     
     await db.notifications.insert_one({
+        'id': str(uuid.uuid4()),
+        'category': 'stamp',
         'type': 'stamp_approval',
         'message': notification_message,
         'severity': 'success' if (approve and is_matching) else 'warning',
-        'for_role': 'admin',
+        'target_user': entry.get('entered_by', 'admin'),
         'stamp': stamp,
         'details': {
             'approved_by': current_user['username'],
