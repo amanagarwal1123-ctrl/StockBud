@@ -5059,16 +5059,16 @@ async def update_buffers_with_seasonal(current_user: dict = Depends(get_current_
         existing = await db.item_buffers.find_one({'item_name': item}, {"_id": 0})
         if existing:
             base_min = existing.get('minimum_stock_kg', 0)
-            base_lower = existing.get('lower_buffer_kg', 0)
-            base_upper = existing.get('upper_buffer_kg', 0)
+            base_reorder = existing.get('reorder_buffer_kg', 0)
+            base_upper = existing.get('upper_target_kg', 0)
             
             await db.item_buffers.update_one(
                 {'item_name': item},
                 {'$set': {
                     'seasonal_boost': round(boost, 2),
                     'seasonal_min_stock_kg': round(base_min * boost, 3),
-                    'seasonal_lower_buffer_kg': round(base_lower * boost, 3),
-                    'seasonal_upper_buffer_kg': round(base_upper * boost, 3),
+                    'seasonal_reorder_buffer_kg': round(base_reorder * boost, 3),
+                    'seasonal_upper_target_kg': round(base_upper * boost, 3),
                     'seasonal_updated_at': now.isoformat()
                 }}
             )
