@@ -1809,9 +1809,23 @@ async def approve_stamp(
             'approved_despite_mismatch': approve and not is_matching,
             'rejection_message': request.get('rejection_message') if not approve else None
         },
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'timestamp': datetime.now(timezone.utc).isoformat(),
         'read': False
     })
+
+    # Also notify admin if the executive's entry was approved/rejected
+    if entry.get('entered_by') != 'admin':
+        await db.notifications.insert_one({
+            'id': str(uuid.uuid4()),
+            'category': 'stamp',
+            'type': 'stamp_approval',
+            'message': notification_message,
+            'severity': 'success' if (approve and is_matching) else 'warning',
+            'target_user': 'admin',
+            'stamp': stamp,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'read': False
+        })
     
     await db.activity_log.insert_one({
         'user': current_user['username'],
