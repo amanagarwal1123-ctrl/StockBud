@@ -2015,6 +2015,16 @@ async def adjust_polythene_batch(
     # Insert all at once
     if saved_entries:
         await db.polythene_adjustments.insert_many(saved_entries)
+        await db.notifications.insert_one({
+            'id': str(uuid.uuid4()),
+            'category': 'polythene',
+            'type': 'polythene_batch',
+            'message': f'{request.get("adjusted_by", "Unknown")} adjusted polythene for {len(saved_entries)} items',
+            'severity': 'info',
+            'target_user': 'admin',
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'read': False
+        })
     
     return {'success': True, 'message': f'{len(saved_entries)} polythene adjustments saved', 'count': len(saved_entries)}
 
