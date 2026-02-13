@@ -4611,15 +4611,46 @@ Provide your analysis in a clear, actionable format with specific numbers. Use b
 
 # ==================== HISTORICAL DATA & SEASONAL AI ====================
 
-HINDU_CALENDAR_SEASONS = {
-    'sankrant': {'months': [1], 'label': 'Makar Sankranti (Jan)', 'boost': 1.1},
-    'holi': {'months': [3], 'label': 'Holi Season (Mar)', 'boost': 1.15},
-    'akshaya_tritiya': {'months': [4, 5], 'label': 'Akshaya Tritiya (Apr-May)', 'boost': 1.3},
-    'salakh': {'months': [4, 5, 6, 11, 12], 'label': 'Wedding Season (Apr-Jun, Nov-Dec)', 'boost': 1.4},
-    'karva_chauth': {'months': [10], 'label': 'Karva Chauth (Oct)', 'boost': 1.25},
-    'dhanteras': {'months': [10, 11], 'label': 'Dhanteras/Diwali (Oct-Nov)', 'boost': 1.5},
-    'diwali': {'months': [10, 11], 'label': 'Diwali Season (Oct-Nov)', 'boost': 1.5},
+# ---- Business Constants: Wholesale Silver Stock Rotation Model ----
+ROTATION_CYCLE_MONTHS = 2.73  # Full stock rotation period
+
+SEASON_PROFILES = {
+    'peak': {
+        'months': [10, 11, 12, 1, 4, 5],   # Diwali, weddings, Akshaya Tritiya, Sankranti
+        'label': 'Peak Season (Festivals & Weddings)',
+        'monthly_sales_benchmark_kg': 7000,  # 6500-8000 avg
+        'target_total_stock_kg': 10500,
+        'lead_time_days': 10,                # orders take longer in peak
+    },
+    'normal': {
+        'months': [2, 3, 6],                # Transition months
+        'label': 'Normal Season',
+        'monthly_sales_benchmark_kg': 2500,
+        'target_total_stock_kg': 8200,
+        'lead_time_days': 7,
+    },
+    'off_season': {
+        'months': [7, 8, 9],                # Monsoon / lean months
+        'label': 'Off Season (Monsoon)',
+        'monthly_sales_benchmark_kg': 1800,
+        'target_total_stock_kg': 7500,
+        'lead_time_days': 7,
+    },
 }
+
+# Total stock thresholds (aggregate)
+STOCK_FLOOR_KG = 7500   # Below this, sales decline
+STOCK_NORMAL_KG = 8200   # Normal operating stock
+STOCK_PEAK_KG = 10500    # Max effective stock (sales plateau beyond this)
+
+def get_current_season(month=None):
+    """Return the season profile key for a given month."""
+    if month is None:
+        month = datetime.now(timezone.utc).month
+    for key, profile in SEASON_PROFILES.items():
+        if month in profile['months']:
+            return key
+    return 'normal'  # fallback
 
 
 @api_router.post("/historical/upload")
