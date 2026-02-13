@@ -4922,10 +4922,10 @@ async def seasonal_analysis(current_user: dict = Depends(get_current_user)):
         upcoming_months = [(current_month + i - 1) % 12 + 1 for i in range(1, 3)]
         upcoming_boost = 1.0
         upcoming_season = None
-        for season_key, season_info in HINDU_CALENDAR_SEASONS.items():
+        for season_key, season_info in SEASON_PROFILES.items():
             if any(m in season_info['months'] for m in upcoming_months):
                 if data['seasonal_profile'].get(season_key, {}).get('is_peak'):
-                    upcoming_boost = max(upcoming_boost, season_info['boost'])
+                    upcoming_boost = max(upcoming_boost, 1.3 if season_key == 'peak' else 1.0)
                     upcoming_season = season_info['label']
         
         # Calculate recommended order: enough for 2 months at seasonal rate
