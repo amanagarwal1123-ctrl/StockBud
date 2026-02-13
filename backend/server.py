@@ -1950,6 +1950,18 @@ async def adjust_polythene(
     
     await db.polythene_adjustments.insert_one(adjustment)
     
+    await db.notifications.insert_one({
+        'id': str(uuid.uuid4()),
+        'category': 'polythene',
+        'type': 'polythene_adjustment',
+        'message': f'{adjusted_by} {operation}ed {poly_weight} kg polythene for {item_name}',
+        'severity': 'info',
+        'target_user': 'admin',
+        'item_name': item_name,
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'read': False
+    })
+
     await db.activity_log.insert_one({
         'user': adjusted_by,
         'user_role': current_user['role'],
