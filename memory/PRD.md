@@ -66,6 +66,11 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 - Categorization uses historical data + Hindu calendar seasons for velocity
 - Item groups merged during categorization, season boost applied
 
+## Reset Data - Master Stock Option (Feb 13, 2026)
+- Added "Master Stock" checkbox to the Reset Data dialog
+- Backend handles `master_stock` category by clearing `master_items` collection
+- Updated `all_data` reset to also include master_items
+
 ## Backlog
 - (P1) Item Mapping: 219 unmapped historical items need mapping
 - (P2) Refactor server.py into proper FastAPI structure
