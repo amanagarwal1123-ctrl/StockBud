@@ -4086,14 +4086,14 @@ async def auto_stock_alerts(current_user: dict = Depends(get_current_user)):
                 inv_item = inv_dict.get(buf['item_name'])
                 current = round(inv_item['net_wt'] / 1000, 3) if inv_item else 0
                 min_stock = buf.get('minimum_stock_kg', 0)
-                lower = buf.get('lower_buffer_kg', 0)
-                upper = buf.get('upper_buffer_kg', 0)
+                reorder = buf.get('reorder_buffer_kg', 0)
+                upper = buf.get('upper_target_kg', 0)
                 stamp = buf.get('stamp', '')
                 target = stamp_user.get(stamp, 'admin')
                 
                 if min_stock > 0 and current < min_stock:
                     deficit = round(min_stock - current, 3)
-                    severity = 'critical' if current < (min_stock - lower) else 'warning'
+                    severity = 'critical' if current < reorder else 'warning'
                     
                     await db.notifications.insert_one({
                         'id': str(uuid.uuid4()), 'category': 'stock', 'type': 'stock_deficit',
