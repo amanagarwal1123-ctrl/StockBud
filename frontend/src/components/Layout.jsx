@@ -35,7 +35,7 @@ const RESET_CATEGORIES = [
   { id: 'purchase_ledger', label: 'Purchase Ledger', desc: 'Cumulative purchase rates' },
   { id: 'notifications', label: 'Notifications & Logs', desc: 'Notifications and activity log' },
   { id: 'history', label: 'Action History', desc: 'Upload history & undo records' },
-  { id: 'master_stock', label: 'Master Stock', desc: 'Master item list & stock data' },
+  { id: 'master_stock', label: 'Master Stock', desc: 'Zeros out all item quantities & opening stock (keeps items, stamps, mappings intact)' },
 ];
 
 export default function Layout({ children }) {
