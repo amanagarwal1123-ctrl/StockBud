@@ -402,7 +402,7 @@ export default function Layout({ children }) {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Reset Data</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Select what to clear. Master stock & users are never deleted.
+                    Select what to clear. Users are never deleted.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <div className="max-h-[50vh] overflow-y-auto py-2 space-y-3">
