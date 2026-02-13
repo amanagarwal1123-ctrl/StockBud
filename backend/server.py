@@ -2796,23 +2796,27 @@ async def save_stamp_verification(request: Dict):
         
         # Create notification for admin
         await db.notifications.insert_one({
+            'id': str(uuid.uuid4()),
+            'category': 'stamp',
             'type': 'full_stock_match',
             'message': f'Full stock verification complete for {verification_date}',
             'severity': 'success',
-            'for_role': 'admin',
-            'created_at': datetime.now(timezone.utc).isoformat(),
+            'target_user': 'admin',
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'read': False
         })
     else:
         # Individual stamp notification
         await db.notifications.insert_one({
+            'id': str(uuid.uuid4()),
+            'category': 'stamp',
             'type': 'stamp_verification',
             'message': notification_msg,
             'severity': 'warning' if not is_match else 'info',
-            'for_role': 'admin',
+            'target_user': 'admin',
             'stamp': stamp,
             'is_match': is_match,
-            'created_at': datetime.now(timezone.utc).isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'read': False
         })
     
