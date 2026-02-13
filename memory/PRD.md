@@ -68,8 +68,9 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 
 ## Reset Data - Master Stock Option (Feb 13, 2026)
 - Added "Master Stock" checkbox to the Reset Data dialog
-- Backend handles `master_stock` category by clearing `master_items` collection
-- Updated `all_data` reset to also include master_items
+- Zeroes out all quantities (gr_wt, net_wt, etc.) in master_items and opening_stock
+- Keeps items, stamps, mappings, and groupings intact so nothing breaks
+- Updated `all_data` reset to also zero master stock (not delete)
 
 ## Backlog
 - (P1) Item Mapping: 219 unmapped historical items need mapping
