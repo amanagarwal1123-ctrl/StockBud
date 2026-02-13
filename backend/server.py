@@ -3263,14 +3263,18 @@ async def reset_system(request: ResetRequest):
         r = await db.action_history.delete_many({})
         results['history'] = r.deleted_count
     
+    if 'master_stock' in request.categories:
+        r = await db.master_items.delete_many({})
+        results['master_stock'] = r.deleted_count
+    
     if 'all_data' in request.categories:
-        # Nuclear option: clear everything except users and master_items
+        # Nuclear option: clear everything except users
         for coll in ['transactions', 'polythene_adjustments', 'item_mappings',
                       'physical_inventory', 'stock_entries', 'purchase_ledger',
                       'notifications', 'activity_log', 'action_history',
-                      'stamp_approvals', 'inventory_snapshots']:
+                      'stamp_approvals', 'inventory_snapshots', 'master_items']:
             await db[coll].delete_many({})
-        results['all_data'] = 'All cleared (users & master stock preserved)'
+        results['all_data'] = 'All cleared (users preserved)'
     
     desc = ', '.join(f"{k}: {v}" for k, v in results.items())
     await save_action('system_reset', f"Selective reset: {desc}")
