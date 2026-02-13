@@ -62,9 +62,14 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 - Clickable stamps → /stamp/{stampName} detail page with items, stock, executive assignment
 - One stamp → one executive, one executive can have multiple stamps
 
-## Seasonal Item Buffers (Feb 12, 2026)
-- Categorization uses historical data + Hindu calendar seasons for velocity
-- Item groups merged during categorization, season boost applied
+## Seasonal Item Buffers → Stock Rotation Model (Feb 13, 2026)
+- Complete rewrite to 2.73-month rotation cycle model
+- Minimum stock = monthly velocity × 2.73 (full rotation worth)
+- Reorder buffer = daily velocity × lead time days (7d normal, 10d peak season)
+- Upper target = item's proportional share of seasonal target total stock
+- Season profiles: Peak (Oct-Jan, Apr-May), Normal (Feb-Mar, Jun), Off-season (Jul-Sep)
+- Total stock thresholds: 7,500 kg floor / 8,200 kg normal / 10,500 kg peak
+- Status: Red (below reorder buffer) → Yellow (below min stock) → Green (healthy)
 
 ## Reset Data - Master Stock Option (Feb 13, 2026)
 - Added "Master Stock" checkbox to the Reset Data dialog
