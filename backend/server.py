@@ -4907,7 +4907,7 @@ async def seasonal_analysis(current_user: dict = Depends(get_current_user)):
     now = datetime.now()
     current_month = now.month
     current_seasons = []
-    for season_key, season_info in HINDU_CALENDAR_SEASONS.items():
+    for season_key, season_info in SEASON_PROFILES.items():
         if current_month in season_info['months']:
             current_seasons.append(season_info['label'])
     
