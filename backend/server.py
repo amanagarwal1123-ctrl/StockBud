@@ -3647,16 +3647,17 @@ async def get_item_buffers(
         current = round(inv_item['net_wt'] / 1000, 3) if inv_item else 0
         item['current_stock_kg'] = current
         min_stock = item.get('minimum_stock_kg', 0)
-        upper = item.get('upper_buffer_kg', 0)
+        reorder = item.get('reorder_buffer_kg', 0)
+        vel = item.get('monthly_velocity_kg', 0)
         
-        if current < min_stock - item.get('lower_buffer_kg', 0):
+        if vel <= 0:
+            item['status'] = 'green'
+        elif current < reorder:
             item['status'] = 'red'
         elif current < min_stock:
-            item['status'] = 'red'
-        elif current >= min_stock and current <= upper:
-            item['status'] = 'green'
-        else:
             item['status'] = 'yellow'
+        else:
+            item['status'] = 'green'
     
     return {"items": items, "total": len(items)}
 
