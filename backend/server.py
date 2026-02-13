@@ -1559,12 +1559,14 @@ async def save_executive_stock_entry(
     
     # Create notification for manager
     await db.notifications.insert_one({
+        'id': str(uuid.uuid4()),
+        'category': 'stamp',
         'type': 'stock_entry',
         'message': f'{entered_by} submitted stock for {stamp}',
         'severity': 'info',
-        'for_role': 'manager',
+        'target_user': 'manager',
         'stamp': stamp,
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'timestamp': datetime.now(timezone.utc).isoformat(),
         'read': False
     })
     
