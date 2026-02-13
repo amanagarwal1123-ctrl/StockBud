@@ -3915,11 +3915,17 @@ async def check_overdue_orders(current_user: dict = Depends(get_current_user)):
 @api_router.get("/notifications/categorized")
 async def get_categorized_notifications(current_user: dict = Depends(get_current_user)):
     """Get notifications organized by category"""
+    username = current_user['username']
+    role = current_user['role']
     query = {"$or": [
-        {"target_user": current_user['username']},
-        {"target_user": "admin", "category": {"$exists": True}} if current_user['role'] == 'admin' else {"target_user": current_user['username']},
-        {"target_user": "all"}
+        {"target_user": username},
+        {"target_user": role},
+        {"target_user": "all"},
+        {"for_role": role},
     ]}
+    if role == 'admin':
+        query["$or"].append({"target_user": "admin"})
+        query["$or"].append({"for_role": "admin"})
     
     all_notifs = await db.notifications.find(query, {"_id": 0}).sort("timestamp", -1).to_list(500)
     
