@@ -3264,8 +3264,10 @@ async def reset_system(request: ResetRequest):
         results['history'] = r.deleted_count
     
     if 'master_stock' in request.categories:
-        r = await db.master_items.delete_many({})
-        results['master_stock'] = r.deleted_count
+        # Zero out quantities but keep items & stamps intact so mappings/groups don't break
+        r1 = await db.master_items.update_many({}, {"$set": {"gr_wt": 0, "net_wt": 0}})
+        r2 = await db.opening_stock.update_many({}, {"$set": {"gr_wt": 0, "net_wt": 0, "fine": 0, "labor_wt": 0, "labor_rs": 0, "rate": 0, "total": 0, "pc": 0}})
+        results['master_stock'] = f"{r1.modified_count} items zeroed, {r2.modified_count} opening stock zeroed"
     
     if 'all_data' in request.categories:
         # Nuclear option: clear everything except users
