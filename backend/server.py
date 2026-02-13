@@ -4877,7 +4877,7 @@ async def seasonal_analysis(current_user: dict = Depends(get_current_user)):
         avg_monthly = total / max(len(month_data), 1)
         seasonal_profile = {}
         
-        for season_key, season_info in HINDU_CALENDAR_SEASONS.items():
+        for season_key, season_info in SEASON_PROFILES.items():
             season_total = sum(month_data.get(m, 0) for m in season_info['months'])
             expected = avg_monthly * len(season_info['months'])
             if expected > 0:
