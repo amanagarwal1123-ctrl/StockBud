@@ -109,6 +109,7 @@ function App() {
             />
           </Routes>
           <Toaster richColors position="top-right" />
+          </UploadProvider>
         </AuthProvider>
       </BrowserRouter>
     </div>
