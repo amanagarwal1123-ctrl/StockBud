@@ -250,20 +250,30 @@ export default function DataVisualization() {
             </Card>
           </div>
 
-          {/* Monthly Sales Trend */}
+          {/* Sales Trend */}
           {salesTrend.length > 0 && (
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-base">Monthly Sales Trend</CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base">Sales Trend ({vizData?.trend_granularity === 'daily' ? 'Daily' : 'Monthly'})</CardTitle>
+                  <div className="flex gap-1">
+                    {['daily', 'monthly', 'auto'].map(g => (
+                      <Button key={g} size="sm" variant={trendGranularity === g ? 'default' : 'outline'} className="text-xs h-7 px-2.5" data-testid={`trend-${g}`}
+                        onClick={() => { setTrendGranularity(g); fetchData(startDate, endDate, g); }}>
+                        {g === 'auto' ? 'Auto' : g === 'daily' ? 'Daily' : 'Monthly'}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
                   <LineChart data={salesTrend}>
                     <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                    <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                    <XAxis dataKey="label" tick={{ fontSize: 10 }} angle={vizData?.trend_granularity === 'daily' ? -45 : 0} textAnchor={vizData?.trend_granularity === 'daily' ? 'end' : 'middle'} height={vizData?.trend_granularity === 'daily' ? 60 : 30} />
                     <YAxis />
                     <Tooltip formatter={(v) => [`${v} kg`, 'Sales']} />
-                    <Line type="monotone" dataKey="net_wt_kg" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4 }} />
+                    <Line type="monotone" dataKey="net_wt_kg" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
                   </LineChart>
                 </ResponsiveContainer>
               </CardContent>
