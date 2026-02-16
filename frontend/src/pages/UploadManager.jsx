@@ -1,28 +1,15 @@
 import { useState } from 'react';
-import axios from 'axios';
 import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Progress } from '@/components/ui/progress';
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+import { useUpload } from '../context/UploadContext';
 
 export default function UploadManager() {
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState('');
-  const [uploadPercent, setUploadPercent] = useState(0);
-  const [uploadedFiles, setUploadedFiles] = useState({
-    purchase: null,
-    sale: null,
-    opening_stock: null,
-    physical_stock: null,
-    master_stock: null,
-    branch_transfer: null,
-  });
+  const { uploads, startUpload } = useUpload();
+  const [uploadedFiles, setUploadedFiles] = useState({});
   const [dateRanges, setDateRanges] = useState({
     purchase: { start: '', end: '' },
     sale: { start: '', end: '' },
@@ -30,83 +17,11 @@ export default function UploadManager() {
     physical_stock: { date: '' }
   });
 
-  const CHUNK_SIZE = 200 * 1024; // 200KB — safe for any deployment proxy
-
-  const pollUploadStatus = async (uploadId) => {
-    for (let attempt = 0; attempt < 180; attempt++) {
-      await new Promise(r => setTimeout(r, 5000));
-      try {
-        const res = await axios.get(`${API}/upload/status/${uploadId}`, { timeout: 10000 });
-        if (res.data.status === 'complete') return res;
-        if (res.data.status === 'error') throw new Error(res.data.detail || 'Processing failed on server');
-        setUploadProgress(res.data.message || `Processing on server... (${(attempt + 1) * 5}s elapsed)`);
-      } catch (pollErr) {
-        if (pollErr.message?.includes('Processing failed')) throw pollErr;
-      }
-    }
-    throw new Error('Processing timed out after 15 minutes');
-  };
-
-  const uploadChunkWithRetry = async (url, formData, chunkIdx, totalChunks, maxRetries = 3) => {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        return await axios.post(url, formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-          timeout: 60000,
-        });
-      } catch (err) {
-        const status = err.response?.status || 'network error';
-        const detail = err.response?.data?.detail || err.message;
-        if (attempt === maxRetries) {
-          throw new Error(`Chunk ${chunkIdx + 1}/${totalChunks} failed (${status}: ${detail})`);
-        }
-        setUploadProgress(`Chunk ${chunkIdx + 1}/${totalChunks} retry ${attempt}/${maxRetries}...`);
-        await new Promise(r => setTimeout(r, 2000 * attempt));
-      }
-    }
-  };
-
-  const uploadChunked = async (fileType, file) => {
-    const range = dateRanges[fileType] || {};
-    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-    const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
-    setUploadProgress(`Initializing upload (${fileSizeMB} MB, ${totalChunks} chunks)...`);
-    setUploadPercent(0);
-    const initRes = await axios.post(`${API}/upload/init`, {
-      file_type: fileType,
-      start_date: range.start || null,
-      end_date: range.end || null,
-      verification_date: fileType === 'physical_stock' ? dateRanges.physical_stock?.date : null,
-      total_chunks: totalChunks,
-    }, { timeout: 30000 });
-    const uploadId = initRes.data.upload_id;
-
-    for (let i = 0; i < totalChunks; i++) {
-      const pct = Math.round(((i + 1) / totalChunks) * 100);
-      setUploadPercent(pct);
-      setUploadProgress(`Uploading chunk ${i + 1} of ${totalChunks} (${pct}%)`);
-      const start = i * CHUNK_SIZE;
-      const end = Math.min(start + CHUNK_SIZE, file.size);
-      const chunk = file.slice(start, end);
-      const fd = new FormData();
-      fd.append('file', chunk, `chunk_${i}`);
-      await uploadChunkWithRetry(
-        `${API}/upload/chunk/${uploadId}?chunk_index=${i}`,
-        fd, i, totalChunks
-      );
-    }
-
-    setUploadPercent(100);
-    setUploadProgress('All chunks uploaded. Server is processing...');
-    await axios.post(`${API}/upload/finalize/${uploadId}`, {}, { timeout: 30000 });
-
-    return await pollUploadStatus(uploadId);
-  };
+  const isUploading = uploads.some(u => u.status === 'uploading');
 
   const handleFileUpload = async (fileType, file) => {
     if (!file) return;
 
-    // Check if date range is required
     if (fileType === 'purchase' || fileType === 'sale' || fileType === 'branch_transfer') {
       const range = dateRanges[fileType];
       if (!range.start || !range.end) {
@@ -114,15 +29,11 @@ export default function UploadManager() {
         return;
       }
     }
-
-    if (fileType === 'physical_stock') {
-      if (!dateRanges.physical_stock.date) {
-        toast.error('Please select verification date for physical stock');
-        return;
-      }
+    if (fileType === 'physical_stock' && !dateRanges.physical_stock.date) {
+      toast.error('Please select verification date for physical stock');
+      return;
     }
 
-    // Confirmation dialog
     const fileTypeNames = {
       'opening_stock': 'Opening Stock (PREV_STOCK)',
       'purchase': 'Purchase Transactions',
@@ -133,7 +44,6 @@ export default function UploadManager() {
     };
 
     let confirmMessage = `Are you sure you want to upload ${fileTypeNames[fileType]}?\n\nFile: ${file.name}\n\n`;
-    
     if (fileType === 'purchase' || fileType === 'sale') {
       const range = dateRanges[fileType];
       confirmMessage += `Date Range: ${range.start} to ${range.end}\n\nThis will REPLACE all ${fileType} transactions in this date range.`;
@@ -143,55 +53,13 @@ export default function UploadManager() {
       confirmMessage += `This will ${fileType === 'opening_stock' || fileType === 'master_stock' ? 'replace all existing data' : 'add new transactions'}.`;
     }
 
-    const confirmed = window.confirm(confirmMessage);
-    if (!confirmed) return;
-
-    setUploading(true);
-    setUploadProgress('Preparing upload...');
+    if (!window.confirm(confirmMessage)) return;
 
     try {
-      let response;
-      const useChunked = file.size > CHUNK_SIZE && fileType !== 'master_stock';
-
-      if (useChunked) {
-        response = await uploadChunked(fileType, file);
-      } else {
-        // Small file — direct upload
-        setUploadProgress('Uploading file...');
-        const formData = new FormData();
-        formData.append('file', file);
-        let endpoint;
-        if (fileType === 'opening_stock') {
-          endpoint = `${API}/opening-stock/upload`;
-        } else if (fileType === 'physical_stock') {
-          endpoint = `${API}/physical-stock/upload?verification_date=${dateRanges.physical_stock.date}`;
-        } else if (fileType === 'master_stock') {
-          endpoint = `${API}/master-stock/upload`;
-        } else {
-          const range = dateRanges[fileType];
-          endpoint = `${API}/transactions/upload/${fileType}?start_date=${range.start}&end_date=${range.end}`;
-        }
-        response = await axios.post(endpoint, formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-          timeout: 600000,
-          onUploadProgress: (progressEvent) => {
-            if (progressEvent.total) {
-              const pct = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-              setUploadProgress(pct < 100 ? `Uploading: ${pct}%` : 'Processing file on server...');
-            }
-          },
-        });
-      }
-
-      setUploadedFiles((prev) => ({ ...prev, [fileType]: file.name }));
-      toast.success(response.data.message || 'File uploaded successfully!');
-    } catch (error) {
-      const msg = error.message || error.response?.data?.detail || error.code === 'ECONNABORTED' ? 'Upload timed out.' : 'Upload failed';
-      toast.error(msg);
-    } finally {
-      setUploading(false);
-      setUploadProgress('');
-      setUploadPercent(0);
+      await startUpload(fileType, file, dateRanges);
+      setUploadedFiles(prev => ({ ...prev, [fileType]: file.name }));
+    } catch {
+      // Error already handled in context
     }
   };
 
@@ -209,70 +77,25 @@ export default function UploadManager() {
           <CardDescription>{description}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Date Range Selector for Transactions */}
           {needsDateRange && (
             <div className="grid grid-cols-2 gap-3 pb-3 border-b">
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                  From Date *
-                </label>
-                <Input
-                  type="date"
-                  value={dateRanges[type]?.start || ''}
-                  onChange={(e) => setDateRanges(prev => ({
-                    ...prev,
-                    [type]: { ...prev[type], start: e.target.value }
-                  }))}
-                  className="text-sm"
-                  required
-                />
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">From Date *</label>
+                <Input type="date" value={dateRanges[type]?.start || ''} onChange={(e) => setDateRanges(prev => ({ ...prev, [type]: { ...prev[type], start: e.target.value } }))} className="text-sm" required />
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                  To Date *
-                </label>
-                <Input
-                  type="date"
-                  value={dateRanges[type]?.end || ''}
-                  onChange={(e) => setDateRanges(prev => ({
-                    ...prev,
-                    [type]: { ...prev[type], end: e.target.value }
-                  }))}
-                  className="text-sm"
-                  required
-                />
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">To Date *</label>
+                <Input type="date" value={dateRanges[type]?.end || ''} onChange={(e) => setDateRanges(prev => ({ ...prev, [type]: { ...prev[type], end: e.target.value } }))} className="text-sm" required />
               </div>
             </div>
           )}
-
-          {/* Single Date for Physical Stock */}
           {needsDate && (
             <div className="pb-3 border-b">
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                Verification Date *
-              </label>
-              <Input
-                type="date"
-                value={dateRanges.physical_stock?.date || ''}
-                onChange={(e) => setDateRanges(prev => ({
-                  ...prev,
-                  physical_stock: { date: e.target.value }
-                }))}
-                className="text-sm"
-                required
-              />
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Verification Date *</label>
+              <Input type="date" value={dateRanges.physical_stock?.date || ''} onChange={(e) => setDateRanges(prev => ({ ...prev, physical_stock: { date: e.target.value } }))} className="text-sm" required />
             </div>
           )}
-
-          <label
-            htmlFor={uploading ? undefined : `${type}-upload`}
-            className={`upload-zone flex flex-col items-center justify-center gap-3 border-2 border-dashed rounded-xl p-12 transition-all ${
-              uploading 
-                ? 'border-muted-foreground/10 bg-muted/20 cursor-not-allowed opacity-50' 
-                : 'border-muted-foreground/25 cursor-pointer hover:border-primary/50 bg-muted/5'
-            }`}
-            data-testid={`upload-zone-${type}`}
-          >
+          <label htmlFor={isUploading ? undefined : `${type}-upload`} className={`upload-zone flex flex-col items-center justify-center gap-3 border-2 border-dashed rounded-xl p-12 transition-all ${isUploading ? 'border-muted-foreground/10 bg-muted/20 cursor-not-allowed opacity-50' : 'border-muted-foreground/25 cursor-pointer hover:border-primary/50 bg-muted/5'}`} data-testid={`upload-zone-${type}`}>
             {uploadedFiles[type] ? (
               <>
                 <CheckCircle2 className="h-12 w-12 text-emerald-600" />
@@ -290,43 +113,19 @@ export default function UploadManager() {
                 </div>
               </>
             )}
-            <input
-            id={`${type}-upload`}
-            type="file"
-            accept=".xlsx,.xls"
-            className="hidden"
-            onChange={(e) => handleFileUpload(type, e.target.files[0])}
-            disabled={uploading}
-          />
-        </label>
-      </CardContent>
-    </Card>
+            <input id={`${type}-upload`} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => handleFileUpload(type, e.target.files[0])} disabled={isUploading} />
+          </label>
+        </CardContent>
+      </Card>
     );
   };
 
   return (
     <div className="p-6 md:p-8 space-y-6" data-testid="upload-page">
       <div>
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight" data-testid="upload-title">
-          Upload Files
-        </h1>
-        <p className="text-lg text-muted-foreground mt-2">
-          Upload your purchase, sale, and physical inventory Excel files
-        </p>
+        <h1 className="text-4xl md:text-5xl font-bold tracking-tight" data-testid="upload-title">Upload Files</h1>
+        <p className="text-lg text-muted-foreground mt-2">Upload your purchase, sale, and physical inventory Excel files</p>
       </div>
-
-      {uploading && uploadProgress && (
-        <div className="space-y-2 p-4 rounded-lg bg-primary/10 border border-primary/20" data-testid="upload-progress">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-              <span className="text-sm font-medium">{uploadProgress}</span>
-            </div>
-            {uploadPercent > 0 && <span className="text-sm font-mono font-bold text-primary">{uploadPercent}%</span>}
-          </div>
-          {uploadPercent > 0 && <Progress value={uploadPercent} className="h-2" />}
-        </div>
-      )}
 
       <Tabs defaultValue="transactions" className="space-y-6">
         <TabsList>
@@ -338,84 +137,37 @@ export default function UploadManager() {
 
         <TabsContent value="master" className="space-y-6">
           <div className="max-w-2xl">
-            <FileUploadCard
-              type="master_stock"
-              title="Master Stock (STOCK 2026)"
-              description="Upload your FINAL verified stock with definitive item names and stamps. This replaces opening stock and becomes the reference for all future transactions."
-            />
+            <FileUploadCard type="master_stock" title="Master Stock (STOCK 2026)" description="Upload your FINAL verified stock with definitive item names and stamps. This replaces opening stock and becomes the reference for all future transactions." />
           </div>
         </TabsContent>
-
         <TabsContent value="transactions" className="space-y-6">
           <div className="grid gap-6 md:grid-cols-2">
-            <FileUploadCard
-              type="purchase"
-              title="Purchase File"
-              description="Upload your purchase transactions Excel file"
-            />
-            <FileUploadCard
-              type="sale"
-              title="Sale File"
-              description="Upload your sale transactions Excel file"
-            />
+            <FileUploadCard type="purchase" title="Purchase File" description="Upload your purchase transactions Excel file" />
+            <FileUploadCard type="sale" title="Sale File" description="Upload your sale transactions Excel file" />
           </div>
         </TabsContent>
-
         <TabsContent value="branch" className="space-y-6">
           <div className="max-w-2xl">
-            <FileUploadCard
-              type="branch_transfer"
-              title="Branch Issue/Receive (MMI Jewelly)"
-              description="Upload branch transfer file. I=Issue (stock out), R=Receive (stock in). No profit calculation."
-            />
+            <FileUploadCard type="branch_transfer" title="Branch Issue/Receive (MMI Jewelly)" description="Upload branch transfer file. I=Issue (stock out), R=Receive (stock in). No profit calculation." />
           </div>
         </TabsContent>
-
         <TabsContent value="physical" className="space-y-6">
           <div className="max-w-2xl">
-            <FileUploadCard
-              type="physical_stock"
-              title="Physical Stock (CURRENT_STOCK)"
-              description="Upload your physical count Excel file to compare with book stock. System will show differences."
-            />
+            <FileUploadCard type="physical_stock" title="Physical Stock (CURRENT_STOCK)" description="Upload your physical count Excel file to compare with book stock. System will show differences." />
           </div>
         </TabsContent>
       </Tabs>
 
-      {/* Instructions */}
       <Card className="border-border/40 shadow-sm bg-muted/30">
         <CardHeader>
-          <CardTitle className="text-xl flex items-center gap-2">
-            <AlertCircle className="h-5 w-5 text-primary" />
-            File Format Guidelines
-          </CardTitle>
+          <CardTitle className="text-xl flex items-center gap-2"><AlertCircle className="h-5 w-5 text-primary" />File Format Guidelines</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
-          <div>
-            <p className="font-semibold mb-2">Master Stock (STOCK 2026):</p>
-            <p className="text-muted-foreground">Item Name, Stamp, Gross weight, Net Weight</p>
-          </div>
-          
-          <div>
-            <p className="font-semibold mb-2">Branch Transfer (Issue/Receive):</p>
-            <p className="text-muted-foreground">Date, Type (I/R), Lnarr (item name), Gr.Wt., Net.Wt.</p>
-            <p className="text-xs text-orange-600 mt-1">Skip OPENING BALANCE and Totals rows</p>
-          </div>
-
-          <div>
-            <p className="font-semibold mb-2">Purchase File:</p>
-            <p className="text-muted-foreground">Date, Type, Party Name, Item Name, Gr.Wt., Net.Wt., Tunch, Total</p>
-          </div>
-
-          <div>
-            <p className="font-semibold mb-2">Sale File:</p>
-            <p className="text-muted-foreground">Date, Type, Party Name, Item Name, Gr.Wt., Gold Std. (Net), Tunch, Total</p>
-          </div>
-
-          <div>
-            <p className="font-semibold mb-2">Physical Stock:</p>
-            <p className="text-muted-foreground">Item Name, Stamp, Gross Weight, Net Weight</p>
-          </div>
+          <div><p className="font-semibold mb-2">Master Stock (STOCK 2026):</p><p className="text-muted-foreground">Item Name, Stamp, Gross weight, Net Weight</p></div>
+          <div><p className="font-semibold mb-2">Branch Transfer (Issue/Receive):</p><p className="text-muted-foreground">Date, Type (I/R), Lnarr (item name), Gr.Wt., Net.Wt.</p><p className="text-xs text-orange-600 mt-1">Skip OPENING BALANCE and Totals rows</p></div>
+          <div><p className="font-semibold mb-2">Purchase File:</p><p className="text-muted-foreground">Date, Type, Party Name, Item Name, Gr.Wt., Net.Wt., Tunch, Total</p></div>
+          <div><p className="font-semibold mb-2">Sale File:</p><p className="text-muted-foreground">Date, Type, Party Name, Item Name, Gr.Wt., Gold Std. (Net), Tunch, Total</p></div>
+          <div><p className="font-semibold mb-2">Physical Stock:</p><p className="text-muted-foreground">Item Name, Stamp, Gross Weight, Net Weight</p></div>
         </CardContent>
       </Card>
     </div>
