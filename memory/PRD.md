@@ -83,6 +83,21 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 - Master item's stamp takes priority (stamp_locked) to prevent raw entries from overwriting
 - StampManagement.jsx: Removed raw transaction fetching — uses inventory (resolved) as single source of truth
 
+## Global Upload Progress (Feb 16, 2026)
+- Created UploadContext for persistent upload state across page navigation
+- Progress bar renders in Layout above content — stays visible when switching pages
+
+## Undo Upload - Full History (Feb 16, 2026)
+- Backend returns ALL uploaded files (not just last 5), includes all upload types
+
+## Sales Trend Daily/Monthly Toggle (Feb 16, 2026)
+- Backend: `trend_granularity` param (daily/monthly/auto); auto uses daily if <=60 days
+- Frontend: Daily/Monthly/Auto toggle buttons on the sales trend chart
+
+## Selective Browser Notifications (Feb 16, 2026)
+- Per-category toggles for browser push alerts (Polythene & General off by default)
+- Preferences saved in localStorage
+
 ## Backlog
-- (P1) Item Mapping: 219 unmapped historical items need mapping
+- (P1) Item Mapping: unmapped historical items need mapping
 - (P2) Refactor server.py into proper FastAPI structure
