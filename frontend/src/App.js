@@ -67,6 +67,7 @@ function App() {
     <div className="App">
       <BrowserRouter>
         <AuthProvider>
+          <UploadProvider>
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route
