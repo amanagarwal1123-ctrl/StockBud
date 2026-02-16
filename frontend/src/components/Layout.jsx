@@ -536,6 +536,21 @@ export default function Layout({ children }) {
 
       {/* Main Content */}
       <main className="flex-1 overflow-auto lg:pl-0 pt-16 lg:pt-0">
+        {/* Global Upload Progress */}
+        {uploads.length > 0 && (
+          <div className="sticky top-0 z-40 bg-background border-b px-4 py-2 space-y-1.5" data-testid="global-upload-bar">
+            {uploads.map(u => (
+              <div key={u.id} className="flex items-center gap-3">
+                <div className={`h-2 w-2 rounded-full flex-shrink-0 ${u.status === 'done' ? 'bg-emerald-500' : u.status === 'error' ? 'bg-red-500' : 'bg-blue-500 animate-pulse'}`} />
+                <span className="text-xs font-medium truncate min-w-0">{u.label}: {u.fileName}</span>
+                <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full transition-all duration-300 ${u.status === 'error' ? 'bg-red-500' : u.status === 'done' ? 'bg-emerald-500' : 'bg-blue-500'}`} style={{ width: `${u.percent}%` }} />
+                </div>
+                <span className="text-xs text-muted-foreground flex-shrink-0">{u.message}</span>
+              </div>
+            ))}
+          </div>
+        )}
         {children}
       </main>
     </div>
