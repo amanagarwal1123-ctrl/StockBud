@@ -42,6 +42,7 @@ const RESET_CATEGORIES = [
 export default function Layout({ children }) {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { uploads } = useUpload();
   const [resetPassword, setResetPassword] = useState('');
   const [resetCategories, setResetCategories] = useState([]);
   const [showUndoDialog, setShowUndoDialog] = useState(false);
