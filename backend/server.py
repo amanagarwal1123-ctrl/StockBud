@@ -4545,6 +4545,7 @@ async def get_visualization_data(
         "purchases_by_supplier": purchases_by_supplier,
         "tier_distribution": tier_distribution,
         "sales_trend": sales_trend,
+        "trend_granularity": "daily" if use_daily else "monthly",
         "stock_health": status_counts
     }
 
