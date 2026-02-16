@@ -31,14 +31,17 @@ async def get_current_inventory():
 
     for item in opening:
         raw_name = item['item_name'].strip()
-        # Resolve to group leader if in a group
-        display_name = member_to_leader.get(raw_name, raw_name)
+        # Resolve through mapping first, then to group leader
+        master_name = mapping_dict.get(raw_name, raw_name)
+        display_name = member_to_leader.get(master_name, master_name)
         key = display_name.strip().lower()
         if key not in inventory_map:
+            # Use master item's stamp if available, else fall back to opening stock's stamp
+            resolved_stamp = master_stamp_dict.get(display_name, master_stamp_dict.get(master_name, item.get('stamp', '') or 'Unassigned'))
             inventory_map[key] = {
                 'item_name': display_name,
-                'stamp': item.get('stamp', '') or 'Unassigned',
-                'stamp_locked': bool(item.get('stamp')),
+                'stamp': resolved_stamp,
+                'stamp_locked': display_name in master_stamp_dict or master_name in master_stamp_dict,
                 'gr_wt': 0.0, 'net_wt': 0.0, 'fine': 0.0,
                 'total_pc': 0, 'labor': 0.0, 'stamps_seen': set()
             }
