@@ -4494,18 +4494,43 @@ async def get_visualization_data(
     
     tier_distribution = [{'tier': k, 'count': v['count'], 'total_stock_kg': round(v['total_stock_kg'], 3)} for k, v in tier_dist.items()]
     
-    # 5. Monthly sales trend
+    # 5. Sales trend (daily or monthly based on granularity)
+    # Auto: if date range <= 60 days use daily, else monthly
+    all_sale_dates = set()
     monthly_sales = defaultdict(lambda: {'net_wt': 0, 'amount': 0})
+    daily_sales = defaultdict(lambda: {'net_wt': 0, 'amount': 0})
     for t in transactions:
         if t['type'] in ['sale', 'sale_return'] and t.get('date'):
+            date_str = t['date'][:10]  # YYYY-MM-DD
             month = t['date'][:7]  # YYYY-MM
+            all_sale_dates.add(date_str)
             monthly_sales[month]['net_wt'] += t.get('net_wt', 0)
             monthly_sales[month]['amount'] += t.get('total_amount', 0)
+            daily_sales[date_str]['net_wt'] += t.get('net_wt', 0)
+            daily_sales[date_str]['amount'] += t.get('total_amount', 0)
     
-    sales_trend = sorted([
-        {'month': k, 'net_wt_kg': round(v['net_wt']/1000, 3), 'amount': round(v['amount'], 2)}
-        for k, v in monthly_sales.items()
-    ], key=lambda x: x['month'])
+    # Determine granularity
+    use_daily = trend_granularity == 'daily'
+    if trend_granularity == 'auto' and all_sale_dates:
+        sorted_dates = sorted(all_sale_dates)
+        try:
+            from datetime import datetime as dt_cls
+            first = dt_cls.strptime(sorted_dates[0], '%Y-%m-%d')
+            last = dt_cls.strptime(sorted_dates[-1], '%Y-%m-%d')
+            use_daily = (last - first).days <= 60
+        except Exception:
+            use_daily = len(all_sale_dates) <= 60
+    
+    if use_daily:
+        sales_trend = sorted([
+            {'label': k, 'net_wt_kg': round(v['net_wt']/1000, 3), 'amount': round(v['amount'], 2)}
+            for k, v in daily_sales.items()
+        ], key=lambda x: x['label'])
+    else:
+        sales_trend = sorted([
+            {'label': k, 'net_wt_kg': round(v['net_wt']/1000, 3), 'amount': round(v['amount'], 2)}
+            for k, v in monthly_sales.items()
+        ], key=lambda x: x['label'])
     
     # 6. Stock health summary
     status_counts = {'red': 0, 'green': 0, 'yellow': 0}
