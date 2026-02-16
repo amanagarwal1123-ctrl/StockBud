@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '../context/AuthContext';
+import { useUpload } from '../context/UploadContext';
 import {
   AlertDialog,
   AlertDialogAction,
