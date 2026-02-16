@@ -2277,11 +2277,15 @@ async def compare_physical_with_book():
 
 @api_router.get("/history/recent-uploads")
 async def get_recent_uploads():
-    """Get last 5 file uploads for undo selection"""
+    """Get ALL file uploads for undo selection"""
     actions = await db.action_history.find(
-        {"action_type": {"$in": ["upload_purchase", "upload_sale", "upload_branch_transfer"]}},
+        {"action_type": {"$in": [
+            "upload_purchase", "upload_sale", "upload_branch_transfer",
+            "upload_opening_stock", "upload_master_stock", "upload_physical_stock",
+            "client_batch_upload"
+        ]}},
         {"_id": 0}
-    ).sort("timestamp", -1).limit(5).to_list(5)
+    ).sort("timestamp", -1).to_list(1000)
     
     return actions
 
