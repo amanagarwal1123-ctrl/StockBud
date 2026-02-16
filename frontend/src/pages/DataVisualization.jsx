@@ -38,14 +38,15 @@ export default function DataVisualization() {
 
   useEffect(() => { fetchData(); fetchHistorical(); }, []);
 
-  const fetchData = async (sd, ed) => {
+  const fetchData = async (sd, ed, gran) => {
     setLoading(true);
     try {
       let url = `${API}/analytics/visualization`;
       const params = new URLSearchParams();
       if (sd || startDate) params.append('start_date', sd || startDate);
       if (ed || endDate) params.append('end_date', ed || endDate);
-      if (params.toString()) url += `?${params.toString()}`;
+      params.append('trend_granularity', gran || trendGranularity);
+      url += `?${params.toString()}`;
       const res = await axios.get(url);
       setVizData(res.data);
     } catch (e) {
