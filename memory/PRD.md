@@ -77,6 +77,12 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 - Keeps items, stamps, mappings, and groupings intact so nothing breaks
 - Updated `all_data` reset to also zero master stock (not delete)
 
+## Stamp Resolution Bug Fix (Feb 13, 2026)
+- Fixed: Opening stock items were not resolved through item mappings, causing duplicate entries with wrong stamps
+- `stock_service.py`: Now resolves opening_stock items through mapping_dict → member_to_leader chain
+- Master item's stamp takes priority (stamp_locked) to prevent raw entries from overwriting
+- StampManagement.jsx: Removed raw transaction fetching — uses inventory (resolved) as single source of truth
+
 ## Backlog
 - (P1) Item Mapping: 219 unmapped historical items need mapping
 - (P2) Refactor server.py into proper FastAPI structure
