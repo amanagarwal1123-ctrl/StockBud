@@ -29,23 +29,12 @@ export default function StampManagement() {
   const fetchInventory = async () => {
     try {
       const response = await axios.get(`${API}/inventory/current`);
-      // Get all items including transactions-only items
-      const allItems = response.data.inventory;
+      // Inventory already resolves mappings + groups — single source of truth
+      const allItems = response.data.inventory || [];
+      const negItems = response.data.negative_items || [];
       
-      // Also get items from transactions that might not be in inventory
-      const transResponse = await axios.get(`${API}/transactions?limit=10000`);
       const uniqueItems = new Map();
-      
-      transResponse.data.forEach(trans => {
-        if (!uniqueItems.has(trans.item_name)) {
-          uniqueItems.set(trans.item_name, {
-            item_name: trans.item_name,
-            stamp: trans.stamp || 'Unassigned'
-          });
-        }
-      });
-      
-      allItems.forEach(item => {
+      [...allItems, ...negItems].forEach(item => {
         uniqueItems.set(item.item_name, {
           item_name: item.item_name,
           stamp: item.stamp || 'Unassigned'
