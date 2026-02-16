@@ -2,6 +2,7 @@ import { useState } from 'react';
 import '@/App.css';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { UploadProvider } from './context/UploadContext';
 import Dashboard from './pages/Dashboard';
 import UploadManager from './pages/UploadManager';
 import CurrentStock from './pages/CurrentStock';
