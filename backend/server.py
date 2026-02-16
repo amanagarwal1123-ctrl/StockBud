@@ -4417,7 +4417,8 @@ async def get_historical_profit(
 @api_router.get("/analytics/visualization")
 async def get_visualization_data(
     start_date: Optional[str] = None,
-    end_date: Optional[str] = None
+    end_date: Optional[str] = None,
+    trend_granularity: Optional[str] = "auto"
 ):
     """Get aggregated data for charts and visualizations"""
     query = {}
