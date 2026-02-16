@@ -52,7 +52,9 @@ async def get_current_inventory():
         inventory_map[key]['labor'] += item.get('total', 0)
         if item.get('stamp'):
             inventory_map[key]['stamps_seen'].add(item['stamp'])
-            inventory_map[key]['stamp'] = item['stamp']
+            # Only overwrite stamp if entry is not locked to a master item's stamp
+            if not inventory_map[key].get('stamp_locked', False):
+                inventory_map[key]['stamp'] = item['stamp']
 
     for trans in transactions:
         trans_name = trans['item_name'].strip()
