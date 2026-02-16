@@ -1,11 +1,13 @@
 import { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
-import { Bell, AlertTriangle, Info, CheckCircle2, Package, ShoppingCart, Tag, Box, RefreshCw } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Bell, AlertTriangle, Info, CheckCircle2, Package, ShoppingCart, Tag, Box, RefreshCw, Settings2 } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -18,10 +20,28 @@ const TAB_CONFIG = [
   { id: 'general', label: 'General', icon: Bell },
 ];
 
+const BROWSER_NOTIF_KEY = 'stockbud_browser_notif_prefs';
+
+function getBrowserNotifPrefs() {
+  try {
+    const saved = localStorage.getItem(BROWSER_NOTIF_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch {}
+  // Default: stock and order enabled, rest disabled
+  return { stock: true, order: true, stamp: true, polythene: false, general: false };
+}
+
+function saveBrowserNotifPrefs(prefs) {
+  localStorage.setItem(BROWSER_NOTIF_KEY, JSON.stringify(prefs));
+}
+
 export default function Notifications() {
   const [categorized, setCategorized] = useState({});
   const [totalUnread, setTotalUnread] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
+  const [browserPrefs, setBrowserPrefs] = useState(getBrowserNotifPrefs);
+  const [prevUnread, setPrevUnread] = useState({});
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -29,10 +49,33 @@ export default function Notifications() {
       const res = await axios.get(`${API}/notifications/categorized`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setCategorized(res.data.notifications || {});
+      const newCategorized = res.data.notifications || {};
+      setCategorized(newCategorized);
       setTotalUnread(res.data.total_unread || 0);
+
+      // Check for new unread and fire browser notifications
+      const prefs = getBrowserNotifPrefs();
+      if ('Notification' in window && Notification.permission === 'granted') {
+        for (const cat of TAB_CONFIG) {
+          if (!prefs[cat.id]) continue; // skip disabled categories
+          const newNotifs = (newCategorized[cat.id] || []).filter(n => !n.read);
+          const prevCount = prevUnread[cat.id] || 0;
+          if (newNotifs.length > prevCount && prevCount > 0) {
+            const diff = newNotifs.length - prevCount;
+            new window.Notification(`StockBud - ${cat.label}`, {
+              body: `${diff} new ${cat.label.toLowerCase()} notification${diff > 1 ? 's' : ''}`,
+              icon: '/favicon.ico',
+            });
+          }
+        }
+      }
+      // Update counts
+      const counts = {};
+      for (const cat of TAB_CONFIG) {
+        counts[cat.id] = (newCategorized[cat.id] || []).filter(n => !n.read).length;
+      }
+      setPrevUnread(counts);
     } catch (e) {
-      // Fallback to old endpoint
       try {
         const res = await axios.get(`${API}/notifications/my`);
         setCategorized({ general: res.data });
@@ -42,19 +85,32 @@ export default function Notifications() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [prevUnread]);
 
   useEffect(() => {
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 60000);
     return () => clearInterval(interval);
-  }, [fetchNotifications]);
+  }, []);
+
+  useEffect(() => {
+    // Request notification permission on mount
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
 
   const markRead = async (notifId) => {
     try {
       await axios.post(`${API}/notifications/${notifId}/read`);
       fetchNotifications();
     } catch (e) { /* ignore */ }
+  };
+
+  const togglePref = (category) => {
+    const updated = { ...browserPrefs, [category]: !browserPrefs[category] };
+    setBrowserPrefs(updated);
+    saveBrowserNotifPrefs(updated);
   };
 
   const getSeverityStyle = (severity) => {
@@ -87,9 +143,7 @@ export default function Notifications() {
       <div className="space-y-2">
         {notifs.map((notif, idx) => (
           <Alert key={idx} className={`${getSeverityStyle(notif.severity)} cursor-pointer`}
-            onClick={() => notif.id && !notif.read && markRead(notif.id)}
-            data-testid={`notif-${idx}`}
-          >
+            onClick={() => notif.id && !notif.read && markRead(notif.id)} data-testid={`notif-${idx}`}>
             {getSeverityIcon(notif.type, notif.severity)}
             <AlertDescription className="ml-2 flex-1">
               <div className="flex items-start justify-between gap-2">
@@ -123,10 +177,37 @@ export default function Notifications() {
             {totalUnread > 0 ? `${totalUnread} unread` : 'All caught up'}
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={fetchNotifications}>
-          <RefreshCw className="h-4 w-4 mr-2" />Refresh
-        </Button>
+        <div className="flex gap-2">
+          <Button variant={showSettings ? 'default' : 'outline'} size="sm" onClick={() => setShowSettings(!showSettings)} data-testid="notif-settings-btn">
+            <Settings2 className="h-4 w-4 mr-2" />Browser Alerts
+          </Button>
+          <Button variant="outline" size="sm" onClick={fetchNotifications}>
+            <RefreshCw className="h-4 w-4 mr-2" />Refresh
+          </Button>
+        </div>
       </div>
+
+      {/* Browser Notification Settings */}
+      {showSettings && (
+        <Card className="border-blue-200 bg-blue-50/30">
+          <CardContent className="pt-4 pb-3">
+            <p className="text-sm font-medium mb-3">Choose which categories trigger browser notifications:</p>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              {TAB_CONFIG.map(tab => (
+                <div key={tab.id} className="flex items-center gap-2" data-testid={`notif-pref-${tab.id}`}>
+                  <Switch id={`pref-${tab.id}`} checked={browserPrefs[tab.id]} onCheckedChange={() => togglePref(tab.id)} />
+                  <Label htmlFor={`pref-${tab.id}`} className="text-sm cursor-pointer">{tab.label}</Label>
+                </div>
+              ))}
+            </div>
+            {Notification.permission !== 'granted' && (
+              <Button size="sm" variant="outline" className="mt-3 text-xs" onClick={() => Notification.requestPermission()}>
+                Enable browser notifications
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Tabs defaultValue="stock" className="space-y-4">
         <TabsList className="flex flex-wrap">
