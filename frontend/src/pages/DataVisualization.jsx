@@ -34,6 +34,7 @@ export default function DataVisualization() {
   const [histUploading, setHistUploading] = useState(false);
   const [seasonalData, setSeasonalData] = useState(null);
   const [seasonalLoading, setSeasonalLoading] = useState(false);
+  const [trendGranularity, setTrendGranularity] = useState('auto');
 
   useEffect(() => { fetchData(); fetchHistorical(); }, []);
 
