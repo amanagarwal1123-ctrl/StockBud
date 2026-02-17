@@ -3135,8 +3135,11 @@ async def calculate_profit(
         
         if trans['type'] in ['purchase', 'purchase_return']:
             item_transactions[item_name]['purchases'].append(trans_data)
-        elif trans['type'] in ['sale', 'sale_return']:
+        elif trans['type'] == 'sale':
             item_transactions[item_name]['sales'].append(trans_data)
+        elif trans['type'] == 'sale_return':
+            # Treat sale_return as purchase (buying back from customer)
+            item_transactions[item_name]['purchases'].append(trans_data)
     
     # Calculate profits per user's formula
     total_silver_profit_kg = 0.0  # Silver profit in KG
