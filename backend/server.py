@@ -448,7 +448,7 @@ def parse_excel_streaming(file_path: str, file_type: str) -> List[Dict]:
                 wt_rs = _get(wt_rs_col)
                 if wt_rs and str(wt_rs).replace('.', '').isdigit():
                     labor_val = float(wt_rs)
-                total_labor = _safe_float(_get(total_col))
+                total_amount = _safe_float(_get(total_col))
                 tunch_v = _safe_float(_get(tunch_col))
                 wstg_v = _safe_float(_get(wstg_col))
                 purchase_tunch = tunch_v + wstg_v
@@ -463,13 +463,14 @@ def parse_excel_streaming(file_path: str, file_type: str) -> List[Dict]:
                     'gr_wt': _safe_float(_get(gr_col)) * KG_TO_GRAMS,
                     'net_wt': _safe_float(_get(net_col)) * KG_TO_GRAMS,
                     'fine': _safe_float(_get(fine_col)) * KG_TO_GRAMS,
-                    'labor': total_labor,
+                    'labor': labor_val,
                     'labor_on': labor_on,
                     'dia_wt': _safe_float(_get(dia_col)) * KG_TO_GRAMS,
                     'stn_wt': _safe_float(_get(stn_col)) * KG_TO_GRAMS,
                     'tunch': str(purchase_tunch),
                     'rate': _safe_float(_get(rate_col)),
                     'total_pc': _safe_int(_get(pc_col)),
+                    'total_amount': total_amount,
                 })
         elif file_type == 'sale':
             item_col = _resolve_col(cols_set, ['Item Name', 'Particular', 'item name'])
