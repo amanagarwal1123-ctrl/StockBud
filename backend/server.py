@@ -3096,9 +3096,11 @@ async def calculate_profit(
     item_transactions = defaultdict(lambda: {'purchases': [], 'sales': []})
     
     for trans in transactions:
-        item_name = trans.get('item_name', '')
-        if not item_name:
+        raw_name = trans.get('item_name', '')
+        if not raw_name:
             continue
+        # Resolve to master name for consistent grouping and ledger lookup
+        item_name = mapping_dict.get(raw_name, raw_name)
         
         trans_data = {
             'date': trans.get('date'),
