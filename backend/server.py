@@ -2538,6 +2538,10 @@ async def get_customer_profit(
     ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(10000)
     ledger_map = {item['item_name']: item for item in ledger}
     
+    # Get item mappings for resolving transaction names to master names
+    all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
+    mapping_dict = {m['transaction_name']: m['master_name'] for m in all_mappings}
+    
     # Group by customer
     customer_profit = defaultdict(lambda: {
         'customer_name': '',
@@ -2552,13 +2556,16 @@ async def get_customer_profit(
         if not customer:
             continue
         
-        item_name = sale.get('item_name', '')
+        raw_item_name = sale.get('item_name', '')
+        # Resolve through mapping to find ledger entry
+        master_name = mapping_dict.get(raw_item_name, raw_item_name)
+        
         sale_tunch = float(sale.get('tunch', 0) or 0)
         sale_net_wt = sale.get('net_wt', 0)
         sale_labour = sale.get('labor', 0)
         
-        # Get purchase rates from ledger
-        ledger_item = ledger_map.get(item_name)
+        # Get purchase rates from ledger (try master name first, then raw name)
+        ledger_item = ledger_map.get(master_name) or ledger_map.get(raw_item_name)
         if ledger_item:
             purchase_tunch = ledger_item.get('purchase_tunch', 0)
             purchase_labour_per_gram = ledger_item.get('labour_per_kg', 0) / 1000
