@@ -98,6 +98,12 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 - Per-category toggles for browser push alerts (Polythene & General off by default)
 - Preferences saved in localStorage
 
+## Labour Profit Calculation Fix (Feb 17, 2026)
+- Bug 1: sale_return transactions had `sale_net_wt > 0` check which failed for negative net_wt returns, zeroing out their labour rate and causing incorrect profit
+- Fix: Changed to `!= 0` so returns correctly compute per-gram rate (negative/negative = positive rate), then multiply by negative weight = negative profit contribution
+- Bug 2: Ledger lookup used raw transaction names instead of resolving through item mappings
+- Fix: Added mapping resolution before ledger lookup in customer-profit and historical-profit endpoints
+
 ## Backlog
 - (P1) Item Mapping: unmapped historical items need mapping
 - (P2) Refactor server.py into proper FastAPI structure
