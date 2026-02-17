@@ -2570,7 +2570,7 @@ async def get_customer_profit(
         silver_profit_grams = (sale_tunch - purchase_tunch) * sale_net_wt / 100
         silver_profit_kg = silver_profit_grams / 1000
         
-        sale_labour_per_gram = sale_labour / sale_net_wt if sale_net_wt > 0 else 0
+        sale_labour_per_gram = sale_labour / sale_net_wt if sale_net_wt != 0 else 0
         labour_profit = (sale_labour_per_gram - purchase_labour_per_gram) * sale_net_wt
         
         customer_profit[customer]['customer_name'] = customer
