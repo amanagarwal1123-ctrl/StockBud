@@ -53,17 +53,30 @@ export const AuthProvider = ({ children }) => {
       const totalUnread = res.data.total_unread || 0;
       
       // If new unread notifications appeared, show browser notification
+      // Only for categories the user has enabled
       if (totalUnread > lastNotifCountRef.current && lastNotifCountRef.current >= 0) {
-        const newCount = totalUnread - lastNotifCountRef.current;
-        // Find the most recent unread notification
-        const allNotifs = Object.values(res.data.notifications || {}).flat();
-        const unread = allNotifs.filter(n => !n.read).sort((a, b) => 
-          new Date(b.created_at || b.timestamp || 0) - new Date(a.created_at || a.timestamp || 0)
-        );
-        if (unread.length > 0) {
-          const latest = unread[0];
+        let prefs;
+        try {
+          const saved = localStorage.getItem('stockbud_browser_notif_prefs');
+          prefs = saved ? JSON.parse(saved) : { stock: true, order: true, stamp: true, polythene: false, general: false };
+        } catch { prefs = { stock: true, order: true, stamp: true, polythene: false, general: false }; }
+
+        const notifications = res.data.notifications || {};
+        // Collect only unread from enabled categories
+        const enabledUnread = [];
+        for (const [cat, notifs] of Object.entries(notifications)) {
+          if (prefs[cat]) {
+            enabledUnread.push(...(notifs || []).filter(n => !n.read));
+          }
+        }
+        
+        if (enabledUnread.length > 0) {
+          const sorted = enabledUnread.sort((a, b) =>
+            new Date(b.created_at || b.timestamp || 0) - new Date(a.created_at || a.timestamp || 0)
+          );
+          const latest = sorted[0];
           showBrowserNotification(
-            `StockBud: ${newCount} new alert${newCount > 1 ? 's' : ''}`,
+            `StockBud: New alert`,
             latest.message || 'New notification',
             `stockbud-${Date.now()}`
           );
