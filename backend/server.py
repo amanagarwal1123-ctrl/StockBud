@@ -2521,15 +2521,17 @@ async def get_customer_profit(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ):
-    """Calculate profit per customer (silver & labour)"""
+    """Calculate profit per customer (silver & labour).
+    Sale returns are treated as purchases — we 'buy back' at the return rate,
+    profiting if the return rate is below our purchase cost."""
     
     query = {}
     if start_date and end_date:
         end_date_with_time = end_date + ' 23:59:59'
         query['date'] = {'$gte': start_date, '$lte': end_date_with_time}
     
-    # Get all sales
-    sales = await db.transactions.find(
+    # Get all sales + returns
+    transactions = await db.transactions.find(
         {**query, "type": {"$in": ["sale", "sale_return"]}},
         {"_id": 0}
     ).to_list(10000)
@@ -2551,39 +2553,60 @@ async def get_customer_profit(
         'transaction_count': 0
     })
     
-    for sale in sales:
-        customer = sale.get('party_name', 'Unknown')
+    for txn in transactions:
+        customer = txn.get('party_name', 'Unknown')
         if not customer:
             continue
         
-        raw_item_name = sale.get('item_name', '')
-        # Resolve through mapping to find ledger entry
+        raw_item_name = txn.get('item_name', '')
         master_name = mapping_dict.get(raw_item_name, raw_item_name)
         
-        sale_tunch = float(sale.get('tunch', 0) or 0)
-        sale_net_wt = sale.get('net_wt', 0)
-        sale_labour = sale.get('labor', 0)
+        txn_tunch = float(txn.get('tunch', 0) or 0)
+        txn_net_wt = txn.get('net_wt', 0)
+        txn_total = txn.get('labor', 0)  # 'labor' field holds the Total Rs amount
+        is_return = txn['type'] == 'sale_return'
         
-        # Get purchase rates from ledger (try master name first, then raw name)
+        # Get purchase cost from ledger
         ledger_item = ledger_map.get(master_name) or ledger_map.get(raw_item_name)
         if ledger_item:
             purchase_tunch = ledger_item.get('purchase_tunch', 0)
-            purchase_labour_per_gram = ledger_item.get('labour_per_kg', 0) / 1000
+            purchase_cost_per_gram = ledger_item.get('labour_per_kg', 0) / 1000
         else:
             purchase_tunch = 0
-            purchase_labour_per_gram = 0
+            purchase_cost_per_gram = 0
         
-        # Calculate profit for this transaction
-        silver_profit_grams = (sale_tunch - purchase_tunch) * sale_net_wt / 100
-        silver_profit_kg = silver_profit_grams / 1000
-        
-        sale_labour_per_gram = sale_labour / sale_net_wt if sale_net_wt != 0 else 0
-        labour_profit = (sale_labour_per_gram - purchase_labour_per_gram) * sale_net_wt
+        if is_return:
+            # SALE RETURN → treated as PURCHASE from customer
+            # We "buy back" goods at return_tunch/return_rate
+            # Profit = (our_cost_basis - return_cost) for both silver & labour
+            abs_wt = abs(txn_net_wt)
+            abs_total = abs(txn_total)
+            
+            # Silver profit: difference between our purchase cost (what goods are worth to us)
+            # and the return tunch (what we're accepting back at)
+            # Positive if return_tunch < purchase_tunch (we accepted cheap)
+            silver_profit_grams = (purchase_tunch - txn_tunch) * abs_wt / 100
+            silver_profit_kg = silver_profit_grams / 1000
+            
+            # Labour/Total profit: we refund abs_total, goods cost us purchase_cost * weight
+            # Positive if we refunded less than goods cost us
+            labour_profit = (purchase_cost_per_gram * abs_wt) - abs_total
+            
+            # Returns reduce the net sold weight
+            customer_profit[customer]['total_sold_kg'] -= abs_wt / 1000
+        else:
+            # REGULAR SALE → profit = (sale_rate - purchase_cost) * weight
+            silver_profit_grams = (txn_tunch - purchase_tunch) * txn_net_wt / 100
+            silver_profit_kg = silver_profit_grams / 1000
+            
+            # Labour/Total profit: we charged txn_total, our cost is purchase_cost * weight
+            labour_profit = txn_total - (purchase_cost_per_gram * txn_net_wt)
+            
+            customer_profit[customer]['total_sold_kg'] += txn_net_wt / 1000
         
         customer_profit[customer]['customer_name'] = customer
         customer_profit[customer]['silver_profit_kg'] += silver_profit_kg
         customer_profit[customer]['labour_profit_inr'] += labour_profit
-        customer_profit[customer]['total_sold_kg'] += sale_net_wt / 1000
         customer_profit[customer]['transaction_count'] += 1
     
     # Convert to list, round values, and sort
