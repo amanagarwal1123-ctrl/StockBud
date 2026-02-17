@@ -1205,7 +1205,7 @@ def _parse_raw_rows(raw_rows: List[Dict], cols: set, file_type: str) -> List[Dic
             wt_rs = r.get(wt_rs_col) if wt_rs_col else None
             if wt_rs and str(wt_rs).replace('.', '').isdigit():
                 labor_val = float(wt_rs)
-            total_labor = _safe_float(r.get(total_col) if total_col else None)
+            total_amount = _safe_float(r.get(total_col) if total_col else None)
             tunch_v = _safe_float(r.get(tunch_col) if tunch_col else None)
             wstg_v = _safe_float(r.get(wstg_col) if wstg_col else None)
             purchase_tunch = tunch_v + wstg_v
@@ -1220,14 +1220,14 @@ def _parse_raw_rows(raw_rows: List[Dict], cols: set, file_type: str) -> List[Dic
                 'gr_wt': _safe_float(r.get(gr_col) if gr_col else None) * KG_TO_GRAMS,
                 'net_wt': _safe_float(r.get(net_col) if net_col else None) * KG_TO_GRAMS,
                 'fine': _safe_float(r.get(fine_col) if fine_col else None) * KG_TO_GRAMS,
-                'labor': total_labor,
+                'labor': labor_val,
                 'labor_on': labor_on,
                 'dia_wt': _safe_float(r.get(dia_col) if dia_col else None) * KG_TO_GRAMS,
                 'stn_wt': _safe_float(r.get(stn_col) if stn_col else None) * KG_TO_GRAMS,
                 'tunch': str(purchase_tunch),
                 'rate': _safe_float(r.get(rate_col) if rate_col else None),
                 'total_pc': _safe_int(r.get(pc_col) if pc_col else None),
-                'total_amount': total_labor,
+                'total_amount': total_amount,
             })
 
     elif file_type == 'sale':
