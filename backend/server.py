@@ -513,7 +513,7 @@ def parse_excel_streaming(file_path: str, file_type: str) -> List[Dict]:
                 on_val = _get(on_col)
                 if on_val and str(on_val).replace('.', '').isdigit():
                     labor_val = float(on_val)
-                total_labor = _safe_float(_get(total_col))
+                total_amount = _safe_float(_get(total_col))
                 sale_tunch = _safe_float(_get(tunch_col))
                 records.append({
                     'type': 'sale' if trans_type in ('S', 'SALE') else 'sale_return',
@@ -526,12 +526,12 @@ def parse_excel_streaming(file_path: str, file_type: str) -> List[Dict]:
                     'gr_wt': _safe_float(_get(gr_col)) * KG_TO_GRAMS,
                     'net_wt': _safe_float(_get(net_col)) * KG_TO_GRAMS,
                     'fine': _safe_float(_get(fine_col)) * KG_TO_GRAMS,
-                    'labor': total_labor,
+                    'labor': labor_val,
                     'labor_on': labor_on,
                     'dia_wt': _safe_float(_get(dia_col)) * KG_TO_GRAMS,
                     'stn_wt': _safe_float(_get(stn_col)) * KG_TO_GRAMS,
                     'tunch': str(sale_tunch),
-                    'total_amount': total_labor,
+                    'total_amount': total_amount,
                     'taxable_value': _safe_float(_get(taxable_col)),
                     'total_pc': _safe_int(_get(pc_col)),
                 })
