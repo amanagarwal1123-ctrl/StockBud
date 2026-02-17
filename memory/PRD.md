@@ -99,10 +99,15 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 - Preferences saved in localStorage
 
 ## Labour Profit Calculation Fix (Feb 17, 2026)
-- Bug 1: sale_return transactions had `sale_net_wt > 0` check which failed for negative net_wt returns, zeroing out their labour rate and causing incorrect profit
-- Fix: Changed to `!= 0` so returns correctly compute per-gram rate (negative/negative = positive rate), then multiply by negative weight = negative profit contribution
-- Bug 2: Ledger lookup used raw transaction names instead of resolving through item mappings
-- Fix: Added mapping resolution before ledger lookup in customer-profit and historical-profit endpoints
+- Sale returns now treated as PURCHASES (buying back from customer)
+  - Silver profit on return = (purchase_tunch - return_tunch) × abs(weight)
+  - Labour profit on return = (purchase_cost × abs(weight)) - abs(refund)
+  - Can be positive (if return rate < cost) or negative (overpaid for return)
+- Historical profit: sale_return transactions routed to purchases bucket instead of sales
+- Fixed `labor` field: now stores actual labour value (from Wt/Rs/On columns), not the Total column
+- `total_amount` field correctly stores the Total column (full Rs amount)
+- Item name resolution through mappings for ledger lookup in all profit endpoints
+- All 6 parsing paths (purchase×3, sale×3) updated consistently
 
 ## Backlog
 - (P1) Item Mapping: unmapped historical items need mapping
