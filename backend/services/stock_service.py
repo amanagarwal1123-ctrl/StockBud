@@ -112,7 +112,7 @@ async def get_current_inventory():
         elif trans.get('stamp'):
             inventory_map[key]['stamps_seen'].add(trans['stamp'])
 
-        member_key = master_name
+        m_key = _member_key(trans_name, master_name)
         if trans['type'] in ['purchase', 'purchase_return', 'receive']:
             inventory_map[key]['gr_wt'] += trans.get('gr_wt', 0)
             inventory_map[key]['net_wt'] += trans.get('net_wt', 0)
@@ -120,11 +120,11 @@ async def get_current_inventory():
             inventory_map[key]['total_pc'] += trans.get('total_pc', 0)
             inventory_map[key]['labor'] += trans.get('labor', 0)
 
-            member_data[key][member_key]['gr_wt'] += trans.get('gr_wt', 0)
-            member_data[key][member_key]['net_wt'] += trans.get('net_wt', 0)
-            member_data[key][member_key]['fine'] += trans.get('fine', 0)
-            member_data[key][member_key]['total_pc'] += trans.get('total_pc', 0)
-            member_data[key][member_key]['labor'] += trans.get('labor', 0)
+            member_data[key][m_key]['gr_wt'] += trans.get('gr_wt', 0)
+            member_data[key][m_key]['net_wt'] += trans.get('net_wt', 0)
+            member_data[key][m_key]['fine'] += trans.get('fine', 0)
+            member_data[key][m_key]['total_pc'] += trans.get('total_pc', 0)
+            member_data[key][m_key]['labor'] += trans.get('labor', 0)
         else:
             inventory_map[key]['gr_wt'] -= trans.get('gr_wt', 0)
             inventory_map[key]['net_wt'] -= trans.get('net_wt', 0)
@@ -132,11 +132,11 @@ async def get_current_inventory():
             inventory_map[key]['total_pc'] -= trans.get('total_pc', 0)
             inventory_map[key]['labor'] -= trans.get('labor', 0)
 
-            member_data[key][member_key]['gr_wt'] -= trans.get('gr_wt', 0)
-            member_data[key][member_key]['net_wt'] -= trans.get('net_wt', 0)
-            member_data[key][member_key]['fine'] -= trans.get('fine', 0)
-            member_data[key][member_key]['total_pc'] -= trans.get('total_pc', 0)
-            member_data[key][member_key]['labor'] -= trans.get('labor', 0)
+            member_data[key][m_key]['gr_wt'] -= trans.get('gr_wt', 0)
+            member_data[key][m_key]['net_wt'] -= trans.get('net_wt', 0)
+            member_data[key][m_key]['fine'] -= trans.get('fine', 0)
+            member_data[key][m_key]['total_pc'] -= trans.get('total_pc', 0)
+            member_data[key][m_key]['labor'] -= trans.get('labor', 0)
 
     # --- Polythene adjustments ---
     polythene_adjustments = await db.polythene_adjustments.find({}, {"_id": 0}).to_list(10000)
