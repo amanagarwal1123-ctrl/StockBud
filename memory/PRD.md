@@ -87,16 +87,19 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 - **Solution:** Group-aware purchase ledger (`group_utils.py`)
   - `build_group_ledger()` combines all member ledger entries → weighted-average tunch & labour
   - `resolve_to_leader()` resolves any name through mappings + groups to the leader
+- **Stamp-level tracking:** Grouping is for CALCULATION only. For stamp approvals and
+  physical vs book, each member's weight counts under its OWN stamp:
+  - `by_stamp` distributes group members to their respective stamps
+  - `stamp_items` flat list for stamp detail and physical vs book comparison
+  - `_member_key()` preserves physical item identity even when mappings redirect names
 - **Affected areas updated:**
-  - `stock_service.py` → group-aware fine/labour, member breakdowns for expandable UI
-  - `customer-profit` → uses group ledger for purchase cost basis
-  - `supplier-profit` → resolves items to group leaders
-  - `item-profit` → groups transactions by leader, uses group ledger
-  - `historical-profit` → resolves to group leaders
+  - `stock_service.py` → group-aware fine/labour, member breakdowns, per-stamp distribution
+  - `customer-profit`, `supplier-profit`, `item-profit`, `historical-profit` → group ledger
   - `visualization` → already had group resolution
-  - `item-buffers/categorize` → already had group resolution
-- **Frontend:** CurrentStock.jsx has expandable group rows with member details
-- **Result:** 0 negative items (was previously non-zero), correct Fine/Labour for all groups
+  - `stamps/{name}/detail` → uses stamp_items for correct per-stamp weights
+  - `physical-stock/compare` → uses stamp_items for correct comparison
+  - Frontend CurrentStock.jsx → expandable groups + stamp-specific flat view
+- **Result:** 0 negative items, correct Fine/Labour, correct per-stamp weights
 - **Item Groups:** TULSI 70 -264 [+BELT], SNT 40-256 [+PREMIUM], KADA-AS 70 [+FANCY], SLG 70 BICCHIYA-255 [+MICRO], BARTAN-040 [+LOTA]
 
 ## Backlog
