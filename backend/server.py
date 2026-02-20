@@ -3797,15 +3797,15 @@ async def suggest_item_groups():
 
 @api_router.get("/stamps/{stamp_name}/detail")
 async def get_stamp_detail(stamp_name: str):
-    """Get all items in a stamp with stock info"""
+    """Get all items in a stamp with stock info (per-stamp, not grouped)"""
     master_items = await db.master_items.find(
         {"stamp": stamp_name}, {"_id": 0}
     ).to_list(10000)
     inv_response = await get_current_inventory()
+    
+    # Use stamp_items (ungrouped, per-stamp) for correct per-stamp lookup
     inv_dict = {}
-    for item in inv_response.get('inventory', []):
-        inv_dict[item['item_name']] = item
-    for item in inv_response.get('negative_items', []):
+    for item in inv_response.get('stamp_items', inv_response.get('inventory', [])):
         inv_dict[item['item_name']] = item
 
     items_with_stock = []
