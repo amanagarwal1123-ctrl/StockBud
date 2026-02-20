@@ -203,16 +203,28 @@ async def get_current_inventory():
         else:
             inventory.append(item)
 
+    # --- by_stamp: distribute individual members to their own stamps ---
+    # This is critical for stamp-level tallying (approvals, physical vs book)
     stamp_groups = {}
-    for item in inventory:
-        stamp = item['stamp'] or 'Unassigned'
-        if stamp not in stamp_groups:
-            stamp_groups[stamp] = []
-        stamp_groups[stamp].append(item)
+    stamp_items_flat = []  # flat list of per-stamp items for stamp detail/physical compare
+
+    for item in inventory + negative_items:
+        if item.get('is_group') and item.get('members') and len(item['members']) > 1:
+            # Distribute each member to its own stamp
+            for m in item['members']:
+                m_stamp = m.get('stamp') or 'Unassigned'
+                m_entry = {**m, 'group_name': item['item_name']}
+                stamp_groups.setdefault(m_stamp, []).append(m_entry)
+                stamp_items_flat.append(m_entry)
+        else:
+            stamp = item.get('stamp') or 'Unassigned'
+            stamp_groups.setdefault(stamp, []).append(item)
+            stamp_items_flat.append(item)
 
     return {
         "inventory": inventory,
         "by_stamp": stamp_groups,
+        "stamp_items": stamp_items_flat,
         "total_items": len(inventory),
         "total_gr_wt": round(total_gr_wt, 3),
         "total_net_wt": round(total_net_wt, 3),
