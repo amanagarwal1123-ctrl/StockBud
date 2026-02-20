@@ -4193,11 +4193,12 @@ async def get_historical_profit(
     if year:
         match_filter["historical_year"] = year
 
-    # 1. Load item mappings (small, <10k docs)
+    # 1. Load item mappings + groups for group-aware resolution
     all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
-    mapping_dict = {m["transaction_name"]: m["master_name"] for m in all_mappings}
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    h_mapping_dict, h_member_to_leader, _ = build_group_maps(all_groups, all_mappings)
     def resolve(name):
-        return mapping_dict.get(name, name)
+        return resolve_to_leader(name, h_mapping_dict, h_member_to_leader)
 
     # 2. Purchase basis via aggregation (grouped by item_name)
     purchase_agg = await db.historical_transactions.aggregate([
