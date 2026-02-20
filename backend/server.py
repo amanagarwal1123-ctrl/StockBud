@@ -2642,11 +2642,15 @@ async def get_supplier_profit(
     # Get all transactions
     all_transactions = await db.transactions.find(query, {"_id": 0}).to_list(10000)
     
-    # Get purchase ledger for cost basis
-    ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(10000)
-    ledger_map = {item['item_name']: item for item in ledger}
+    # Group-aware mappings
+    all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    s_mapping_dict, s_member_to_leader, _ = build_group_maps(all_groups, all_mappings)
     
-    # Group by supplier: track what each supplier sells us
+    def _resolve_supplier(name):
+        return resolve_to_leader(name, s_mapping_dict, s_member_to_leader)
+    
+    # Group by supplier: track what each supplier sells us (resolved to leaders)
     supplier_data = defaultdict(lambda: {
         'supplier_name': '',
         'items': defaultdict(lambda: {'purchases': [], 'sales': []}),
@@ -2655,9 +2659,9 @@ async def get_supplier_profit(
         'labor_profit_inr': 0.0
     })
     
-    # Organize transactions
+    # Organize transactions — resolve item names to group leaders
     for trans in all_transactions:
-        item_name = trans.get('item_name', '')
+        item_name = _resolve_supplier(trans.get('item_name', ''))
         
         if trans['type'] in ['purchase', 'purchase_return']:
             supplier = trans.get('party_name', 'Unknown')
