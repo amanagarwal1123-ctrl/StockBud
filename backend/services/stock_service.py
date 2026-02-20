@@ -31,10 +31,23 @@ async def get_current_inventory():
         'gr_wt': 0.0, 'net_wt': 0.0, 'fine': 0.0, 'total_pc': 0, 'labor': 0.0
     }))
 
+    # Set of all group member names — for preserving physical item identity
+    all_group_members = set()
+    for g in groups:
+        all_group_members.update(g.get('members', []))
+
     def _resolve(raw_name):
         master_name = mapping_dict.get(raw_name, raw_name)
         leader = member_to_leader.get(master_name, master_name)
         return master_name, leader
+
+    def _member_key(raw_name, master_name):
+        """Determine which group member this item physically belongs to.
+        If raw_name is itself a group member, keep it (preserves stamp identity).
+        Otherwise fall back to master_name."""
+        if raw_name in all_group_members:
+            return raw_name
+        return master_name
 
     # --- Opening stock ---
     for item in opening:
