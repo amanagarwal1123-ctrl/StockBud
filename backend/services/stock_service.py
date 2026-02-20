@@ -74,13 +74,13 @@ async def get_current_inventory():
         inventory_map[key]['total_pc'] += item.get('pc', 0)
         inventory_map[key]['labor'] += item.get('total', 0)
 
-        # Track per-member data
-        member_key = master_name
-        member_data[key][member_key]['gr_wt'] += item.get('gr_wt', 0)
-        member_data[key][member_key]['net_wt'] += item.get('net_wt', 0)
-        member_data[key][member_key]['fine'] += item.get('fine', 0)
-        member_data[key][member_key]['total_pc'] += item.get('pc', 0)
-        member_data[key][member_key]['labor'] += item.get('total', 0)
+        # Track per-member data — preserve physical item identity
+        m_key = _member_key(raw_name, master_name)
+        member_data[key][m_key]['gr_wt'] += item.get('gr_wt', 0)
+        member_data[key][m_key]['net_wt'] += item.get('net_wt', 0)
+        member_data[key][m_key]['fine'] += item.get('fine', 0)
+        member_data[key][m_key]['total_pc'] += item.get('pc', 0)
+        member_data[key][m_key]['labor'] += item.get('total', 0)
 
         if item.get('stamp'):
             inventory_map[key]['stamps_seen'].add(item['stamp'])
