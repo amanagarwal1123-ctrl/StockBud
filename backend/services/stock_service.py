@@ -1,43 +1,52 @@
 from collections import defaultdict
 from database import db
+from services.group_utils import build_group_maps, build_group_ledger
 
 
 async def get_current_inventory():
     """Calculate current inventory: Opening Stock + Purchases - Sales.
-    Merges item group members into their leader for consolidated view."""
+    Merges item group members into their leader for consolidated view.
+    Returns per-member breakdowns for expandable UI."""
     EXCLUDED_ITEMS = ["SILVER ORNAMENTS"]
 
     opening = await db.opening_stock.find({}, {"_id": 0}).to_list(10000)
     transactions = await db.transactions.find({}, {"_id": 0}).to_list(10000)
 
     mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
-    mapping_dict = {m['transaction_name']: m['master_name'] for m in mappings}
-
     master_items = await db.master_items.find({}, {"_id": 0}).to_list(10000)
     master_stamp_dict = {m['item_name']: m['stamp'] for m in master_items}
 
-    # Load item groups for merging into leaders
     groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
-    member_to_leader = {}
-    for g in groups:
-        for member in g.get('members', []):
-            if member != g['group_name']:
-                member_to_leader[member] = g['group_name']
+    ledger_items = await db.purchase_ledger.find({}, {"_id": 0}).to_list(10000)
+
+    mapping_dict, member_to_leader, group_members = build_group_maps(groups, mappings)
+    group_ledger = build_group_ledger(ledger_items, groups, mappings)
 
     opening = [item for item in opening if item['item_name'] not in EXCLUDED_ITEMS]
     transactions = [t for t in transactions if t['item_name'] not in EXCLUDED_ITEMS]
 
+    # Track both group-level and per-member data
     inventory_map = {}
+    member_data = defaultdict(lambda: defaultdict(lambda: {
+        'gr_wt': 0.0, 'net_wt': 0.0, 'fine': 0.0, 'total_pc': 0, 'labor': 0.0
+    }))
 
+    def _resolve(raw_name):
+        master_name = mapping_dict.get(raw_name, raw_name)
+        leader = member_to_leader.get(master_name, master_name)
+        return master_name, leader
+
+    # --- Opening stock ---
     for item in opening:
         raw_name = item['item_name'].strip()
-        # Resolve through mapping first, then to group leader
-        master_name = mapping_dict.get(raw_name, raw_name)
-        display_name = member_to_leader.get(master_name, master_name)
+        master_name, display_name = _resolve(raw_name)
         key = display_name.strip().lower()
+
         if key not in inventory_map:
-            # Use master item's stamp if available, else fall back to opening stock's stamp
-            resolved_stamp = master_stamp_dict.get(display_name, master_stamp_dict.get(master_name, item.get('stamp', '') or 'Unassigned'))
+            resolved_stamp = master_stamp_dict.get(
+                display_name,
+                master_stamp_dict.get(master_name, item.get('stamp', '') or 'Unassigned')
+            )
             inventory_map[key] = {
                 'item_name': display_name,
                 'stamp': resolved_stamp,
@@ -45,26 +54,37 @@ async def get_current_inventory():
                 'gr_wt': 0.0, 'net_wt': 0.0, 'fine': 0.0,
                 'total_pc': 0, 'labor': 0.0, 'stamps_seen': set()
             }
+
         inventory_map[key]['gr_wt'] += item.get('gr_wt', 0)
         inventory_map[key]['net_wt'] += item.get('net_wt', 0)
         inventory_map[key]['fine'] += item.get('fine', 0)
         inventory_map[key]['total_pc'] += item.get('pc', 0)
         inventory_map[key]['labor'] += item.get('total', 0)
+
+        # Track per-member data
+        member_key = master_name
+        member_data[key][member_key]['gr_wt'] += item.get('gr_wt', 0)
+        member_data[key][member_key]['net_wt'] += item.get('net_wt', 0)
+        member_data[key][member_key]['fine'] += item.get('fine', 0)
+        member_data[key][member_key]['total_pc'] += item.get('pc', 0)
+        member_data[key][member_key]['labor'] += item.get('total', 0)
+
         if item.get('stamp'):
             inventory_map[key]['stamps_seen'].add(item['stamp'])
-            # Only overwrite stamp if entry is not locked to a master item's stamp
             if not inventory_map[key].get('stamp_locked', False):
                 inventory_map[key]['stamp'] = item['stamp']
 
+    # --- Transactions ---
     for trans in transactions:
         trans_name = trans['item_name'].strip()
-        master_name = mapping_dict.get(trans_name, trans_name)
-        # Resolve to group leader if in a group
-        display_name = member_to_leader.get(master_name, master_name)
+        master_name, display_name = _resolve(trans_name)
         key = display_name.strip().lower()
 
         if key not in inventory_map:
-            item_stamp = master_stamp_dict.get(display_name, master_stamp_dict.get(master_name, trans.get('stamp', 'Unassigned')))
+            item_stamp = master_stamp_dict.get(
+                display_name,
+                master_stamp_dict.get(master_name, trans.get('stamp', 'Unassigned'))
+            )
             inventory_map[key] = {
                 'item_name': display_name,
                 'stamp': item_stamp,
@@ -79,12 +99,19 @@ async def get_current_inventory():
         elif trans.get('stamp'):
             inventory_map[key]['stamps_seen'].add(trans['stamp'])
 
+        member_key = master_name
         if trans['type'] in ['purchase', 'purchase_return', 'receive']:
             inventory_map[key]['gr_wt'] += trans.get('gr_wt', 0)
             inventory_map[key]['net_wt'] += trans.get('net_wt', 0)
             inventory_map[key]['fine'] += trans.get('fine', 0)
             inventory_map[key]['total_pc'] += trans.get('total_pc', 0)
             inventory_map[key]['labor'] += trans.get('labor', 0)
+
+            member_data[key][member_key]['gr_wt'] += trans.get('gr_wt', 0)
+            member_data[key][member_key]['net_wt'] += trans.get('net_wt', 0)
+            member_data[key][member_key]['fine'] += trans.get('fine', 0)
+            member_data[key][member_key]['total_pc'] += trans.get('total_pc', 0)
+            member_data[key][member_key]['labor'] += trans.get('labor', 0)
         else:
             inventory_map[key]['gr_wt'] -= trans.get('gr_wt', 0)
             inventory_map[key]['net_wt'] -= trans.get('net_wt', 0)
@@ -92,14 +119,13 @@ async def get_current_inventory():
             inventory_map[key]['total_pc'] -= trans.get('total_pc', 0)
             inventory_map[key]['labor'] -= trans.get('labor', 0)
 
-    inventory = []
-    negative_items = []
-    total_gr_wt = 0.0
-    total_net_wt = 0.0
+            member_data[key][member_key]['gr_wt'] -= trans.get('gr_wt', 0)
+            member_data[key][member_key]['net_wt'] -= trans.get('net_wt', 0)
+            member_data[key][member_key]['fine'] -= trans.get('fine', 0)
+            member_data[key][member_key]['total_pc'] -= trans.get('total_pc', 0)
+            member_data[key][member_key]['labor'] -= trans.get('labor', 0)
 
-    ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(10000)
-    ledger_map = {item['item_name']: item for item in ledger}
-
+    # --- Polythene adjustments ---
     polythene_adjustments = await db.polythene_adjustments.find({}, {"_id": 0}).to_list(10000)
     poly_map = defaultdict(float)
     for adj in polythene_adjustments:
@@ -111,18 +137,27 @@ async def get_current_inventory():
         else:
             poly_map[master_item_name] -= poly_weight
 
+    # --- Build final inventory list ---
+    group_names_set = {g['group_name'] for g in groups}
+    inventory = []
+    negative_items = []
+    total_gr_wt = 0.0
+    total_net_wt = 0.0
+
     for key, item in inventory_map.items():
         item['stamps_seen'] = list(item['stamps_seen']) if isinstance(item['stamps_seen'], set) else item['stamps_seen']
         item_name = item['item_name']
         net_wt_grams = item['net_wt']
 
-        ledger_item = ledger_map.get(item_name)
+        # Use GROUP-AWARE ledger for fine/labor calculation
+        ledger_item = group_ledger.get(item_name)
         if ledger_item:
             tunch = ledger_item.get('purchase_tunch', 0)
             labour_per_kg = ledger_item.get('labour_per_kg', 0)
-            item['fine'] = (net_wt_grams * tunch / 100)
+            item['fine'] = net_wt_grams * tunch / 100
             item['labor'] = (net_wt_grams / 1000) * labour_per_kg
 
+        # Polythene adjustment
         if item_name in poly_map:
             item['gr_wt'] += poly_map[item_name]
 
@@ -133,6 +168,35 @@ async def get_current_inventory():
 
         total_gr_wt += item['gr_wt']
         total_net_wt += item['net_wt']
+
+        # Determine if this is a group and build member details
+        is_group = item_name in group_names_set
+        item['is_group'] = is_group
+
+        if is_group and key in member_data and len(member_data[key]) > 1:
+            members_list = []
+            for m_name, m_vals in member_data[key].items():
+                m_net = m_vals['net_wt']
+                m_gr = m_vals['gr_wt']
+                # Use group ledger for member fine/labor too
+                if ledger_item:
+                    m_fine = m_net * tunch / 100
+                    m_labor = (m_net / 1000) * labour_per_kg
+                else:
+                    m_fine = m_vals['fine']
+                    m_labor = m_vals['labor']
+                m_stamp = master_stamp_dict.get(m_name, item.get('stamp', 'Unassigned'))
+                members_list.append({
+                    'item_name': m_name,
+                    'stamp': m_stamp,
+                    'gr_wt': round(m_gr, 3),
+                    'net_wt': round(m_net, 3),
+                    'fine': round(m_fine, 3),
+                    'labor': round(m_labor, 3),
+                })
+            item['members'] = sorted(members_list, key=lambda x: x['net_wt'], reverse=True)
+        else:
+            item['members'] = []
 
         if item['gr_wt'] < -0.01 or item['net_wt'] < -0.01:
             negative_items.append(item)
