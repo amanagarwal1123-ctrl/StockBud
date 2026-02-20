@@ -1,131 +1,136 @@
-<analysis>**original_problem_statement:** The user initially requested fixes for a deployed application that was crashing due to memory overload on startup and had several data-related bugs. After stabilizing the application, the user requested a significant set of new features:
+<analysis>**original_problem_statement:** The user's engagement began with debugging a stamp assignment issue and quickly expanded to a set of significant feature enhancements and critical bug fixes.
 
-1.  **Item Grouping**: Implement a system to manually group similar items (e.g., Snt 40 premium and Snt 40). These groups should have a designated leader item. The system should automatically suggest groups based on existing item mappings. It must also be possible to edit these groups.
-2.  **Stock Consolidation**: In all views (Current Stock, Buffer Management, Visualizations), the stock and sales data for items within a group should be merged and displayed under the leader item's name.
-3.  **Stamp Assignment Details**: Create a new page that appears when a stamp is clicked. This page should list all items within that stamp, show the total stock, and allow an executive to be assigned to that stamp (one executive per stamp, but an executive can have many stamps).
-4.  **Seasonal Item Buffers**: The item buffer calculation logic needs to be enhanced to be seasonal based on Indian seasons (Summer, Monsoon, Post-Monsoon, Winter) and use historical sales data to determine sales velocity within those seasons.
-5.  **Dashboard Content**: Add a section to the dashboard, in both English and Hindi with a language toggle, that explains the full scope and logic of the software.
-6.  **Notification System Fixes**: The notification system was not working correctly. Notifications for stamp approvals/rejections were missing, and the Polythene and General tabs were not showing any relevant alerts.
-7.  **Minor Requests**: Remove the Made with Emergent badge and provide information on how to download the project code.
+The key requests were:
+1.  **Global Uploads**: File uploads should persist across page navigation.
+2.  **Complete Undo History**: The Undo Upload feature should list all files ever uploaded.
+3.  **Sales Trend Granularity**: The main sales trend graph needed a daily/monthly toggle.
+4.  **Selective Notifications**: Users must be able to disable browser notifications for specific categories, especially Polythene.
+5.  **Profit Calculation Overhaul**: A critical flaw was causing incorrect negative profits. The user requested a complete rewrite of the logic, specifying that sale returns should be treated as purchases, as they sometimes generate profit.
 
 **User's preferred language**: English
 
 **what currently exists?**
-The application is a sophisticated inventory and sales analysis tool. The initial critical performance and scalability issues have been resolved. The agent has successfully implemented all requested features:
--   A full-featured **Item Grouping** system on a new dedicated page () allows creating, editing, and deleting groups. It also suggests potential groups automatically based on pre-existing item mappings.
--   A new **Stamp Detail** page () is now accessible by clicking on a stamp in the assignments list. It shows item details, total stock, and allows for executive assignment.
--   The **Item Buffer** calculation has been completely rewritten to be seasonal and group-aware, providing more intelligent stock recommendations.
--   All major data views, including **Current Stock**, **Buffer Management**, and **Visualizations**, now correctly consolidate member items into their group leaders, providing a unified view of inventory.
--   The **Dashboard** features a new comprehensive, bilingual (English/Hindi) section explaining the software's capabilities.
--   The **Notification System** has been completely overhauled. All notification types (Stock, Order, Stamp Approval/Rejection, Polythene Adjustments) are now generated correctly with the proper category and are displayed in the correct tabs for the  user. A data migration was performed to fix old notifications.
+The application is a comprehensive inventory management and sales analysis platform. All user-requested features and fixes from this session have been implemented.
+
+-   **Core Bug Fixes**:
+    -   An issue causing incorrect stamp assignments for mapped items has been resolved by enforcing consistent name resolution across all data sources.
+    -   A bug allowing unwanted browser notifications to bypass user preferences was fixed in the global notification poller.
+-   **Feature Enhancements**:
+    -   File uploads are now global and persistent, managed by a new React , with a progress bar always visible in the main layout.
+    -   The Undo Upload page now correctly displays the entire upload history.
+    -   The sales visualization chart includes a Daily/Monthly/Auto toggle for trend analysis.
+    -   The notifications page has a new settings panel for enabling/disabling browser alerts by category, with preferences saved to .
+-   **Profit Logic Rewrite**: The entire profit calculation system was overhauled.
+    -   It now correctly treats sale returns as purchases, allowing for profit generation on returns.
+    -   A fundamental data parsing bug was fixed across all upload endpoints (). The  value is now correctly extracted from the Tag/On columns of uploaded files, instead of being incorrectly assigned the Total transaction value.
 
 **Last working item**:
--   **Last item agent was working**: Fixing the entire notification system. The agent discovered that multiple notification types were being created without a  field, causing them to not appear in the correct UI tabs. Furthermore, some notifications (like for Polythene) were never being created at all. The fix involved a comprehensive update to  to add the  field to all notification creation points, add logic for missing notifications, and a one-time database migration script to repair all existing notifications.
+-   **Last item agent was working**: A complete overhaul of the profit calculation logic in . This addressed two major issues: treating sale returns as purchases and fixing a critical data parsing bug where the  value was being incorrectly read from uploaded files.
 -   **Status**: USER VERIFICATION PENDING
 -   **Agent Testing Done**: Y
--   **Which testing method agent to use?**: Manual user testing. The user should perform actions that trigger notifications (e.g., approve/reject a stamp, make a polythene adjustment) and verify they appear in the correct tabs in the UI.
+-   **Which testing method agent to use?**: Manual user testing. The user needs to thoroughly review the Customer Wise Profit and other financial reports to confirm the accuracy of the new logic.
 -   **User Testing Done**: N
 
 **All Pending/In progress Issue list**:
--   **Issue 1: Comprehensive Feature and Bug Fix Verification (P0)**
-    -   **Description**: The agent has completed a large number of features and fixes. The user needs to perform a full review and test of the application in the deployed environment to confirm everything works as expected.
+-   **Issue 1: Comprehensive Profit Logic and Data Parsing Verification (P0)**
+    -   **Description**: The user must validate that the completely rewritten profit calculation and data parsing logic is accurate. This is a critical business logic change.
     -   **Next debug checklist**:
-        1.  Verify the Item Grouping functionality (create, edit, auto-suggest).
-        2.  Verify the Stamp Detail and assignment pages.
-        3.  Check the Item Buffer Management page for seasonal calculations.
-        4.  Confirm Current Stock and Visualizations correctly merge grouped items.
-        5.  Test the new notification system by triggering various events.
-        6.  The user should re-upload their historical data file to the deployed environment to correct the date-parsing issues for data that was uploaded with older, buggy code, as advised by the agent.
-    -   **Why fix this issue and what will be achieved with the fix?**: This will validate the successful completion of all user requests from this session.
+        1.  Navigate to the Customer Wise Profit page.
+        2.  Verify that customers who previously had incorrect negative profits (e.g., HARMEET SINGH, MUKESH JAIN) now show correct, plausible values.
+        3.  Check a few transactions involving sale returns to confirm they are calculated as if they were purchases.
+        4.  If possible, re-upload a sample sales file and verify the  profit is calculated based on the / column values, not the  transaction amount.
+    -   **Why fix this issue and what will be achieved with the fix?**: To confirm the application's core financial reporting is accurate and trustworthy.
+    -   **Status**: USER VERIFICATION PENDING
+    -   **Is recurring issue?**: N
+    -   **Should Test frontend/backend/both after fix?**: Both (User E2E testing).
+    -   **Blocked on other issue**: None.
+
+-   **Issue 2: Verification of Multi-Feature Update (P1)**
+    -   **Description**: The user needs to test the four other features implemented in this session to ensure they meet requirements.
+    -   **Next debug checklist**:
+        1.  **Global Upload**: Start a large file upload, navigate to a different page, and confirm the upload continues with the progress bar visible at the top.
+        2.  **Undo Upload**: Visit the Undo Upload page and confirm it lists the complete history of all uploaded files.
+        3.  **Sales Trend Toggle**: On the Visualizations page, use the Daily and Monthly toggles on the sales trend graph to confirm the chart updates correctly.
+        4.  **Selective Notifications**: In Notifications settings, disable Polythene browser alerts and confirm no browser notifications for that category are received.
+    -   **Why fix this issue and what will be achieved with the fix?**: Validates the successful implementation of several key UX improvements.
     -   **Status**: USER VERIFICATION PENDING
     -   **Is recurring issue?**: N
     -   **Should Test frontend/backend/both after fix?**: Both (User E2E testing).
     -   **Blocked on other issue**: None.
 
 **In progress Task List**:
-None. All tasks from the session have been completed and are pending user verification.
+None.
 
 **Upcoming and Future Tasks**
--   **Upcoming Tasks:**
-    -   **P0: User-guided Item Mapping:** Now that the grouping system is stable, the user needs to use the Item Mapping page to map any remaining unmapped items to ensure full data accuracy.
--   **Future Tasks:**
-    -   **P1: Refactor :** The main backend file () has grown even larger and more complex. It should be broken down into a standard FastAPI project structure (e.g., , , ) to improve maintainability.
+-   **Future Tasks**:
+    -   **P1: Refactor **: The monolithic backend file has grown dangerously large. It is a critical liability and should be broken down into a standard FastAPI project structure (routes, services, models) to improve maintainability and reduce the risk of introducing bugs.
 
 **Completed work in this session**
--   **Deployment Crash Fix (FIXED)**: Solved server OOM crashes on startup by converting heavy libraries (, , ) to lazy imports within functions, reducing initial memory consumption by ~135MB.
--   **Item Grouping Feature (DONE)**: Built a complete CRUD interface for creating, editing, and managing item groups. Includes auto-suggestions based on existing mappings.
--   **Stamp Detail & Assignment (DONE)**: Implemented a new page for stamp details and enabled navigation from the main stamp assignment list.
--   **Seasonal Buffer Logic (DONE)**: Rewrote the item buffer calculation to use seasonal sales velocity based on Indian seasons.
--   **Data Merging & Consolidation (FIXED)**: Ensured that item mappings and item groups are respected across all data views (Current Stock, Buffers, Visualizations), so that member items are correctly merged into their leaders.
--   **Date-Parsing Bug (FIXED)**: Corrected a critical bug where  was misinterpreting DD/MM/YYYY dates, by adding .
--   **Notification System Overhaul (FIXED)**: Repaired the entire notification system by adding missing  fields, creating missing notification types, and running a data migration to fix old records.
--   **Dashboard Enhancement (DONE)**: Added a bilingual (English/Hindi) software scope description to the dashboard with a language toggle.
--   **Minor Fixes**: Removed the Made with Emergent badge.
+-   **Profit Calculation Overhaul (FIXED)**: Completely rewrote the profit logic to treat sale returns as purchases and fixed a critical data parsing bug where  was miscalculated.
+-   **Selective Browser Notifications (DONE)**: Implemented UI controls and fixed a global poller to allow users to disable notifications by category.
+-   **Global Uploads (DONE)**: Implemented a persistent, global upload progress bar using React Context.
+-   **Undo All Uploads (DONE)**: Modified the backend to return the complete history of all uploads.
+-   **Sales Trend Toggle (DONE)**: Added a daily/monthly/auto granularity toggle to the sales trend chart.
+-   **Stamp Assignment Bug (FIXED)**: Resolved an issue where mapped items showed as Unassigned by ensuring consistent item name resolution.
 
 **Earlier issues found/mentioned but not fixed**
 None.
 
 **Known issue recurrence from previous fork**
--   The previous fork's core issues (upload failure, analytics crashes) were resolved with architectural changes. The startup crash fixed in this session was a new issue related to memory constraints in the deployment environment.
+None.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
--   **Lazy Loading**: Moving heavy Python imports into functions to reduce application startup memory, preventing OOM crashes in constrained environments.
--   **Data Unification Logic**: A central  function was created in the backend to act as a single source of truth for resolving an item name via its  first, then its , to find the final leader item. This pattern is now used across all data aggregation endpoints.
--   **Database Migration**: Using a one-time script via  to update existing records in the database ( collection) to conform to new application logic.
--   **Seasonal Logic**: Implementing business logic based on date ranges corresponding to specific seasons.
--   **Complex Frontend State Management**: Using React hooks (, ) to manage complex UI state for create/edit dialogs and bilingual content.
+-   **Critical Data Parsing**: Identified and fixed a systemic bug in how data was parsed from uploaded Excel files across multiple functions (, , etc.) to correctly extract  values.
+-   **Complex Aggregation Logic (MongoDB)**: The profit calculation was rewritten using complex MongoDB aggregation pipelines to correctly handle sales, purchases, and sale returns according to the new business rules.
+-   **React Context API**: The  was created to provide a global state for file uploads, making the process seamless for the user across different pages.
+-   **LocalStorage for User Preferences**: Used  to persist the user's choices for browser notifications, ensuring a consistent experience across sessions.
 
 **key DB schema**
--   **item_groups**: : 
--   **notifications**: The schema was enforced to always include a  field (e.g., 'stamp', 'stock', 'order', 'polythene').
+No database schema changes were made. All changes were in the application logic that reads from and writes to the existing schema.
 
 **changes in tech stack**
-No changes to the core tech stack.
+None.
 
 **All files of reference**
--   : The monolithic file containing almost all backend logic. It was modified extensively.
--   : The new frontend page for the item grouping feature.
--   : The new frontend page for stamp details.
--   : Updated with the new bilingual content.
--   : Contains the new frontend routes.
+-   : The single most important file, containing all recent critical fixes for profit logic, data parsing, and API enhancements.
+-   : The new file for managing global upload state.
+-   : Contains the new UI for selective notification settings.
+-   : Contains the UI for the sales trend granularity toggle.
+-   : Was modified to respect the notification preferences.
 
 **Areas that need refactoring**:
--    is now even larger and is a critical liability. It urgently needs to be refactored into a proper FastAPI project structure with organized routes, services, and models.
+-    is the top priority. Its monolithic nature makes it difficult and risky to maintain. It must be broken down into a modern project structure.
 
 **key api endpoints**
--   : **(NEW)** CRUD endpoints for managing item groups.
--   : **(NEW)** Endpoint to get auto-grouping suggestions.
--   : **(NEW)** Endpoint to get details for a specific stamp.
--   : **(REWRITTEN)** Now incorporates seasonal logic and resolves both mappings and groups.
--   : **(REWRITTEN)** Now correctly merges grouped items.
--   : **(MODIFIED)** Aggregation pipeline updated to merge grouped items.
--   : **(MODIFIED)** Query updated to be more robust; now returns categorized notifications correctly.
+-   : **(REWRITTEN)**
+-   : **(REWRITTEN)**
+-   : **(MODIFIED)**
+-   : **(MODIFIED)**
+-   : **(MODIFIED)**
 
 **Critical Info for New Agent**
--   **Data Resolution is Key**: There is a central  function in . Any new feature that processes or aggregates item data MUST use this function to ensure mappings and groups are correctly handled.
--   **Monolithic Backend**: Be extremely careful when editing . It is over 5000 lines long and contains all backend logic. Use search extensively to understand the impact of any change. The top priority for future work should be refactoring this file.
--   **Data Inconsistency in Deployment**: The agent discovered that data in the deployed environment was corrupted due to an old date-parsing bug. The user has been advised to re-upload their historical data. If the user reports data discrepancies, this is the most likely cause.
--   **Notification  field**: The notification system now strictly relies on the  field being set correctly upon creation. Any new notification logic must include this field.
+-   **Profit Logic is Paramount**: The profit calculation was just completely rewritten based on user feedback. The two key principles are: 1) Sale returns are treated as purchases. 2) The  field is now correctly parsed from the / columns in uploads. Any future financial calculations MUST adhere to this new logic found in .
+-   **Data Parsing Integrity**: A critical parsing bug was fixed across multiple data import paths in . Do not regress this. Future data import features must use this corrected parsing logic.
+-   **Monolithic Backend Risk**: Be extremely cautious when editing . It is over 3500 lines long and controls the entire backend. A small change can have unintended consequences. Refactoring this file should be proposed as the next major architectural improvement.
 
 **documents and test reports created in this job**
--    was updated after major features were added.
--   A testing agent report was generated at  which passed 100% after the item grouping/stamp features were implemented.
+-    was updated after each major feature completion.
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **User**: Remove test data and add a bilingual (English/Hindi) project scope to the dashboard. (DONE)
-2.  **User**: Visualizations are not merging grouped items. (FIXED)
-3.  **User**: Notifications are not working for admin. (INVESTIGATED)
-4.  **User**: No notifications for stamp approval/rejection or for polythene/general tabs. (INVESTIGATED & FIXED)
-5.  **Agent**: Identified missing  fields and lack of polythene notifications as root causes.
-6.  **Agent**: Fixed all notification creation points in the code.
-7.  **Agent**: Ran a database migration to fix all existing notification records.
-8.  **Agent**: Verified with an API call that all notification tabs now show the correct data. (LAST ACTION)
+1.  **User**: Correct the labor logic flaw you found.
+2.  **User**: Treat sale returns as purchases for profit logic, because we sometimes make money on them.
+3.  **Agent**: Acknowledged and began rewriting profit logic and fixing data parsing.
+4.  **Agent**: Rewrote all data parsing functions (, , etc.) to correctly read the  value.
+5.  **Agent**: Rewrote the customer and historical profit endpoints with the new return-as-purchase logic.
+6.  **Agent**: Confirmed backend restart and tested the API.
+7.  **Agent**: Reported that test data now shows correct positive profit for customer HARMEET.
+8.  **Agent**: Updated the PRD and finished the task, pending user verification.
 
 **Project Health Check:**
--   **Broken**: No features are known to be broken. All reported issues have been addressed.
+-   **Broken**: No features are known to be broken.
 -   **Mocked**: None.
 
 **3rd Party Integrations**
@@ -133,9 +138,9 @@ No changes to the core tech stack.
 -   **SheetJS (xlsx)**: Frontend library for client-side Excel parsing.
 
 **Testing status**
--   **Testing agent used after significant changes**: YES, after the major feature build (Item Groups, Stamps, Buffers), all tests passed.
--   **Troubleshoot agent used after agent stuck in loop**: NO.
--   **Test files created**: No new persistent test files were created, but a testing agent report exists.
+-   **Testing agent used after significant changes**: NO
+-   **Troubleshoot agent used after agent stuck in loop**: NO
+-   **Test files created**: []
 -   **Known regressions**: None.
 
 **Credentials to test flow:**
@@ -143,4 +148,4 @@ No changes to the core tech stack.
 -   **Password**: 
 
 **What agent forgot to execute**
-The agent successfully addressed all user requests in a very long and complex session, including multiple major features and critical bug fixes. No requested tasks were forgotten.</analysis>
+The agent addressed all user requests methodically. No forgotten tasks were identified.</analysis>
