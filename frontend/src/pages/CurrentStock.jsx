@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { Search, Package, Filter, AlertTriangle, Download } from 'lucide-react';
+import { Search, Package, Filter, AlertTriangle, Download, ChevronRight, ChevronDown, Layers } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -25,6 +25,7 @@ export default function CurrentStock() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStamp, setSelectedStamp] = useState('all');
+  const [expandedGroups, setExpandedGroups] = useState({});
 
   useEffect(() => {
     fetchInventory();
@@ -45,13 +46,17 @@ export default function CurrentStock() {
     }
   };
 
+  const toggleGroup = (itemName) => {
+    setExpandedGroups(prev => ({ ...prev, [itemName]: !prev[itemName] }));
+  };
+
   const filteredInventory = inventory.filter((item) => {
-    const matchesSearch = item.item_name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = item.item_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (item.members || []).some(m => m.item_name.toLowerCase().includes(searchTerm.toLowerCase()));
     const matchesStamp = selectedStamp === 'all' || item.stamp === selectedStamp;
     return matchesSearch && matchesStamp;
   });
 
-  // Calculate totals for filtered items
   const filteredTotals = {
     gr_wt: filteredInventory.reduce((sum, item) => sum + item.gr_wt, 0),
     net_wt: filteredInventory.reduce((sum, item) => sum + item.net_wt, 0),
@@ -60,21 +65,19 @@ export default function CurrentStock() {
   };
 
   const stamps = ['all', ...Object.keys(byStamp).sort()];
+  const groupCount = filteredInventory.filter(i => i.is_group && (i.members || []).length > 1).length;
 
   const handleExportCSV = () => {
     const exportData = filteredInventory.map(item => ({
       'Item Name': item.item_name,
       'Stamp': item.stamp || 'Unassigned',
+      'Type': item.is_group && (item.members || []).length > 1 ? 'Group' : 'Single',
       'Net Weight (kg)': (item.net_wt / 1000).toFixed(3),
       'Gross Weight (kg)': (item.gr_wt / 1000).toFixed(3),
       'Fine (kg)': (item.fine / 1000).toFixed(3),
       'Labour': item.labor || 0
     }));
-    
-    const filename = selectedStamp === 'all' 
-      ? 'current_stock_all' 
-      : `current_stock_${selectedStamp}`;
-    
+    const filename = selectedStamp === 'all' ? 'current_stock_all' : `current_stock_${selectedStamp}`;
     exportToCSV(exportData, filename);
   };
 
@@ -107,7 +110,6 @@ export default function CurrentStock() {
         </p>
       </div>
 
-      {/* Negative Stock Alert */}
       {negativeItems.length > 0 && (
         <Alert className="border-destructive/50 bg-destructive/10">
           <AlertTriangle className="h-5 w-5 text-destructive" />
@@ -125,6 +127,9 @@ export default function CurrentStock() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl sm:text-3xl font-bold font-mono text-primary">{inventory.length}</div>
+            {groupCount > 0 && (
+              <p className="text-xs text-muted-foreground mt-1">{groupCount} grouped</p>
+            )}
           </CardContent>
         </Card>
         <Card className="border-border/40 shadow-sm bg-gradient-to-br from-accent/10 to-transparent">
@@ -166,10 +171,11 @@ export default function CurrentStock() {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10"
+            data-testid="stock-search-input"
           />
         </div>
         <Select value={selectedStamp} onValueChange={setSelectedStamp}>
-          <SelectTrigger className="w-full md:w-64">
+          <SelectTrigger className="w-full md:w-64" data-testid="stamp-filter">
             <Filter className="h-4 w-4 mr-2" />
             <SelectValue placeholder="Filter by stamp" />
           </SelectTrigger>
@@ -196,7 +202,7 @@ export default function CurrentStock() {
                 Showing {filteredInventory.length} of {inventory.length} items
               </CardDescription>
             </div>
-            <Button onClick={handleExportCSV} variant="outline" size="sm">
+            <Button onClick={handleExportCSV} variant="outline" size="sm" data-testid="export-csv-btn">
               <Download className="h-4 w-4 mr-2" />
               Export CSV
             </Button>
@@ -207,6 +213,7 @@ export default function CurrentStock() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-8"></TableHead>
                   <TableHead>Item Name</TableHead>
                   <TableHead>Stamp</TableHead>
                   <TableHead className="text-right font-mono">Net Wt (kg)</TableHead>
@@ -218,37 +225,32 @@ export default function CurrentStock() {
               <TableBody>
                 {filteredInventory.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       No items found
                     </TableCell>
                   </TableRow>
                 ) : (
                   <>
-                    {filteredInventory.map((item, idx) => (
-                      <TableRow 
-                        key={idx} 
-                        className="table-row cursor-pointer hover:bg-primary/5" 
-                        onClick={() => navigate(`/item/${encodeURIComponent(item.item_name)}`)}
-                        data-testid={`item-row-${idx}`}
-                      >
-                        <TableCell className="font-medium text-primary hover:underline">
-                          {item.item_name}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="font-mono text-xs">
-                            {item.stamp || 'Unassigned'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right font-mono font-semibold text-primary">{(item.net_wt / 1000).toFixed(3)}</TableCell>
-                        <TableCell className="text-right font-mono text-muted-foreground">{(item.gr_wt / 1000).toFixed(3)}</TableCell>
-                        <TableCell className="text-right font-mono">{(item.fine / 1000).toFixed(3)}</TableCell>
-                        <TableCell className="text-right font-mono">{formatIndianCurrency(item.labor || 0)}</TableCell>
-                      </TableRow>
-                    ))}
+                    {filteredInventory.map((item, idx) => {
+                      const hasMembers = item.is_group && (item.members || []).length > 1;
+                      const isExpanded = expandedGroups[item.item_name];
+                      return (
+                        <GroupRow
+                          key={idx}
+                          item={item}
+                          idx={idx}
+                          hasMembers={hasMembers}
+                          isExpanded={isExpanded}
+                          onToggle={() => toggleGroup(item.item_name)}
+                          onNavigate={(name) => navigate(`/item/${encodeURIComponent(name)}`)}
+                        />
+                      );
+                    })}
                     
                     {/* Totals Row */}
                     {selectedStamp !== 'all' && filteredInventory.length > 0 && (
                       <TableRow className="bg-primary/5 border-t-2 border-primary/20 font-bold">
+                        <TableCell></TableCell>
                         <TableCell colSpan={2} className="font-bold text-primary">
                           TOTAL ({selectedStamp})
                         </TableCell>
@@ -329,7 +331,7 @@ export default function CurrentStock() {
         </Card>
       )}
 
-      {/* Stock Summary at Bottom */}
+      {/* Stock Summary */}
       <Card className="border-primary/20 shadow-sm bg-gradient-to-br from-primary/5 to-transparent">
         <CardHeader>
           <CardTitle>Current Stock Summary</CardTitle>
@@ -365,5 +367,89 @@ export default function CurrentStock() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/** A single inventory row — optionally expandable if it's a group with >1 member */
+function GroupRow({ item, idx, hasMembers, isExpanded, onToggle, onNavigate }) {
+  return (
+    <>
+      <TableRow
+        className={`cursor-pointer hover:bg-primary/5 ${hasMembers ? 'bg-primary/[0.02]' : ''}`}
+        data-testid={`item-row-${idx}`}
+      >
+        {/* Expand toggle */}
+        <TableCell className="w-8 p-0 pl-2">
+          {hasMembers ? (
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggle(); }}
+              className="p-1 rounded hover:bg-primary/10 transition-colors"
+              data-testid={`expand-group-${idx}`}
+            >
+              {isExpanded
+                ? <ChevronDown className="h-4 w-4 text-primary" />
+                : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+            </button>
+          ) : null}
+        </TableCell>
+        <TableCell
+          className="font-medium text-primary hover:underline"
+          onClick={() => onNavigate(item.item_name)}
+        >
+          <span className="flex items-center gap-1.5">
+            {item.item_name}
+            {hasMembers && (
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-normal">
+                <Layers className="h-3 w-3 mr-0.5" />
+                {item.members.length}
+              </Badge>
+            )}
+          </span>
+        </TableCell>
+        <TableCell>
+          <Badge variant="outline" className="font-mono text-xs">
+            {item.stamp || 'Unassigned'}
+          </Badge>
+        </TableCell>
+        <TableCell className="text-right font-mono font-semibold text-primary">{(item.net_wt / 1000).toFixed(3)}</TableCell>
+        <TableCell className="text-right font-mono text-muted-foreground">{(item.gr_wt / 1000).toFixed(3)}</TableCell>
+        <TableCell className="text-right font-mono">{(item.fine / 1000).toFixed(3)}</TableCell>
+        <TableCell className="text-right font-mono">{formatIndianCurrency(item.labor || 0)}</TableCell>
+      </TableRow>
+
+      {/* Expanded member rows */}
+      {hasMembers && isExpanded && item.members.map((m, mIdx) => (
+        <TableRow
+          key={`${idx}-m-${mIdx}`}
+          className="bg-muted/20 hover:bg-muted/40 border-l-2 border-primary/20"
+          data-testid={`member-row-${idx}-${mIdx}`}
+        >
+          <TableCell className="w-8"></TableCell>
+          <TableCell
+            className="font-medium text-muted-foreground pl-6 cursor-pointer hover:text-primary hover:underline text-sm"
+            onClick={() => onNavigate(m.item_name)}
+          >
+            {m.item_name}
+          </TableCell>
+          <TableCell>
+            <Badge variant="outline" className="font-mono text-[10px] border-dashed">
+              {m.stamp || 'Unassigned'}
+            </Badge>
+          </TableCell>
+          <TableCell className={`text-right font-mono text-sm ${m.net_wt < 0 ? 'text-destructive' : ''}`}>
+            {(m.net_wt / 1000).toFixed(3)}
+          </TableCell>
+          <TableCell className={`text-right font-mono text-sm text-muted-foreground ${m.gr_wt < 0 ? 'text-destructive' : ''}`}>
+            {(m.gr_wt / 1000).toFixed(3)}
+          </TableCell>
+          <TableCell className={`text-right font-mono text-sm ${m.fine < 0 ? 'text-destructive' : ''}`}>
+            {(m.fine / 1000).toFixed(3)}
+          </TableCell>
+          <TableCell className={`text-right font-mono text-sm ${m.labor < 0 ? 'text-destructive' : ''}`}>
+            {formatIndianCurrency(m.labor || 0)}
+          </TableCell>
+        </TableRow>
+      ))}
+    </>
   );
 }
