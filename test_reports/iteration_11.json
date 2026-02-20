@@ -1,0 +1,115 @@
+{
+  "summary": "Comprehensive testing of Item Grouping feature. All 17 backend API tests passed. Frontend UI tests for Current Stock, Item Groups, Party Analytics, and Visualization pages all working correctly. Grouping successfully combines items like TULSI 70 -264 + TULSI 70 BELT into one expandable row with correct Fine and Labour calculations based on group-wide purchase data.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_item_grouping.py",
+    "/app/test_reports/pytest/item_grouping_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "✓ group_utils.py correctly implements build_group_ledger() to combine purchase data across all group members",
+    "✓ resolve_to_leader() correctly maps transaction names to group leaders via mappings and groups",
+    "✓ stock_service.py get_current_inventory() tracks member_data separately and uses group ledger for fine/labour",
+    "✓ Current Stock shows is_group=True with expandable members array for grouped items",
+    "✓ Customer profit endpoint uses group-aware ledger for purchase cost basis",
+    "✓ Supplier profit endpoint resolves items to group leaders",
+    "✓ Visualization endpoint groups sales data by item leaders",
+    "✓ Negative items reduced to 0 (from previous split-stock issues)",
+    "✓ Frontend GroupRow component correctly handles expand/collapse with chevron icons"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_item_grouping.py"
+  ],
+  "success_rate": {
+    "backend": "100% (17/17 tests passed)",
+    "frontend": "100% (All UI flows verified)"
+  },
+  "test_credentials": {
+    "username": "admin",
+    "password": "admin123"
+  },
+  "seed_data_creation": "No new seed data created - tested with existing item groups",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Item grouping is fully functional. Key groups: TULSI 70 -264 (TULSI 70 -264 + TULSI 70 BELT), SNT 40-256 (SNT-40 PREMIUM + SNT 40-256), KADA-AS 70 (KADA AS 70 FANCY + KADA-AS 70), etc. All profit endpoints (customer, supplier, item, visualization) use group_utils.py for group-aware calculations. CurrentStock.jsx uses GroupRow component with expand/collapse.",
+  "verified_features": {
+    "Current Stock Grouping": {
+      "Grouped items display": "PASSED - TULSI 70 -264 shown as single row with '2' member badge",
+      "Expand/collapse": "PASSED - Chevron toggle shows/hides member rows",
+      "Fine calculation": "PASSED - 62.227 kg fine calculated from group-wide purchase tunch",
+      "Labour calculation": "PASSED - ₹1.46L labour calculated from group-wide purchase data",
+      "Search filter": "PASSED - Search finds groups by leader name or member name",
+      "Negative items": "PASSED - 0 negative items (grouping fixed split-stock issue)"
+    },
+    "Customer Profit": {
+      "GET /api/analytics/customer-profit": "PASSED - Returns 619 customers with silver and labour profit",
+      "Group-aware resolution": "PASSED - Items resolved to group leaders before profit calculation",
+      "UI display": "PASSED - Customer Profit tab shows profit data correctly"
+    },
+    "Supplier Profit": {
+      "GET /api/analytics/supplier-profit": "PASSED - Returns 22 suppliers with profit data",
+      "Group-aware resolution": "PASSED - Items resolved to group leaders",
+      "UI display": "PASSED - Supplier Profit tab shows Total Purchased, Silver Profit, Labour Profit"
+    },
+    "Item/General Profit": {
+      "GET /api/analytics/profit": "PASSED - Returns all_items with group-aware profit calculations",
+      "Date range filter": "PASSED"
+    },
+    "Visualization": {
+      "GET /api/analytics/visualization": "PASSED - Returns sales_by_item with group leaders",
+      "Group leaders in charts": "PASSED - TULSI 70 -264 and SNT 40-256 visible in sales chart",
+      "UI display": "PASSED - Multiple tabs (Sales, Purchases, Health, Profit, Seasonal, History, AI)"
+    },
+    "Item Groups Management": {
+      "GET /api/item-groups": "PASSED - Returns 5 groups",
+      "UI display": "PASSED - All 5 expected groups shown with expand arrows and member counts"
+    }
+  },
+  "api_endpoints_tested": [
+    "GET /api/health - 200 OK",
+    "POST /api/auth/login - 200 OK (admin/admin123)",
+    "GET /api/item-groups - 200 OK (5 groups)",
+    "GET /api/inventory/current - 200 OK (345 items, 0 negative items)",
+    "GET /api/analytics/customer-profit - 200 OK (619 customers)",
+    "GET /api/analytics/supplier-profit - 200 OK (22 suppliers)",
+    "GET /api/analytics/profit - 200 OK (205 items analyzed)",
+    "GET /api/analytics/visualization - 200 OK",
+    "GET /api/purchase-ledger/all - 200 OK (395 items)"
+  ],
+  "ui_elements_verified": {
+    "Current Stock Page": {
+      "data-testid='current-stock-page'": "PRESENT",
+      "data-testid='stock-search-input'": "PRESENT",
+      "data-testid='stamp-filter'": "PRESENT",
+      "data-testid='export-csv-btn'": "PRESENT",
+      "data-testid='expand-group-*'": "PRESENT for 3+ groups",
+      "data-testid='item-row-*'": "PRESENT",
+      "data-testid='member-row-*'": "PRESENT when group expanded"
+    },
+    "Item Groups Page": {
+      "group cards": "5 cards displayed",
+      "group-search": "PRESENT and functional",
+      "expand arrows": "PRESENT on all cards"
+    },
+    "Party Analytics Page": {
+      "Customers tab": "PRESENT",
+      "Suppliers tab": "PRESENT",
+      "Customer Profit tab": "PRESENT with Silver Profit and Labour Profit columns",
+      "Supplier Profit tab": "PRESENT with Total Purchased, Silver Profit, Labour Profit columns"
+    },
+    "Visualization Page": {
+      "Top Items by Sales chart": "PRESENT with group leaders (TULSI 70 -264, SNT 40-256)",
+      "Sales by Customer chart": "PRESENT",
+      "Sales Trend chart": "PRESENT"
+    }
+  },
+  "test_execution_time": "Backend: 3.07s, Frontend: ~60s total for all UI verification"
+}
