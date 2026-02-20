@@ -2191,10 +2191,14 @@ async def upload_physical_stock(
 async def compare_physical_with_book():
     """Compare physical stock with book stock and show differences"""
     
-    # Get book stock (current inventory)
+    # Get book stock — use stamp_items (ungrouped, per-stamp) for correct comparison
     book_response = await get_current_inventory()
-    book_items = {item['item_name'].strip().lower(): item for item in book_response['inventory']}
-    book_items.update({item['item_name'].strip().lower(): item for item in book_response['negative_items']})
+    book_items = {item['item_name'].strip().lower(): item for item in book_response.get('stamp_items', book_response['inventory'])}
+    # Also include negative items
+    for item in book_response.get('negative_items', []):
+        key = item['item_name'].strip().lower()
+        if key not in book_items:
+            book_items[key] = item
     
     # Get physical stock
     physical = await db.physical_stock.find({}, {"_id": 0}).to_list(10000)
