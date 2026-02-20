@@ -50,12 +50,33 @@ export default function CurrentStock() {
     setExpandedGroups(prev => ({ ...prev, [itemName]: !prev[itemName] }));
   };
 
-  const filteredInventory = inventory.filter((item) => {
-    const matchesSearch = item.item_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (item.members || []).some(m => m.item_name.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesStamp = selectedStamp === 'all' || item.stamp === selectedStamp;
-    return matchesSearch && matchesStamp;
-  });
+  // When a specific stamp is selected, show individual member items from that stamp
+  // (not the merged group). When "All Stamps" — show grouped view.
+  const filteredInventory = (() => {
+    const term = searchTerm.toLowerCase();
+    if (selectedStamp === 'all') {
+      return inventory.filter((item) => {
+        return item.item_name.toLowerCase().includes(term) ||
+          (item.members || []).some(m => m.item_name.toLowerCase().includes(term));
+      });
+    }
+    // Stamp-specific view: flatten groups into individual members per stamp
+    const result = [];
+    for (const item of inventory) {
+      const hasMembers = item.is_group && (item.members || []).length > 1;
+      if (hasMembers) {
+        // Add individual members that belong to this stamp
+        for (const m of item.members) {
+          if (m.stamp === selectedStamp && m.item_name.toLowerCase().includes(term)) {
+            result.push({ ...m, _fromGroup: item.item_name });
+          }
+        }
+      } else if (item.stamp === selectedStamp && item.item_name.toLowerCase().includes(term)) {
+        result.push(item);
+      }
+    }
+    return result;
+  })();
 
   const filteredTotals = {
     gr_wt: filteredInventory.reduce((sum, item) => sum + item.gr_wt, 0),
