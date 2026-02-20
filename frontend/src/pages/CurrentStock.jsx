@@ -65,7 +65,7 @@ export default function CurrentStock() {
   };
 
   const stamps = ['all', ...Object.keys(byStamp).sort()];
-  const groupCount = filteredInventory.filter(i => i.is_group && (i.members || []).length > 1).length;
+  const groupCount = inventory.filter(i => i.is_group && (i.members || []).length > 1).length;
 
   const handleExportCSV = () => {
     const exportData = filteredInventory.map(item => ({
