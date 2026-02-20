@@ -77,11 +77,13 @@ class TestItemGroupsAPI:
         response = requests.get(f"{BASE_URL}/api/item-groups", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
-        assert isinstance(data, list)
-        print(f"✓ Found {len(data)} item groups")
+        # API returns {groups: [...]} structure
+        groups = data.get('groups', data) if isinstance(data, dict) else data
+        assert isinstance(groups, list)
+        print(f"✓ Found {len(groups)} item groups")
         
         # Check if expected groups exist
-        group_names = [g['group_name'] for g in data]
+        group_names = [g['group_name'] for g in groups]
         found_groups = [g for g in EXPECTED_GROUPS.keys() if g in group_names]
         print(f"  Found expected groups: {found_groups}")
         
@@ -89,7 +91,7 @@ class TestItemGroupsAPI:
         assert len(found_groups) > 0, "Expected at least some item groups to exist"
         
         # Verify group structure
-        for group in data:
+        for group in groups:
             assert 'group_name' in group
             assert 'members' in group
             if group['group_name'] in EXPECTED_GROUPS:
@@ -97,8 +99,6 @@ class TestItemGroupsAPI:
                 print(f"  Group '{group['group_name']}' has members: {members}")
                 # Members should include at least 2 items
                 assert len(members) >= 2, f"Group {group['group_name']} should have at least 2 members"
-        
-        return data
 
 
 class TestCurrentStockGrouping:
@@ -277,21 +277,21 @@ class TestItemProfitGrouping:
         assert response.status_code == 200
         data = response.json()
         
-        # Check basic structure
-        assert "total_silver_profit_kg" in data or "items" in data
+        # Check basic structure - API returns silver_profit_kg and all_items
+        assert "silver_profit_kg" in data or "all_items" in data, f"Expected profit data, got: {list(data.keys())}"
         print(f"✓ Item profit endpoint returned successfully")
         
-        if "items" in data:
-            print(f"  Total items with profit data: {len(data.get('items', []))}")
-            items = data.get('items', [])
+        if "all_items" in data:
+            print(f"  Total items with profit data: {len(data.get('all_items', []))}")
+            items = data.get('all_items', [])
             if items:
                 item = items[0]
-                print(f"  Top item: {item.get('item_name', 'N/A')}, Profit: {item.get('silver_profit_kg', 0)} kg")
+                print(f"  Top item: {item.get('item_name', 'N/A')}, Labor Profit: ₹{item.get('labor_profit_inr', 0)}")
         
-        if "total_silver_profit_kg" in data:
-            print(f"  Total Silver Profit: {data['total_silver_profit_kg']} kg")
-        
-        return data
+        if "silver_profit_kg" in data:
+            print(f"  Total Silver Profit: {data['silver_profit_kg']} kg")
+        if "labor_profit_inr" in data:
+            print(f"  Total Labor Profit: ₹{data['labor_profit_inr']}")
     
     def test_item_profit_with_date_range(self):
         """Test item profit with date filter"""
