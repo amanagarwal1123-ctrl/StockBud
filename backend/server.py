@@ -3084,9 +3084,13 @@ async def calculate_profit(
     master_items = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(10000)
     master_stamps = {m['item_name']: m.get('stamp', 'Unassigned') for m in master_items}
     
-    # Get item mappings to resolve transaction names to master names
+    # Get item mappings + groups for group-aware resolution
     mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
-    mapping_dict = {m['transaction_name']: m['master_name'] for m in mappings}
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    p_mapping_dict, p_member_to_leader, _ = build_group_maps(all_groups, mappings)
+    
+    def _resolve_profit(name):
+        return resolve_to_leader(name, p_mapping_dict, p_member_to_leader)
     
     query = {}
     if start_date and end_date:
@@ -3100,15 +3104,14 @@ async def calculate_profit(
     filtered_transactions = []
     for t in transactions:
         trans_name = t['item_name']
-        # Resolve to master name
-        master_name = mapping_dict.get(trans_name, trans_name)
+        leader_name = _resolve_profit(trans_name)
         
         # Skip if in excluded list
-        if master_name in EXCLUDED_ITEMS:
+        if leader_name in EXCLUDED_ITEMS:
             continue
         
         # Skip if no stamp or Unassigned
-        item_stamp = master_stamps.get(master_name, 'Unassigned')
+        item_stamp = master_stamps.get(leader_name, master_stamps.get(p_mapping_dict.get(trans_name, trans_name), 'Unassigned'))
         if not item_stamp or item_stamp == 'Unassigned':
             continue
         
@@ -3116,19 +3119,19 @@ async def calculate_profit(
     
     transactions = filtered_transactions
     
-    # Fetch ALL purchase ledger items upfront (for items sold from opening stock)
+    # Group-aware purchase ledger
     all_ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(10000)
-    ledger_map = {item['item_name']: item for item in all_ledger}
+    grp_ledger = build_group_ledger(all_ledger, all_groups, mappings)
     
-    # Group transactions by item for profit calculation
+    # Group transactions by LEADER item for profit calculation
     item_transactions = defaultdict(lambda: {'purchases': [], 'sales': []})
     
     for trans in transactions:
         raw_name = trans.get('item_name', '')
         if not raw_name:
             continue
-        # Resolve to master name for consistent grouping and ledger lookup
-        item_name = mapping_dict.get(raw_name, raw_name)
+        # Resolve to GROUP LEADER for consistent grouping
+        item_name = _resolve_profit(raw_name)
         
         trans_data = {
             'date': trans.get('date'),
@@ -3159,9 +3162,9 @@ async def calculate_profit(
         if not sales:
             continue
         
-        # If no purchases in this period, try to get cost basis from purchase ledger
+        # If no purchases in this period, try to get cost basis from GROUP-AWARE ledger
         if not purchases:
-            ledger_item = ledger_map.get(item_name)
+            ledger_item = grp_ledger.get(item_name)
             if ledger_item:
                 # Use cumulative purchase data as cost basis
                 purchases = [{
