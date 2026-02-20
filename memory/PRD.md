@@ -45,13 +45,12 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 - `GET /api/upload/status/{upload_id}` - Poll upload status
 - `GET /api/historical/summary` - Historical data summary
 - `GET /api/analytics/historical-profit` - Profit analysis
+- `GET /api/inventory/current` - Current stock with group expansion support
 
 ## Lazy Import Optimization (Feb 12, 2026 - Deployment Crash Fix)
-- **Problem:** Backend crashed on startup in deployed environment (connection refused on port 8001) due to heavy top-level imports consuming ~135MB at startup
-- **Solution:** Converted pandas (~32MB), numpy (~7MB), and emergentintegrations (~96MB) from top-level imports to lazy imports inside the functions that use them
-- **Result:** Startup memory reduced from ~152MB to ~17.5MB, preventing OOM kills in memory-constrained pods
-- **Functions modified:** `_read_excel_once`, `_read_excel_from_path`, `upload_master_stock`, `upload_purchase_ledger`, smart-insights endpoint, seasonal-analysis endpoint
-- **Also replaced:** `pd.isna()` → `math.isnan()`, `np.percentile()` → pure Python sorted percentile
+- **Problem:** Backend crashed on startup in deployed environment due to heavy top-level imports
+- **Solution:** Converted pandas, numpy, emergentintegrations to lazy imports inside functions
+- **Result:** Startup memory reduced from ~152MB to ~17.5MB
 
 ## Item Groups (Feb 12, 2026)
 - Manual grouping of similar items for combined buffer & order calculations
@@ -60,55 +59,46 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 
 ## Stamp Detail Page (Feb 12, 2026)
 - Clickable stamps → /stamp/{stampName} detail page with items, stock, executive assignment
-- One stamp → one executive, one executive can have multiple stamps
 
 ## Seasonal Item Buffers → Stock Rotation Model (Feb 13, 2026)
 - Complete rewrite to 2.73-month rotation cycle model
-- Minimum stock = monthly velocity × 2.73 (full rotation worth)
-- Reorder buffer = daily velocity × lead time days (7d normal, 10d peak season)
-- Upper target = item's proportional share of seasonal target total stock
 - Season profiles: Peak (Oct-Jan, Apr-May), Normal (Feb-Mar, Jun), Off-season (Jul-Sep)
-- Total stock thresholds: 7,500 kg floor / 8,200 kg normal / 10,500 kg peak
-- Status: Red (below reorder buffer) → Yellow (below min stock) → Green (healthy)
-
-## Reset Data - Master Stock Option (Feb 13, 2026)
-- Added "Master Stock" checkbox to the Reset Data dialog
-- Zeroes out all quantities (gr_wt, net_wt, etc.) in master_items and opening_stock
-- Keeps items, stamps, mappings, and groupings intact so nothing breaks
-- Updated `all_data` reset to also zero master stock (not delete)
-
-## Stamp Resolution Bug Fix (Feb 13, 2026)
-- Fixed: Opening stock items were not resolved through item mappings, causing duplicate entries with wrong stamps
-- `stock_service.py`: Now resolves opening_stock items through mapping_dict → member_to_leader chain
-- Master item's stamp takes priority (stamp_locked) to prevent raw entries from overwriting
-- StampManagement.jsx: Removed raw transaction fetching — uses inventory (resolved) as single source of truth
 
 ## Global Upload Progress (Feb 16, 2026)
 - Created UploadContext for persistent upload state across page navigation
-- Progress bar renders in Layout above content — stays visible when switching pages
 
 ## Undo Upload - Full History (Feb 16, 2026)
-- Backend returns ALL uploaded files (not just last 5), includes all upload types
+- Backend returns ALL uploaded files, includes all upload types
 
 ## Sales Trend Daily/Monthly Toggle (Feb 16, 2026)
-- Backend: `trend_granularity` param (daily/monthly/auto); auto uses daily if <=60 days
+- Backend: `trend_granularity` param (daily/monthly/auto)
 - Frontend: Daily/Monthly/Auto toggle buttons on the sales trend chart
 
 ## Selective Browser Notifications (Feb 16, 2026)
-- Per-category toggles for browser push alerts (Polythene & General off by default)
-- Preferences saved in localStorage
+- Per-category toggles for browser push alerts
 
 ## Labour Profit Calculation Fix (Feb 17, 2026)
 - Sale returns now treated as PURCHASES (buying back from customer)
-  - Silver profit on return = (purchase_tunch - return_tunch) × abs(weight)
-  - Labour profit on return = (purchase_cost × abs(weight)) - abs(refund)
-  - Can be positive (if return rate < cost) or negative (overpaid for return)
-- Historical profit: sale_return transactions routed to purchases bucket instead of sales
-- Fixed `labor` field: now stores actual labour value (from Wt/Rs/On columns), not the Total column
-- `total_amount` field correctly stores the Total column (full Rs amount)
-- Item name resolution through mappings for ledger lookup in all profit endpoints
-- All 6 parsing paths (purchase×3, sale×3) updated consistently
+- Fixed `labor` field: now stores actual labour value, not the Total column
+
+## Item Group Consolidation (Feb 20, 2026) — LATEST
+- **Problem:** Items like TULSI 70 BELT had no purchase ledger, causing wrong Fine/Labour.
+  Items sold interchangeably (e.g., SNT 40 PREMIUM / SNT-40) showed negative stock.
+- **Solution:** Group-aware purchase ledger (`group_utils.py`)
+  - `build_group_ledger()` combines all member ledger entries → weighted-average tunch & labour
+  - `resolve_to_leader()` resolves any name through mappings + groups to the leader
+- **Affected areas updated:**
+  - `stock_service.py` → group-aware fine/labour, member breakdowns for expandable UI
+  - `customer-profit` → uses group ledger for purchase cost basis
+  - `supplier-profit` → resolves items to group leaders
+  - `item-profit` → groups transactions by leader, uses group ledger
+  - `historical-profit` → resolves to group leaders
+  - `visualization` → already had group resolution
+  - `item-buffers/categorize` → already had group resolution
+- **Frontend:** CurrentStock.jsx has expandable group rows with member details
+- **Result:** 0 negative items (was previously non-zero), correct Fine/Labour for all groups
+- **Item Groups:** TULSI 70 -264 [+BELT], SNT 40-256 [+PREMIUM], KADA-AS 70 [+FANCY], SLG 70 BICCHIYA-255 [+MICRO], BARTAN-040 [+LOTA]
 
 ## Backlog
 - (P1) Item Mapping: unmapped historical items need mapping
-- (P2) Refactor server.py into proper FastAPI structure
+- (P2) Refactor server.py into proper FastAPI structure (routes, services, models)
