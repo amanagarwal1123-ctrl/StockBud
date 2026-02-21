@@ -157,6 +157,24 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 - Branch transfer parsing already prevents new numeric items (isdigit() check)
 - Unmapped count reduced from 439 to 233 (test data removed)
 
+## Sortable Table Columns (Feb 21, 2026)
+- Created reusable `useSortableData` hook and `SortableHeader` component
+- All table columns are now sortable (click to toggle asc/desc) on:
+  - Party Analytics: 4 tabs (Customers, Suppliers, Customer Profit, Supplier Profit)
+  - Profit Analysis: item name, sold kg, tunch, silver/labour profit
+  - Current Stock: item name, stamp, net wt, gross wt, fine, labour
+  - Purchase Rates: item name, purchase tunch, labour per kg
+- Sort indicators: ArrowUpDown (inactive), ArrowUp/ArrowDown (active)
+- Page resets to 1 on sort change
+
+## Party Analytics Mobile Optimization (Feb 21, 2026)
+- Compact date range selector (matching Profit Analysis style)
+- Top Customer/Supplier cards: compact with truncated names
+- Scrollable tabs on mobile (overflow-x-auto)
+- Hidden less-important columns on mobile (Fine Wt, Sales Value, Txns)
+- Truncated party names with max-w for mobile
+- Added pagination to Customer Profit and Supplier Profit tabs
+
 ## Backlog
 - (P1) Item Mapping: unmapped historical items need mapping
 - (P2) Refactor server.py into proper FastAPI structure (routes, services, models)
