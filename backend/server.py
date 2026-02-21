@@ -2734,8 +2734,8 @@ async def get_supplier_profit(
             avg_purchase_tunch = sum(float(p.get('tunch', 0) or 0) * abs(p.get('net_wt', 0)) for p in purchases) / sum(abs(p.get('net_wt', 0)) for p in purchases)
             avg_sale_tunch = sum(float(s.get('tunch', 0) or 0) * abs(s.get('net_wt', 0)) for s in sales) / sum(abs(s.get('net_wt', 0)) for s in sales)
             
-            # Calculate labour rates
-            purchase_labour_per_gram = sum(abs(p.get('labor', 0)) / 1000 for p in purchases) / sum(abs(p.get('net_wt', 0)) for p in purchases)
+            # Calculate labour rates — total labour / total grams for both
+            purchase_labour_per_gram = sum(abs(p.get('labor', 0)) for p in purchases) / sum(abs(p.get('net_wt', 0)) for p in purchases)
             sale_labour_per_gram = sum(abs(s.get('labor', 0)) for s in sales) / sum(abs(s.get('net_wt', 0)) for s in sales)
             
             # Calculate profit for THIS ITEM based on weight purchased from THIS SUPPLIER
