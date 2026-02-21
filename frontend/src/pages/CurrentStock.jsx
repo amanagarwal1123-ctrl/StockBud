@@ -241,12 +241,12 @@ export default function CurrentStock() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-8"></TableHead>
-                  <TableHead>Item Name</TableHead>
-                  <TableHead>Stamp</TableHead>
-                  <TableHead className="text-right font-mono">Net Wt (kg)</TableHead>
-                  <TableHead className="text-right font-mono text-muted-foreground">Gross Wt (kg)</TableHead>
-                  <TableHead className="text-right font-mono">Fine</TableHead>
-                  <TableHead className="text-right font-mono">Labour</TableHead>
+                  <SortableHeader label="Item Name" sortKey="item_name" sortConfig={stockSortConfig} onSort={stockRequestSort} className="text-xs" />
+                  <SortableHeader label="Stamp" sortKey="stamp" sortConfig={stockSortConfig} onSort={stockRequestSort} className="text-xs" />
+                  <SortableHeader label="Net Wt (kg)" sortKey="net_wt" sortConfig={stockSortConfig} onSort={stockRequestSort} className="text-xs text-right font-mono" />
+                  <SortableHeader label="Gross Wt (kg)" sortKey="gr_wt" sortConfig={stockSortConfig} onSort={stockRequestSort} className="text-xs text-right font-mono text-muted-foreground hidden sm:table-cell" />
+                  <SortableHeader label="Fine" sortKey="fine" sortConfig={stockSortConfig} onSort={stockRequestSort} className="text-xs text-right font-mono hidden sm:table-cell" />
+                  <SortableHeader label="Labour" sortKey="labor" sortConfig={stockSortConfig} onSort={stockRequestSort} className="text-xs text-right font-mono hidden md:table-cell" />
                 </TableRow>
               </TableHeader>
               <TableBody>
