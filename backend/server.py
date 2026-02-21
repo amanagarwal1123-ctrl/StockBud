@@ -1698,6 +1698,31 @@ async def get_item_polythene_history(item_name: str):
     return entries
 
 
+@api_router.put("/manager/update-verification-date/{stamp}")
+async def update_verification_date(stamp: str, request: Dict, current_user: dict = Depends(get_current_user)):
+    """Admin/Manager can update verification_date on any entry to recalculate book values"""
+    if current_user['role'] not in ['manager', 'admin']:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    new_date = request.get('verification_date')
+    if not new_date:
+        raise HTTPException(status_code=400, detail="verification_date required")
+    
+    result = await db.stock_entries.update_one(
+        {'stamp': stamp, 'status': {'$in': ['pending', 'approved']}},
+        {'$set': {'verification_date': new_date}},
+        sort=[('entry_date', -1)]
+    )
+    
+    if result.modified_count == 0:
+        # Try without status filter (for any entry)
+        await db.stock_entries.update_many(
+            {'stamp': stamp},
+            {'$set': {'verification_date': new_date}}
+        )
+    
+    return {'success': True, 'message': f'Verification date updated to {new_date}'}
+
 @api_router.post("/manager/approve-stamp")
 async def approve_stamp(
     request: Dict,
