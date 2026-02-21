@@ -190,12 +190,12 @@ export default function ProfitAnalysis() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="text-xs w-8">#</TableHead>
-                  <TableHead className="text-xs">Item</TableHead>
-                  <TableHead className="text-right text-xs hidden sm:table-cell">Sold (kg)</TableHead>
-                  <TableHead className="text-right text-xs hidden md:table-cell">Buy Tunch</TableHead>
-                  <TableHead className="text-right text-xs hidden md:table-cell">Sell Tunch</TableHead>
-                  <TableHead className="text-right text-xs">Silver</TableHead>
-                  <TableHead className="text-right text-xs">Labour</TableHead>
+                  <SortableHeader label="Item" sortKey="item_name" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-xs" />
+                  <SortableHeader label="Sold (kg)" sortKey="net_wt_sold_kg" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs hidden sm:table-cell" />
+                  <SortableHeader label="Buy Tunch" sortKey="avg_purchase_tunch" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs hidden md:table-cell" />
+                  <SortableHeader label="Sell Tunch" sortKey="avg_sale_tunch" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs hidden md:table-cell" />
+                  <SortableHeader label="Silver" sortKey="silver_profit_kg" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs" />
+                  <SortableHeader label="Labour" sortKey="labor_profit_inr" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs" />
                 </TableRow>
               </TableHeader>
               <TableBody>
