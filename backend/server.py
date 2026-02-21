@@ -1594,7 +1594,8 @@ async def save_executive_stock_entry(
 
 @api_router.get("/manager/approval-details/{stamp}")
 async def get_approval_details(stamp: str, current_user: dict = Depends(get_current_user)):
-    """Get detailed approval data - ALL items in stamp, unentered = 0"""
+    """Get detailed approval data — compares entered stock vs expected closing stock
+    for the verification_date. Auto-refreshes when transactions change."""
     
     if current_user['role'] not in ['manager', 'admin']:
         raise HTTPException(status_code=403, detail="Access denied")
@@ -1609,6 +1610,8 @@ async def get_approval_details(stamp: str, current_user: dict = Depends(get_curr
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
     
+    verification_date = entry.get('verification_date', entry.get('entry_day', datetime.now(timezone.utc).strftime('%Y-%m-%d')))
+    
     # Get ALL items in this stamp from master
     master_items = await db.master_items.find({'stamp': stamp}, {"_id": 0}).to_list(1000)
     master_item_names = {m['item_name'] for m in master_items}
@@ -1618,36 +1621,20 @@ async def get_approval_details(stamp: str, current_user: dict = Depends(get_curr
     for entered in entry.get('entries', []):
         entered_map[entered['item_name']] = entered['gross_wt']
     
-    # Get current inventory (includes mapped items)
-    inventory_response = await get_current_inventory()
-    all_inventory = inventory_response.get('inventory', []) + inventory_response.get('negative_items', [])
-    inventory_map = {item['item_name']: item for item in all_inventory}
+    # Calculate expected closing stock for the verification_date
+    closing_stock = await get_stamp_closing_stock(stamp, verification_date)
     
-    # Collect ALL items in this stamp: master items + any inventory items in same stamp
-    stamp_items = set(master_item_names)
-    for inv_item in all_inventory:
-        if inv_item.get('stamp') == stamp:
-            stamp_items.add(inv_item['item_name'])
-    
-    # Build comparison for ALL items in stamp (master + mapped)
+    # Build comparison for ALL items in stamp
     comparison = []
-    total_entered = 0
-    total_book = 0
+    total_entered = 0.0
+    total_book = 0.0
     
-    for item_name in sorted(stamp_items):
-        # Entered weight (0 if not entered)
+    all_item_names = sorted(master_item_names | set(closing_stock.keys()))
+    
+    for item_name in all_item_names:
         entered_gross = entered_map.get(item_name, 0.0)
-        
-        # Book stock from inventory
-        inv_item = inventory_map.get(item_name)
-        if inv_item:
-            book_gross = inv_item.get('gr_wt', 0) / 1000  # Convert to kg
-        else:
-            # Fallback to master item weight
-            master = next((m for m in master_items if m['item_name'] == item_name), None)
-            book_gross = master.get('gr_wt', 0) / 1000 if master else 0
-        
-        difference = entered_gross - book_gross
+        book_gross = closing_stock.get(item_name, 0.0)
+        difference = round(entered_gross - book_gross, 3)
         
         comparison.append({
             'item_name': item_name,
@@ -1663,6 +1650,7 @@ async def get_approval_details(stamp: str, current_user: dict = Depends(get_curr
     
     return {
         'entry': entry,
+        'verification_date': verification_date,
         'comparison': comparison,
         'total_items': len(comparison),
         'items_entered': len(entered_map),
