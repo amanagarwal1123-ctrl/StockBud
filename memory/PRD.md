@@ -116,6 +116,17 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 - When admin deletes transactions, expected stock auto-recalculates (computed on-the-fly)
 - Mobile-optimized layout: stacked cards, wrapped badges, compact table with truncation
 
+## Labour Profit Calculation Bug Fix (Feb 20, 2026)
+- **Bug 1**: purchase_labour_per_gram had an extra `/1000` making it 1000x too small → all labour profits were ~₹0
+- **Bug 2**: Ledger fallback used `labour_per_kg` (a rate) instead of `total_labour` (total amount)
+- **Bug 3**: Both bugs also existed in supplier-profit endpoint
+- **Fix**: Removed /1000 from purchase rate calc, used `total_labour` for ledger fallback
+- Result: Labour profits now show real values (₹33.71L total vs -₹15 before)
+
+## Branch Transfer Parsing Fix (Feb 20, 2026)
+- Last line of branch transfer files (containing just a number like "136") was being parsed as an item
+- Fixed: `item_name.isdigit()` now filters ALL purely numeric names (was only filtering ≤2 digits)
+
 ## Mobile UI Optimization (Feb 20, 2026)
 - Applied responsive mobile-first patterns across ALL 32 pages:
   - Padding: p-3 sm:p-6 md:p-8 (was p-6 md:p-8)
