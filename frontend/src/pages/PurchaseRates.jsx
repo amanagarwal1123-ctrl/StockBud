@@ -125,9 +125,9 @@ export default function PurchaseRates() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredLedger.map((item, idx) => (
+                  sortedLedger.map((item, idx) => (
                     <TableRow key={idx}>
-                      <TableCell className="font-medium">{item.item_name}</TableCell>
+                      <TableCell className="text-xs font-medium max-w-[150px] sm:max-w-none truncate">{item.item_name}</TableCell>
                       <TableCell className="text-right font-mono text-primary font-semibold">
                         {item.purchase_tunch.toFixed(2)}%
                       </TableCell>
