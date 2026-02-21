@@ -153,7 +153,7 @@ export default function PartyAnalytics() {
   };
 
   return (
-    <div className="p-3 sm:p-6 md:p-8 space-y-6" data-testid="party-analytics-page">
+    <div className="p-3 sm:p-6 md:p-8 space-y-4 sm:space-y-6" data-testid="party-analytics-page">
       <div>
         <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight" data-testid="party-analytics-title">
           Party Analytics
@@ -313,7 +313,7 @@ export default function PartyAnalytics() {
       )}
 
       {/* Tabs for Customers and Suppliers */}
-      <Tabs defaultValue="customers" className="space-y-6">
+      <Tabs defaultValue="customers" className="space-y-4 sm:space-y-6">
         <TabsList>
           <TabsTrigger value="customers" data-testid="tab-customers">
             <Users className="h-4 w-4 mr-2" />
@@ -355,9 +355,9 @@ export default function PartyAnalytics() {
                       <TableHead>Rank</TableHead>
                       <TableHead>Customer Name</TableHead>
                       <TableHead className="text-right font-mono">Net Wt (kg)</TableHead>
-                      <TableHead className="text-right font-mono">Fine Wt (kg)</TableHead>
-                      <TableHead className="text-right font-mono">Sales Value</TableHead>
-                      <TableHead className="text-right">Count</TableHead>
+                      <TableHead className="text-right font-mono hidden sm:table-cell">Fine Wt (kg)</TableHead>
+                      <TableHead className="text-right font-mono hidden sm:table-cell">Sales Value</TableHead>
+                      <TableHead className="text-right hidden md:table-cell">Count</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -464,9 +464,9 @@ export default function PartyAnalytics() {
                       <TableHead>Rank</TableHead>
                       <TableHead>Supplier Name</TableHead>
                       <TableHead className="text-right font-mono">Net Wt (kg)</TableHead>
-                      <TableHead className="text-right font-mono">Fine Wt (kg)</TableHead>
-                      <TableHead className="text-right font-mono">Purchase Value</TableHead>
-                      <TableHead className="text-right">Count</TableHead>
+                      <TableHead className="text-right font-mono hidden sm:table-cell">Fine Wt (kg)</TableHead>
+                      <TableHead className="text-right font-mono hidden sm:table-cell">Purchase Value</TableHead>
+                      <TableHead className="text-right hidden md:table-cell">Count</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>

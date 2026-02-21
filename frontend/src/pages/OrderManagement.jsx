@@ -123,7 +123,7 @@ export default function OrderManagement() {
   if (loading) return <div className="flex items-center justify-center h-64"><div className="text-muted-foreground">Loading...</div></div>;
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-6" data-testid="order-management-page">
+    <div className="p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-4 sm:space-y-6" data-testid="order-management-page">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Order Management</h1>

@@ -57,7 +57,7 @@ export default function BookInventory() {
   }
 
   return (
-    <div className="p-3 sm:p-6 md:p-8 space-y-6" data-testid="book-inventory-page">
+    <div className="p-3 sm:p-6 md:p-8 space-y-4 sm:space-y-6" data-testid="book-inventory-page">
       <div>
         <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight" data-testid="book-inventory-title">
           Book Inventory

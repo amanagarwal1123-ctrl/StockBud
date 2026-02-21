@@ -87,7 +87,7 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="p-3 sm:p-6 md:p-8 space-y-6" data-testid="dashboard-page">
+    <div className="p-3 sm:p-6 md:p-8 space-y-4 sm:space-y-6" data-testid="dashboard-page">
       <div>
         <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight" data-testid="dashboard-title">
           Dashboard
