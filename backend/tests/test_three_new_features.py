@@ -11,7 +11,7 @@ import time
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 if not BASE_URL:
-    BASE_URL = "https://feature-validation-3.preview.emergentagent.com"
+    BASE_URL = "https://financial-audit-test.preview.emergentagent.com"
 
 
 @pytest.fixture(scope="module")
