@@ -244,6 +244,11 @@ export default function ExecutiveStockEntry() {
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <p className="font-semibold">{entry.stamp}</p>
+                      {entry.verification_date && (
+                        <span className="text-xs text-muted-foreground bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200">
+                          Stock for: {entry.verification_date}
+                        </span>
+                      )}
                       {entry.entry_day && (
                         <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{entry.entry_day}</span>
                       )}
