@@ -250,7 +250,7 @@ export default function CurrentStock() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredInventory.length === 0 ? (
+                {displayInventory.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       No items found
@@ -258,7 +258,7 @@ export default function CurrentStock() {
                   </TableRow>
                 ) : (
                   <>
-                    {filteredInventory.map((item, idx) => {
+                    {displayInventory.map((item, idx) => {
                       const hasMembers = item.is_group && (item.members || []).length > 1;
                       const isExpanded = expandedGroups[item.item_name];
                       return (
