@@ -22,8 +22,8 @@ async def get_current_inventory():
     mapping_dict, member_to_leader, group_members = build_group_maps(groups, mappings)
     group_ledger = build_group_ledger(ledger_items, groups, mappings)
 
-    opening = [item for item in opening if item['item_name'] not in EXCLUDED_ITEMS]
-    transactions = [t for t in transactions if t['item_name'] not in EXCLUDED_ITEMS]
+    opening = [item for item in opening if item['item_name'] not in EXCLUDED_ITEMS and not item['item_name'].isdigit()]
+    transactions = [t for t in transactions if t['item_name'] not in EXCLUDED_ITEMS and not t['item_name'].isdigit()]
 
     # Track both group-level and per-member data
     inventory_map = {}
