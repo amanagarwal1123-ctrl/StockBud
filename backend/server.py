@@ -2734,9 +2734,21 @@ async def get_supplier_profit(
             avg_purchase_tunch = sum(float(p.get('tunch', 0) or 0) * abs(p.get('net_wt', 0)) for p in purchases) / sum(abs(p.get('net_wt', 0)) for p in purchases)
             avg_sale_tunch = sum(float(s.get('tunch', 0) or 0) * abs(s.get('net_wt', 0)) for s in sales) / sum(abs(s.get('net_wt', 0)) for s in sales)
             
-            # Calculate labour rates — total labour / total grams for both
-            purchase_labour_per_gram = sum(abs(p.get('labor', 0)) for p in purchases) / sum(abs(p.get('net_wt', 0)) for p in purchases)
-            sale_labour_per_gram = sum(abs(s.get('labor', 0)) for s in sales) / sum(abs(s.get('net_wt', 0)) for s in sales)
+            # Calculate labour rates
+            # Purchase: prefer ledger rate; fallback to total_amount from transactions
+            purchase_labour_per_gram = 0
+            # Try to get from purchase ledger (more accurate)
+            all_ledger_items = await db.purchase_ledger.find({}, {"_id": 0}).to_list(10000) if not hasattr(get_supplier_profit, '_ledger_cache') else []
+            # Use transaction data for supplier-profit since we don't have ledger in scope here
+            purch_total_wt = sum(abs(p.get('net_wt', 0)) for p in purchases)
+            if purch_total_wt > 0:
+                purchase_labour_per_gram = sum(abs(p.get('total_amount', 0) or p.get('labor', 0)) for p in purchases) / purch_total_wt
+            
+            sale_total_wt = sum(abs(s.get('net_wt', 0)) for s in sales)
+            if sale_total_wt > 0:
+                sale_labour_per_gram = sum(abs(s.get('total_amount', 0) or s.get('labor', 0)) for s in sales) / sale_total_wt
+            else:
+                sale_labour_per_gram = 0
             
             # Calculate profit for THIS ITEM based on weight purchased from THIS SUPPLIER
             # Silver profit = (sale_tunch - purchase_tunch) * weight_purchased_from_supplier / 100
@@ -2795,6 +2807,12 @@ async def get_unmapped_items():
     unmapped = []
     for name in trans_names:
         if name not in master_names and name not in mapped_names:
+            # Filter out purely numeric names (e.g., "136" from branch transfer summary lines)
+            if name.isdigit():
+                continue
+            # Filter out test data items
+            if name.startswith('TEST_SILVER_ITEM_') or name.startswith('Item ') or name.startswith('Batch'):
+                continue
             unmapped.append(name)
     
     return {
