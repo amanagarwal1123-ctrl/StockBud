@@ -1525,7 +1525,10 @@ async def save_executive_stock_entry(
     stamp = request.get('stamp')
     entries = request.get('entries', [])
     entered_by = request.get('entered_by')
+    verification_date = request.get('verification_date')  # Date for which stock is being entered
     today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    if not verification_date:
+        verification_date = today
     
     # Save stock entry keyed by stamp + user + today's date
     entry_record = {
@@ -1534,6 +1537,7 @@ async def save_executive_stock_entry(
         'entered_by': entered_by,
         'entry_date': datetime.now(timezone.utc).isoformat(),
         'entry_day': today,
+        'verification_date': verification_date,
         'status': 'pending',
         'approved_by': None,
         'approved_at': None,
