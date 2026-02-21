@@ -125,6 +125,16 @@ export default function ManagerApprovals() {
     );
   }
 
+  /** Color logic: Green = within 20g, Blue = increased, Red = decreased */
+  const diffColor = (diff) => {
+    if (Math.abs(diff) < 0.020) return 'text-green-600';
+    return diff > 0 ? 'text-blue-600' : 'text-red-600';
+  };
+  const diffBg = (diff) => {
+    if (Math.abs(diff) < 0.020) return 'bg-green-50';
+    return diff > 0 ? 'bg-blue-50' : 'bg-red-50';
+  };
+
   const pendingEntries = allEntries.filter(e => e.status === 'pending');
   const approvedEntries = allEntries.filter(e => e.status === 'approved');
   const rejectedEntries = allEntries.filter(e => e.status === 'rejected');
