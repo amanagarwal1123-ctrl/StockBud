@@ -3201,7 +3201,7 @@ async def calculate_profit(
                 purchases = [{
                     'net_wt': ledger_item.get('total_purchased_kg', 0) * 1000,  # Convert to grams
                     'tunch': ledger_item.get('purchase_tunch', 0),
-                    'labor': ledger_item.get('labour_per_kg', 0)
+                    'labor': ledger_item.get('total_labour', 0)  # Total labour Rs (NOT per-kg rate)
                 }]
             else:
                 # No purchase history - skip this item
