@@ -1450,16 +1450,21 @@ async def update_stock_entry(
 ):
     """Update a rejected stock entry (same day only)"""
     entries = request.get('entries', [])
+    verification_date = request.get('verification_date')
     today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    
+    update_fields = {
+        'entries': entries,
+        'entry_date': datetime.now(timezone.utc).isoformat(),
+        'status': 'pending'
+    }
+    if verification_date:
+        update_fields['verification_date'] = verification_date
     
     # Try to update today's entry first, fallback to latest pending/rejected
     result = await db.stock_entries.update_one(
         {'stamp': stamp, 'entered_by': current_user['username'], 'entry_day': today, 'status': {'$in': ['pending', 'rejected']}},
-        {'$set': {
-            'entries': entries,
-            'entry_date': datetime.now(timezone.utc).isoformat(),
-            'status': 'pending'
-        }}
+        {'$set': update_fields}
     )
     
     if result.modified_count == 0:
