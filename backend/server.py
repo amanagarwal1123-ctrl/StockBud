@@ -4427,17 +4427,18 @@ async def get_historical_profit(
             {"$group": {
                 "_id": "$item_name",
                 "fine": {"$sum": "$fine"}, "net_wt": {"$sum": "$net_wt"},
-                "labor": {"$sum": "$labor"}, "count": {"$sum": 1}
+                "labor": {"$sum": "$labor"}, "total_amount": {"$sum": "$total_amount"}, "count": {"$sum": 1}
             }}
         ]).to_list(None)
 
         # Merge by master item
-        master_agg = defaultdict(lambda: {"fine": 0.0, "net_wt": 0.0, "labor": 0.0, "count": 0})
+        master_agg = defaultdict(lambda: {"fine": 0.0, "net_wt": 0.0, "labor": 0.0, "total_amount": 0.0, "count": 0})
         for doc in item_agg:
             master = resolve(doc["_id"])
             master_agg[master]["fine"] += doc["fine"] or 0
             master_agg[master]["net_wt"] += doc["net_wt"] or 0
             master_agg[master]["labor"] += doc["labor"] or 0
+            master_agg[master]["total_amount"] += doc.get("total_amount") or 0
             master_agg[master]["count"] += doc["count"]
 
         rows = []
@@ -4449,7 +4450,7 @@ async def get_historical_profit(
             sell_tunch = (sa["fine"] / snw) * 100 if sa["fine"] > 0 else 0
             buy_tunch = basis["avg_tunch"]
             silver_kg = round((sell_tunch - buy_tunch) * snw / 100 / 1000, 3)
-            s_lpg = (sa.get("labor") or 0) / snw
+            s_lpg = (sa.get("total_amount") or sa.get("labor") or 0) / snw
             labor_inr = round((s_lpg - basis["labor_per_gram"]) * snw, 2)
             rows.append({"name": master, "silver_profit_kg": silver_kg, "labor_profit_inr": labor_inr,
                          "total_sold_kg": round(snw / 1000, 3), "transactions": sa["count"],
