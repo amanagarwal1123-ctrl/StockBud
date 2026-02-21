@@ -2735,14 +2735,12 @@ async def get_supplier_profit(
             avg_sale_tunch = sum(float(s.get('tunch', 0) or 0) * abs(s.get('net_wt', 0)) for s in sales) / sum(abs(s.get('net_wt', 0)) for s in sales)
             
             # Calculate labour rates
-            # Purchase: prefer ledger rate; fallback to total_amount from transactions
-            purchase_labour_per_gram = 0
-            # Try to get from purchase ledger (more accurate)
-            all_ledger_items = await db.purchase_ledger.find({}, {"_id": 0}).to_list(10000) if not hasattr(get_supplier_profit, '_ledger_cache') else []
-            # Use transaction data for supplier-profit since we don't have ledger in scope here
+            # Use total_amount as the labour value (in silver trading, Total column = labour Rs)
             purch_total_wt = sum(abs(p.get('net_wt', 0)) for p in purchases)
             if purch_total_wt > 0:
                 purchase_labour_per_gram = sum(abs(p.get('total_amount', 0) or p.get('labor', 0)) for p in purchases) / purch_total_wt
+            else:
+                purchase_labour_per_gram = 0
             
             sale_total_wt = sum(abs(s.get('net_wt', 0)) for s in sales)
             if sale_total_wt > 0:
@@ -3219,7 +3217,8 @@ async def calculate_profit(
                 purchases = [{
                     'net_wt': ledger_item.get('total_purchased_kg', 0) * 1000,  # Convert to grams
                     'tunch': ledger_item.get('purchase_tunch', 0),
-                    'labor': ledger_item.get('total_labour', 0)  # Total labour Rs (NOT per-kg rate)
+                    'labor': ledger_item.get('total_labour', 0),  # Total labour Rs (NOT per-kg rate)
+                    'total_amount': ledger_item.get('total_labour', 0)
                 }]
             else:
                 # No purchase history - skip this item
