@@ -184,17 +184,17 @@ export default function ItemMapping() {
               const itemsToShow = showingAll ? allMasterItems : suggestions;
               
               return (
-                <div key={idx} className="border rounded-lg p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-semibold text-lg">{item}</p>
-                      <p className="text-sm text-muted-foreground">
+                <div key={idx} className="border rounded-lg p-3 sm:p-4 space-y-2 sm:space-y-3">
+                  <div className="flex flex-wrap items-start justify-between gap-1">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-sm sm:text-lg break-all">{item}</p>
+                      <p className="text-xs text-muted-foreground">
                         {suggestions.length > 0 
-                          ? `${suggestions.length} intelligent suggestions` 
+                          ? `${suggestions.length} suggestions` 
                           : 'No suggestions found - Click "Show All Items" below'}
                       </p>
                     </div>
-                    <Badge variant="outline" className="text-orange-600">Unmapped</Badge>
+                    <Badge variant="outline" className="text-orange-600 text-[10px] sm:text-xs shrink-0">Unmapped</Badge>
                   </div>
 
                   <div className="space-y-2">
