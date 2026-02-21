@@ -1,0 +1,81 @@
+{
+  "summary": "Tested critical bug fixes for Labour Profit and Unmapped Items. All 21 backend tests PASSED. Frontend verification PASSED. Labour profit now shows ₹38.84L (positive) instead of -₹1.05L. Individual items have non-zero labor values. '136' is NOT appearing in unmapped items.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_profit_and_unmapped.py",
+    "/app/test_reports/pytest/profit_unmapped_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "✓ Labour profit calculation now uses total_amount field as primary source for sale labour",
+    "✓ Purchase labour cost sourced from purchase_ledger (labour_per_kg / 1000)",
+    "✓ sales-summary endpoint correctly sums total_amount for labor (line 3109)",
+    "✓ profit endpoint calculates labor_profit_inr correctly (lines 3243-3257)",
+    "✓ unmapped endpoint filters isdigit() names (line 2809)",
+    "✓ unmapped endpoint filters test data patterns (line 2812)"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_profit_and_unmapped.py"
+  ],
+  "success_rate": {
+    "backend": "100% (21/21 tests passed)",
+    "frontend": "100% (All UI features verified)"
+  },
+  "test_credentials": {
+    "admin": "admin / admin123",
+    "manager": "SMANAGER / manager123",
+    "executive": "SEE1 / executive123"
+  },
+  "seed_data_creation": "",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Bug fixes verified: (1) Labour profit calculation now uses total_amount field from sales transactions, not the labor field which was 0. Purchase cost from purchase_ledger.labour_per_kg. Total labour profit is now ₹38.84L (positive). (2) Unmapped items endpoint filters purely numeric names with isdigit() and test patterns. 233 unmapped items remain but no '136'.",
+  "verified_fixes": {
+    "Labour Profit Bug": {
+      "Previous Issue": "Labour profit showing -₹1.05L (negative) and all items showing ₹0 for labour",
+      "Fix Applied": "Profit calculation now uses total_amount field (which stores labour Rs per line in silver trading)",
+      "Result": "Labour Profit: ₹38,83,515.51 (POSITIVE)",
+      "Items with non-zero labor": "200 out of 205 items (97.6%)"
+    },
+    "Unmapped Items Bug": {
+      "Previous Issue": "'136' appearing in unmapped items despite being purely numeric",
+      "Fix Applied": "Added isdigit() filter in get_unmapped_items() endpoint",
+      "Result": "'136' NOT in unmapped list, no purely numeric items present"
+    },
+    "Sales Summary Bug": {
+      "Previous Issue": "total_labor was zero in sales summary",
+      "Fix Applied": "Now uses (t.get('total_amount', 0) or t.get('labor', 0)) for labor calculation",
+      "Result": "total_labor: ₹62,26,322.00"
+    }
+  },
+  "api_endpoints_tested": [
+    "GET /api/health - 200 OK",
+    "GET /api/analytics/profit - 200 OK, labor_profit_inr=₹38.84L (POSITIVE)",
+    "GET /api/analytics/sales-summary - 200 OK, total_labor=₹62.26L (NON-ZERO)",
+    "GET /api/analytics/customer-profit - 200 OK, customers have labour_profit_inr values",
+    "GET /api/analytics/supplier-profit - 200 OK, suppliers have labor_profit_inr values",
+    "GET /api/mappings/unmapped - 200 OK, no purely numeric items, '136' NOT present"
+  ],
+  "ui_elements_verified": {
+    "ProfitAnalysis.jsx": {
+      "Labour Profit Card": "PASSED - Shows ₹38.84L (positive, blue color)",
+      "Silver Profit Card": "PASSED - Shows 17.774 kg",
+      "Total Sales Card": "PASSED - Shows Net 538.233 kg, Fine 342.764 kg, Labour ₹62.26L",
+      "Most Profitable Items Table": "PASSED - Items have non-zero Labour values (₹1.42L, ₹11.74K, etc.)"
+    },
+    "ItemMapping.jsx": {
+      "Unmapped Items Count": "PASSED - Shows 233 unmapped items",
+      "No '136' visible": "PASSED - First items are 'AARTA THAL B1 GOLDEN', 'AB JUDA -008', etc.",
+      "No numeric items visible": "PASSED - All visible items are valid product names"
+    }
+  },
+  "test_execution_time": "Backend: 4.51s, Frontend: ~10s"
+}
