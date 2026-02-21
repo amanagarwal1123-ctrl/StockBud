@@ -162,8 +162,13 @@ export default function ManagerApprovals() {
                     <CardTitle className="flex items-center gap-2">
                       {entry.stamp}
                       <Badge variant="outline" className="text-orange-600">Pending</Badge>
+                      {entry.verification_date && (
+                        <Badge variant="outline" className="text-blue-700 border-blue-300 bg-blue-50">
+                          Stock for: {entry.verification_date}
+                        </Badge>
+                      )}
                       {allDetails[entry.stamp] && (
-                        <Badge className={Math.abs(allDetails[entry.stamp].total_difference) < 0.05 ? 'bg-green-600' : 'bg-red-600'}>
+                        <Badge className={Math.abs(allDetails[entry.stamp].total_difference) < 0.020 ? 'bg-green-600' : allDetails[entry.stamp].total_difference > 0 ? 'bg-blue-600' : 'bg-red-600'}>
                           Diff: {allDetails[entry.stamp].total_difference >= 0 ? '+' : ''}{allDetails[entry.stamp].total_difference?.toFixed(3)} kg
                         </Badge>
                       )}
