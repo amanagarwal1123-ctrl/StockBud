@@ -90,6 +90,10 @@ export default function CurrentStock() {
   const stamps = ['all', ...Object.keys(byStamp).sort()];
   const groupCount = inventory.filter(i => i.is_group && (i.members || []).length > 1).length;
 
+  // Sortable data for main stock table
+  const { sortedData: sortedInventory, sortConfig: stockSortConfig, requestSort: stockRequestSort } = useSortableData(filteredInventory, null);
+  const displayInventory = stockSortConfig.key ? sortedInventory : filteredInventory;
+
   const handleExportCSV = () => {
     const exportData = filteredInventory.map(item => ({
       'Item Name': item.item_name,
