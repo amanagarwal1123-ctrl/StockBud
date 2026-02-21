@@ -41,7 +41,7 @@ from services.helpers import (
     normalize_stamp, get_column_value, parse_labor_value,
     normalize_date, stamp_sort_key, save_action, auto_normalize_stamps
 )
-from services.stock_service import get_current_inventory
+from services.stock_service import get_current_inventory, get_stamp_closing_stock
 from services.group_utils import build_group_maps, build_group_ledger, resolve_to_leader
 
 app = FastAPI()
