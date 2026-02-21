@@ -66,10 +66,11 @@ export default function ProfitAnalysis() {
     exportToCSV(exportData, `profit_analysis${startDate && endDate ? `_${startDate}_to_${endDate}` : ''}`);
   };
 
-  if (loading) return <div className="flex items-center justify-center h-screen"><div className="text-muted-foreground">Loading...</div></div>;
-
   const allItems = profitData?.all_items || [];
   const { sortedData: sortedItems, sortConfig, requestSort } = useSortableData(allItems, 'silver_profit_kg', 'desc');
+
+  if (loading) return <div className="flex items-center justify-center h-screen"><div className="text-muted-foreground">Loading...</div></div>;
+
   const startIdx = (currentPage - 1) * itemsPerPage;
   const paginatedItems = sortedItems.slice(startIdx, startIdx + itemsPerPage);
   const totalPages = Math.ceil(sortedItems.length / itemsPerPage);
