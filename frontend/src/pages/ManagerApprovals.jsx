@@ -253,6 +253,7 @@ export default function ManagerApprovals() {
                   <div className="flex-1">
                     <CardTitle className="flex items-center gap-2">
                       {entry.stamp}
+                      {entry.verification_date && <Badge variant="outline" className="text-blue-700 border-blue-300 bg-blue-50">Stock for: {entry.verification_date}</Badge>}
                       {entry.entry_day && <span className="text-xs text-muted-foreground font-normal bg-muted px-1.5 py-0.5 rounded">{entry.entry_day}</span>}
                     </CardTitle>
                     <CardDescription>
