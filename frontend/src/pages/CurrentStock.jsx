@@ -244,9 +244,9 @@ export default function CurrentStock() {
                   <SortableHeader label="Item Name" sortKey="item_name" sortConfig={stockSortConfig} onSort={stockRequestSort} className="text-xs" />
                   <SortableHeader label="Stamp" sortKey="stamp" sortConfig={stockSortConfig} onSort={stockRequestSort} className="text-xs" />
                   <SortableHeader label="Net Wt (kg)" sortKey="net_wt" sortConfig={stockSortConfig} onSort={stockRequestSort} className="text-xs text-right font-mono" />
-                  <SortableHeader label="Gross Wt (kg)" sortKey="gr_wt" sortConfig={stockSortConfig} onSort={stockRequestSort} className="text-xs text-right font-mono text-muted-foreground hidden sm:table-cell" />
-                  <SortableHeader label="Fine" sortKey="fine" sortConfig={stockSortConfig} onSort={stockRequestSort} className="text-xs text-right font-mono hidden sm:table-cell" />
-                  <SortableHeader label="Labour" sortKey="labor" sortConfig={stockSortConfig} onSort={stockRequestSort} className="text-xs text-right font-mono hidden md:table-cell" />
+                  <SortableHeader label="Gross Wt (kg)" sortKey="gr_wt" sortConfig={stockSortConfig} onSort={stockRequestSort} className="text-xs text-right font-mono text-muted-foreground" />
+                  <SortableHeader label="Fine" sortKey="fine" sortConfig={stockSortConfig} onSort={stockRequestSort} className="text-xs text-right font-mono" />
+                  <SortableHeader label="Labour" sortKey="labor" sortConfig={stockSortConfig} onSort={stockRequestSort} className="text-xs text-right font-mono" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -284,13 +284,13 @@ export default function CurrentStock() {
                         <TableCell className="text-right font-mono font-bold text-primary text-lg">
                           {(filteredTotals.net_wt / 1000).toFixed(3)} kg
                         </TableCell>
-                        <TableCell className="text-right font-mono font-bold text-muted-foreground hidden sm:table-cell">
+                        <TableCell className="text-right font-mono font-bold text-muted-foreground">
                           {(filteredTotals.gr_wt / 1000).toFixed(3)} kg
                         </TableCell>
-                        <TableCell className="text-right font-mono font-bold hidden sm:table-cell">
+                        <TableCell className="text-right font-mono font-bold">
                           {(filteredTotals.fine / 1000).toFixed(3)} kg
                         </TableCell>
-                        <TableCell className="text-right font-mono font-bold text-green-600 hidden md:table-cell">
+                        <TableCell className="text-right font-mono font-bold text-green-600">
                           {formatIndianCurrency(filteredTotals.labor)}
                         </TableCell>
                       </TableRow>
@@ -439,9 +439,9 @@ function GroupRow({ item, idx, hasMembers, isExpanded, onToggle, onNavigate }) {
           </Badge>
         </TableCell>
         <TableCell className="text-right font-mono font-semibold text-primary">{(item.net_wt / 1000).toFixed(3)}</TableCell>
-        <TableCell className="text-right font-mono text-muted-foreground hidden sm:table-cell">{(item.gr_wt / 1000).toFixed(3)}</TableCell>
-        <TableCell className="text-right font-mono hidden sm:table-cell">{(item.fine / 1000).toFixed(3)}</TableCell>
-        <TableCell className="text-right font-mono hidden md:table-cell">{formatIndianCurrency(item.labor || 0)}</TableCell>
+        <TableCell className="text-right font-mono text-muted-foreground">{(item.gr_wt / 1000).toFixed(3)}</TableCell>
+        <TableCell className="text-right font-mono">{(item.fine / 1000).toFixed(3)}</TableCell>
+        <TableCell className="text-right font-mono">{formatIndianCurrency(item.labor || 0)}</TableCell>
       </TableRow>
 
       {/* Expanded member rows */}
@@ -466,13 +466,13 @@ function GroupRow({ item, idx, hasMembers, isExpanded, onToggle, onNavigate }) {
           <TableCell className={`text-right font-mono text-sm ${m.net_wt < 0 ? 'text-destructive' : ''}`}>
             {(m.net_wt / 1000).toFixed(3)}
           </TableCell>
-          <TableCell className={`text-right font-mono text-sm text-muted-foreground hidden sm:table-cell ${m.gr_wt < 0 ? 'text-destructive' : ''}`}>
+          <TableCell className={`text-right font-mono text-sm text-muted-foreground ${m.gr_wt < 0 ? 'text-destructive' : ''}`}>
             {(m.gr_wt / 1000).toFixed(3)}
           </TableCell>
-          <TableCell className={`text-right font-mono text-sm hidden sm:table-cell ${m.fine < 0 ? 'text-destructive' : ''}`}>
+          <TableCell className={`text-right font-mono text-sm ${m.fine < 0 ? 'text-destructive' : ''}`}>
             {(m.fine / 1000).toFixed(3)}
           </TableCell>
-          <TableCell className={`text-right font-mono text-sm hidden md:table-cell ${m.labor < 0 ? 'text-destructive' : ''}`}>
+          <TableCell className={`text-right font-mono text-sm ${m.labor < 0 ? 'text-destructive' : ''}`}>
             {formatIndianCurrency(m.labor || 0)}
           </TableCell>
         </TableRow>

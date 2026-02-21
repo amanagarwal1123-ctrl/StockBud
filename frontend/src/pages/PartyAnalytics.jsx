@@ -238,9 +238,9 @@ export default function PartyAnalytics() {
                       <TableHead className="text-xs w-8">#</TableHead>
                       <SortableHeader label="Customer" sortKey="party_name" sortConfig={custSort.sortConfig} onSort={(k) => { custSort.requestSort(k); setCustomerPage(1); }} className="text-xs" />
                       <SortableHeader label="Net Wt (kg)" sortKey="total_net_wt" sortConfig={custSort.sortConfig} onSort={(k) => { custSort.requestSort(k); setCustomerPage(1); }} className="text-xs text-right" />
-                      <SortableHeader label="Fine Wt (kg)" sortKey="total_fine_wt" sortConfig={custSort.sortConfig} onSort={(k) => { custSort.requestSort(k); setCustomerPage(1); }} className="text-xs text-right hidden sm:table-cell" />
-                      <SortableHeader label="Sales Value" sortKey="total_sales_value" sortConfig={custSort.sortConfig} onSort={(k) => { custSort.requestSort(k); setCustomerPage(1); }} className="text-xs text-right hidden sm:table-cell" />
-                      <SortableHeader label="Txns" sortKey="transaction_count" sortConfig={custSort.sortConfig} onSort={(k) => { custSort.requestSort(k); setCustomerPage(1); }} className="text-xs text-right hidden md:table-cell" />
+                      <SortableHeader label="Fine Wt (kg)" sortKey="total_fine_wt" sortConfig={custSort.sortConfig} onSort={(k) => { custSort.requestSort(k); setCustomerPage(1); }} className="text-xs text-right" />
+                      <SortableHeader label="Sales Value" sortKey="total_sales_value" sortConfig={custSort.sortConfig} onSort={(k) => { custSort.requestSort(k); setCustomerPage(1); }} className="text-xs text-right" />
+                      <SortableHeader label="Txns" sortKey="transaction_count" sortConfig={custSort.sortConfig} onSort={(k) => { custSort.requestSort(k); setCustomerPage(1); }} className="text-xs text-right" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -251,9 +251,9 @@ export default function PartyAnalytics() {
                         <TableCell className="text-xs py-1.5 text-muted-foreground">{custPag.startIdx + idx + 1}</TableCell>
                         <TableCell className="text-xs py-1.5 font-medium max-w-[120px] sm:max-w-none truncate">{c.party_name}</TableCell>
                         <TableCell className="text-right font-mono text-xs py-1.5 text-primary font-semibold">{(c.total_net_wt / 1000).toFixed(3)}</TableCell>
-                        <TableCell className="text-right font-mono text-xs py-1.5 text-green-600 hidden sm:table-cell">{(c.total_fine_wt / 1000).toFixed(3)}</TableCell>
-                        <TableCell className="text-right font-mono text-xs py-1.5 hidden sm:table-cell">{formatIndianCurrency(c.total_sales_value)}</TableCell>
-                        <TableCell className="text-right font-mono text-xs py-1.5 hidden md:table-cell">{c.transaction_count}</TableCell>
+                        <TableCell className="text-right font-mono text-xs py-1.5 text-green-600">{(c.total_fine_wt / 1000).toFixed(3)}</TableCell>
+                        <TableCell className="text-right font-mono text-xs py-1.5">{formatIndianCurrency(c.total_sales_value)}</TableCell>
+                        <TableCell className="text-right font-mono text-xs py-1.5">{c.transaction_count}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -286,9 +286,9 @@ export default function PartyAnalytics() {
                       <TableHead className="text-xs w-8">#</TableHead>
                       <SortableHeader label="Supplier" sortKey="party_name" sortConfig={suppSort.sortConfig} onSort={(k) => { suppSort.requestSort(k); setSupplierPage(1); }} className="text-xs" />
                       <SortableHeader label="Net Wt (kg)" sortKey="total_net_wt" sortConfig={suppSort.sortConfig} onSort={(k) => { suppSort.requestSort(k); setSupplierPage(1); }} className="text-xs text-right" />
-                      <SortableHeader label="Fine Wt (kg)" sortKey="total_fine_wt" sortConfig={suppSort.sortConfig} onSort={(k) => { suppSort.requestSort(k); setSupplierPage(1); }} className="text-xs text-right hidden sm:table-cell" />
-                      <SortableHeader label="Purch. Value" sortKey="total_purchases_value" sortConfig={suppSort.sortConfig} onSort={(k) => { suppSort.requestSort(k); setSupplierPage(1); }} className="text-xs text-right hidden sm:table-cell" />
-                      <SortableHeader label="Txns" sortKey="transaction_count" sortConfig={suppSort.sortConfig} onSort={(k) => { suppSort.requestSort(k); setSupplierPage(1); }} className="text-xs text-right hidden md:table-cell" />
+                      <SortableHeader label="Fine Wt (kg)" sortKey="total_fine_wt" sortConfig={suppSort.sortConfig} onSort={(k) => { suppSort.requestSort(k); setSupplierPage(1); }} className="text-xs text-right" />
+                      <SortableHeader label="Purch. Value" sortKey="total_purchases_value" sortConfig={suppSort.sortConfig} onSort={(k) => { suppSort.requestSort(k); setSupplierPage(1); }} className="text-xs text-right" />
+                      <SortableHeader label="Txns" sortKey="transaction_count" sortConfig={suppSort.sortConfig} onSort={(k) => { suppSort.requestSort(k); setSupplierPage(1); }} className="text-xs text-right" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -299,9 +299,9 @@ export default function PartyAnalytics() {
                         <TableCell className="text-xs py-1.5 text-muted-foreground">{suppPag.startIdx + idx + 1}</TableCell>
                         <TableCell className="text-xs py-1.5 font-medium max-w-[120px] sm:max-w-none truncate">{s.party_name}</TableCell>
                         <TableCell className="text-right font-mono text-xs py-1.5 text-primary font-semibold">{(s.total_net_wt / 1000).toFixed(3)}</TableCell>
-                        <TableCell className="text-right font-mono text-xs py-1.5 text-green-600 hidden sm:table-cell">{(s.total_fine_wt / 1000).toFixed(3)}</TableCell>
-                        <TableCell className="text-right font-mono text-xs py-1.5 hidden sm:table-cell">{formatIndianCurrency(s.total_purchases_value)}</TableCell>
-                        <TableCell className="text-right font-mono text-xs py-1.5 hidden md:table-cell">{s.transaction_count}</TableCell>
+                        <TableCell className="text-right font-mono text-xs py-1.5 text-green-600">{(s.total_fine_wt / 1000).toFixed(3)}</TableCell>
+                        <TableCell className="text-right font-mono text-xs py-1.5">{formatIndianCurrency(s.total_purchases_value)}</TableCell>
+                        <TableCell className="text-right font-mono text-xs py-1.5">{s.transaction_count}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -328,8 +328,8 @@ export default function PartyAnalytics() {
                       <SortableHeader label="Customer" sortKey="customer_name" sortConfig={custProfSort.sortConfig} onSort={(k) => { custProfSort.requestSort(k); setCustProfitPage(1); }} className="text-xs" />
                       <SortableHeader label="Silver (kg)" sortKey="silver_profit_kg" sortConfig={custProfSort.sortConfig} onSort={(k) => { custProfSort.requestSort(k); setCustProfitPage(1); }} className="text-xs text-right" />
                       <SortableHeader label="Labour" sortKey="labour_profit_inr" sortConfig={custProfSort.sortConfig} onSort={(k) => { custProfSort.requestSort(k); setCustProfitPage(1); }} className="text-xs text-right" />
-                      <SortableHeader label="Sold (kg)" sortKey="total_sold_kg" sortConfig={custProfSort.sortConfig} onSort={(k) => { custProfSort.requestSort(k); setCustProfitPage(1); }} className="text-xs text-right hidden sm:table-cell" />
-                      <SortableHeader label="Txns" sortKey="transaction_count" sortConfig={custProfSort.sortConfig} onSort={(k) => { custProfSort.requestSort(k); setCustProfitPage(1); }} className="text-xs text-right hidden md:table-cell" />
+                      <SortableHeader label="Sold (kg)" sortKey="total_sold_kg" sortConfig={custProfSort.sortConfig} onSort={(k) => { custProfSort.requestSort(k); setCustProfitPage(1); }} className="text-xs text-right" />
+                      <SortableHeader label="Txns" sortKey="transaction_count" sortConfig={custProfSort.sortConfig} onSort={(k) => { custProfSort.requestSort(k); setCustProfitPage(1); }} className="text-xs text-right" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -341,8 +341,8 @@ export default function PartyAnalytics() {
                         <TableCell className="text-xs py-1.5 font-medium max-w-[120px] sm:max-w-none truncate">{c.customer_name}</TableCell>
                         <TableCell className="text-right font-mono text-xs py-1.5 text-green-600 font-semibold">{c.silver_profit_kg?.toFixed(3)}</TableCell>
                         <TableCell className="text-right font-mono text-xs py-1.5 text-blue-600 font-semibold">{formatIndianCurrency(c.labour_profit_inr)}</TableCell>
-                        <TableCell className="text-right font-mono text-xs py-1.5 hidden sm:table-cell">{c.total_sold_kg?.toFixed(3)}</TableCell>
-                        <TableCell className="text-right font-mono text-xs py-1.5 hidden md:table-cell">{c.transaction_count}</TableCell>
+                        <TableCell className="text-right font-mono text-xs py-1.5">{c.total_sold_kg?.toFixed(3)}</TableCell>
+                        <TableCell className="text-right font-mono text-xs py-1.5">{c.transaction_count}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -367,10 +367,10 @@ export default function PartyAnalytics() {
                     <TableRow>
                       <TableHead className="text-xs w-8">#</TableHead>
                       <SortableHeader label="Supplier" sortKey="supplier_name" sortConfig={suppProfSort.sortConfig} onSort={(k) => { suppProfSort.requestSort(k); setSuppProfitPage(1); }} className="text-xs" />
-                      <SortableHeader label="Purchased (kg)" sortKey="total_purchased_kg" sortConfig={suppProfSort.sortConfig} onSort={(k) => { suppProfSort.requestSort(k); setSuppProfitPage(1); }} className="text-xs text-right hidden sm:table-cell" />
+                      <SortableHeader label="Purchased (kg)" sortKey="total_purchased_kg" sortConfig={suppProfSort.sortConfig} onSort={(k) => { suppProfSort.requestSort(k); setSuppProfitPage(1); }} className="text-xs text-right" />
                       <SortableHeader label="Silver (kg)" sortKey="silver_profit_kg" sortConfig={suppProfSort.sortConfig} onSort={(k) => { suppProfSort.requestSort(k); setSuppProfitPage(1); }} className="text-xs text-right" />
                       <SortableHeader label="Labour" sortKey="labor_profit_inr" sortConfig={suppProfSort.sortConfig} onSort={(k) => { suppProfSort.requestSort(k); setSuppProfitPage(1); }} className="text-xs text-right" />
-                      <SortableHeader label="Items" sortKey="items_count" sortConfig={suppProfSort.sortConfig} onSort={(k) => { suppProfSort.requestSort(k); setSuppProfitPage(1); }} className="text-xs text-right hidden md:table-cell" />
+                      <SortableHeader label="Items" sortKey="items_count" sortConfig={suppProfSort.sortConfig} onSort={(k) => { suppProfSort.requestSort(k); setSuppProfitPage(1); }} className="text-xs text-right" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -380,10 +380,10 @@ export default function PartyAnalytics() {
                       <TableRow key={idx}>
                         <TableCell className="text-xs py-1.5 text-muted-foreground">{suppProfPag.startIdx + idx + 1}</TableCell>
                         <TableCell className="text-xs py-1.5 font-medium max-w-[120px] sm:max-w-none truncate">{s.supplier_name}</TableCell>
-                        <TableCell className="text-right font-mono text-xs py-1.5 text-blue-600 hidden sm:table-cell">{s.total_purchased_kg?.toFixed(3)}</TableCell>
+                        <TableCell className="text-right font-mono text-xs py-1.5 text-blue-600">{s.total_purchased_kg?.toFixed(3)}</TableCell>
                         <TableCell className="text-right font-mono text-xs py-1.5 text-green-600 font-semibold">{s.silver_profit_kg?.toFixed(3)} kg</TableCell>
                         <TableCell className="text-right font-mono text-xs py-1.5 text-primary font-semibold">{formatIndianCurrency(s.labor_profit_inr || 0)}</TableCell>
-                        <TableCell className="text-right font-mono text-xs py-1.5 text-muted-foreground hidden md:table-cell">{s.items_count || 0}</TableCell>
+                        <TableCell className="text-right font-mono text-xs py-1.5 text-muted-foreground">{s.items_count || 0}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

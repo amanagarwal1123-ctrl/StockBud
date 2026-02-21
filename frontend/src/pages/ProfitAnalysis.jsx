@@ -192,9 +192,9 @@ export default function ProfitAnalysis() {
                 <TableRow>
                   <TableHead className="text-xs w-8">#</TableHead>
                   <SortableHeader label="Item" sortKey="item_name" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-xs" />
-                  <SortableHeader label="Sold (kg)" sortKey="net_wt_sold_kg" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs hidden sm:table-cell" />
-                  <SortableHeader label="Buy Tunch" sortKey="avg_purchase_tunch" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs hidden md:table-cell" />
-                  <SortableHeader label="Sell Tunch" sortKey="avg_sale_tunch" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs hidden md:table-cell" />
+                  <SortableHeader label="Sold (kg)" sortKey="net_wt_sold_kg" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs" />
+                  <SortableHeader label="Buy Tunch" sortKey="avg_purchase_tunch" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs" />
+                  <SortableHeader label="Sell Tunch" sortKey="avg_sale_tunch" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs" />
                   <SortableHeader label="Silver" sortKey="silver_profit_kg" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs" />
                   <SortableHeader label="Labour" sortKey="labor_profit_inr" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs" />
                 </TableRow>
@@ -204,9 +204,9 @@ export default function ProfitAnalysis() {
                   <TableRow key={idx}>
                     <TableCell className="text-xs py-1.5 text-muted-foreground">{startIdx + idx + 1}</TableCell>
                     <TableCell className="text-xs py-1.5 font-medium max-w-[100px] sm:max-w-none truncate">{item.item_name}</TableCell>
-                    <TableCell className="text-right font-mono text-xs py-1.5 hidden sm:table-cell">{item.net_wt_sold_kg}</TableCell>
-                    <TableCell className="text-right font-mono text-xs py-1.5 hidden md:table-cell">{item.avg_purchase_tunch}%</TableCell>
-                    <TableCell className="text-right font-mono text-xs py-1.5 hidden md:table-cell">{item.avg_sale_tunch}%</TableCell>
+                    <TableCell className="text-right font-mono text-xs py-1.5">{item.net_wt_sold_kg}</TableCell>
+                    <TableCell className="text-right font-mono text-xs py-1.5">{item.avg_purchase_tunch}%</TableCell>
+                    <TableCell className="text-right font-mono text-xs py-1.5">{item.avg_sale_tunch}%</TableCell>
                     <TableCell className="text-right font-mono text-xs py-1.5 text-green-600 font-semibold">{item.silver_profit_kg} kg</TableCell>
                     <TableCell className="text-right font-mono text-xs py-1.5 text-blue-600 font-semibold">{formatIndianCurrency(item.labor_profit_inr)}</TableCell>
                   </TableRow>
