@@ -112,13 +112,13 @@ export default function PurchaseRates() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Item Name</TableHead>
-                  <TableHead className="text-right font-mono">Purchase Tunch (%)</TableHead>
-                  <TableHead className="text-right font-mono">Labour per kg</TableHead>
+                  <SortableHeader label="Item Name" sortKey="item_name" sortConfig={ledgerSortConfig} onSort={ledgerRequestSort} className="text-xs" />
+                  <SortableHeader label="Purchase Tunch (%)" sortKey="purchase_tunch" sortConfig={ledgerSortConfig} onSort={ledgerRequestSort} className="text-xs text-right font-mono" />
+                  <SortableHeader label="Labour per kg" sortKey="labour_per_kg" sortConfig={ledgerSortConfig} onSort={ledgerRequestSort} className="text-xs text-right font-mono" />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredLedger.length === 0 ? (
+                {sortedLedger.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
                       No items found
