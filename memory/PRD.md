@@ -116,6 +116,18 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 - When admin deletes transactions, expected stock auto-recalculates (computed on-the-fly)
 - Mobile-optimized layout: stacked cards, wrapped badges, compact table with truncation
 
+## Mobile UI Optimization (Feb 20, 2026)
+- Applied responsive mobile-first patterns across ALL 32 pages:
+  - Padding: p-3 sm:p-6 md:p-8 (was p-6 md:p-8)
+  - Headings: text-2xl sm:text-4xl md:text-5xl
+  - Stat values: text-lg sm:text-2xl md:text-3xl
+  - Grid: grid-cols-2 md:grid-cols-4 with smaller gaps
+  - Tables: hidden columns on mobile, truncated text, compact cells
+- ProfitAnalysis.jsx fully rewritten for mobile: compact date range, responsive table
+- ManagerApprovals.jsx rewritten: stacked cards, wrapped badges, date editing
+- ExecutiveStockEntry.jsx: responsive form layout
+- Specific table columns hidden on mobile with `hidden sm:table-cell`
+
 ## Backlog
 - (P1) Item Mapping: unmapped historical items need mapping
 - (P2) Refactor server.py into proper FastAPI structure (routes, services, models)
