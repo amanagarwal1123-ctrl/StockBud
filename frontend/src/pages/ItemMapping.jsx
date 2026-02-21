@@ -238,22 +238,24 @@ export default function ItemMapping() {
                     )}
                   </div>
 
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-1.5">
                     <Button
                       onClick={() => handleSaveMapping(item, selectedMappings[item])}
                       disabled={!selectedMappings[item]}
                       size="sm"
+                      className="h-7 text-xs"
                     >
-                      <Check className="h-4 w-4 mr-1" />
-                      Map to Existing
+                      <Check className="h-3 w-3 mr-0.5" />
+                      Map
                     </Button>
                     
                     <Button
                       onClick={() => handleCreateNewItem(item)}
                       variant="outline"
                       size="sm"
+                      className="h-7 text-xs"
                     >
-                      Create as New Item
+                      New Item
                     </Button>
                     
                     {!showingAll && (
@@ -261,9 +263,10 @@ export default function ItemMapping() {
                         onClick={() => setShowAllForItem(prev => ({ ...prev, [item]: true }))}
                         variant="outline"
                         size="sm"
+                        className="h-7 text-xs"
                       >
-                        <Search className="h-4 w-4 mr-1" />
-                        Show All Items ({allMasterItems.length})
+                        <Search className="h-3 w-3 mr-0.5" />
+                        All ({allMasterItems.length})
                       </Button>
                     )}
                     
