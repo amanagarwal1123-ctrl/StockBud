@@ -4346,7 +4346,7 @@ async def get_historical_profit(
             if not basis or nw < 0.001:
                 continue
             s_tunch = (doc["fine"] / nw) * 100 if (doc["fine"] or 0) > 0 else 0
-            s_lpg = (doc["labor"] or 0) / nw
+            s_lpg = (doc.get("labor") or 0) / nw
             cust_profit[party]["silver"] += (s_tunch - basis["avg_tunch"]) * nw / 100 / 1000
             cust_profit[party]["labor"] += (s_lpg - basis["labor_per_gram"]) * nw
             cust_profit[party]["wt"] += nw / 1000
@@ -4449,7 +4449,7 @@ async def get_historical_profit(
             sell_tunch = (sa["fine"] / snw) * 100 if sa["fine"] > 0 else 0
             buy_tunch = basis["avg_tunch"]
             silver_kg = round((sell_tunch - buy_tunch) * snw / 100 / 1000, 3)
-            s_lpg = sa["labor"] / snw
+            s_lpg = (sa.get("labor") or 0) / snw
             labor_inr = round((s_lpg - basis["labor_per_gram"]) * snw, 2)
             rows.append({"name": master, "silver_profit_kg": silver_kg, "labor_profit_inr": labor_inr,
                          "total_sold_kg": round(snw / 1000, 3), "transactions": sa["count"],
