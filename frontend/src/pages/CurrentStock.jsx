@@ -439,9 +439,9 @@ function GroupRow({ item, idx, hasMembers, isExpanded, onToggle, onNavigate }) {
           </Badge>
         </TableCell>
         <TableCell className="text-right font-mono font-semibold text-primary">{(item.net_wt / 1000).toFixed(3)}</TableCell>
-        <TableCell className="text-right font-mono text-muted-foreground">{(item.gr_wt / 1000).toFixed(3)}</TableCell>
-        <TableCell className="text-right font-mono">{(item.fine / 1000).toFixed(3)}</TableCell>
-        <TableCell className="text-right font-mono">{formatIndianCurrency(item.labor || 0)}</TableCell>
+        <TableCell className="text-right font-mono text-muted-foreground hidden sm:table-cell">{(item.gr_wt / 1000).toFixed(3)}</TableCell>
+        <TableCell className="text-right font-mono hidden sm:table-cell">{(item.fine / 1000).toFixed(3)}</TableCell>
+        <TableCell className="text-right font-mono hidden md:table-cell">{formatIndianCurrency(item.labor || 0)}</TableCell>
       </TableRow>
 
       {/* Expanded member rows */}
