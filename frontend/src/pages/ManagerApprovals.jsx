@@ -193,26 +193,24 @@ export default function ManagerApprovals() {
               {selectedEntry === entry.stamp && approvalDetails && (
                 <CardContent>
                   <div className="bg-muted/30 p-4 rounded-lg space-y-4">
-                    <p className="font-semibold">Book vs Entered Comparison</p>
+                    <p className="font-semibold">Book vs Entered Comparison{approvalDetails?.verification_date ? ` (as of ${approvalDetails.verification_date})` : ''}</p>
                     <div className="max-h-64 overflow-y-auto">
                       <Table>
                         <TableHeader>
                           <TableRow>
                             <TableHead>Item</TableHead>
-                            <TableHead className="text-right">Book</TableHead>
-                            <TableHead className="text-right">Entered</TableHead>
-                            <TableHead className="text-right">Diff</TableHead>
+                            <TableHead className="text-right">Book (kg)</TableHead>
+                            <TableHead className="text-right">Entered (kg)</TableHead>
+                            <TableHead className="text-right">Diff (kg)</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {approvalDetails.comparison?.map((item, i) => (
-                            <TableRow key={i} className={item.was_entered ? '' : 'opacity-40'}>
+                            <TableRow key={i} className={`${item.was_entered ? '' : 'opacity-40'} ${item.was_entered ? diffBg(item.difference || 0) : ''}`}>
                               <TableCell className="text-sm">{item.item_name}</TableCell>
                               <TableCell className="text-right font-mono text-sm">{(item.book_gross || 0).toFixed(3)}</TableCell>
                               <TableCell className="text-right font-mono text-sm">{(item.entered_gross || 0).toFixed(3)}</TableCell>
-                              <TableCell className={`text-right font-mono text-sm font-semibold ${
-                                Math.abs(item.difference || 0) < 0.05 ? 'text-green-600' : 'text-red-600'
-                              }`}>
+                              <TableCell className={`text-right font-mono text-sm font-semibold ${diffColor(item.difference || 0)}`}>
                                 {(item.difference || 0) >= 0 ? '+' : ''}{(item.difference || 0).toFixed(3)}
                               </TableCell>
                             </TableRow>
@@ -221,9 +219,7 @@ export default function ManagerApprovals() {
                             <TableCell className="font-bold">TOTAL</TableCell>
                             <TableCell className="text-right font-mono font-bold">{(approvalDetails?.total_book || 0).toFixed(3)} kg</TableCell>
                             <TableCell className="text-right font-mono font-bold">{(approvalDetails?.total_entered || 0).toFixed(3)} kg</TableCell>
-                            <TableCell className={`text-right font-mono font-bold text-lg ${
-                              Math.abs(approvalDetails?.total_difference || 0) < 0.05 ? 'text-green-600' : 'text-red-600'
-                            }`}>
+                            <TableCell className={`text-right font-mono font-bold text-lg ${diffColor(approvalDetails?.total_difference || 0)}`}>
                               {((approvalDetails?.total_difference || 0) >= 0 ? '+' : '') + (approvalDetails?.total_difference || 0).toFixed(3)} kg
                             </TableCell>
                           </TableRow>
@@ -277,26 +273,24 @@ export default function ManagerApprovals() {
               {selectedEntry === entry.stamp && approvalDetails && (
                 <CardContent>
                   <div className="bg-muted/30 p-4 rounded-lg space-y-4">
-                    <p className="font-semibold">Book vs Entered Comparison</p>
+                    <p className="font-semibold">Book vs Entered Comparison{approvalDetails?.verification_date ? ` (as of ${approvalDetails.verification_date})` : ''}</p>
                     <div className="max-h-64 overflow-y-auto">
                       <Table>
                         <TableHeader>
                           <TableRow>
                             <TableHead>Item</TableHead>
-                            <TableHead className="text-right">Book</TableHead>
-                            <TableHead className="text-right">Entered</TableHead>
-                            <TableHead className="text-right">Diff</TableHead>
+                            <TableHead className="text-right">Book (kg)</TableHead>
+                            <TableHead className="text-right">Entered (kg)</TableHead>
+                            <TableHead className="text-right">Diff (kg)</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {approvalDetails.comparison?.map((item, i) => (
-                            <TableRow key={i} className={item.was_entered ? '' : 'opacity-40'}>
+                            <TableRow key={i} className={`${item.was_entered ? '' : 'opacity-40'} ${item.was_entered ? diffBg(item.difference || 0) : ''}`}>
                               <TableCell className="text-sm">{item.item_name}</TableCell>
                               <TableCell className="text-right font-mono text-sm">{(item.book_gross || 0).toFixed(3)}</TableCell>
                               <TableCell className="text-right font-mono text-sm">{(item.entered_gross || 0).toFixed(3)}</TableCell>
-                              <TableCell className={`text-right font-mono text-sm font-semibold ${
-                                Math.abs(item.difference || 0) < 0.05 ? 'text-green-600' : 'text-red-600'
-                              }`}>
+                              <TableCell className={`text-right font-mono text-sm font-semibold ${diffColor(item.difference || 0)}`}>
                                 {(item.difference || 0) >= 0 ? '+' : ''}{(item.difference || 0).toFixed(3)}
                               </TableCell>
                             </TableRow>
@@ -305,9 +299,7 @@ export default function ManagerApprovals() {
                             <TableCell className="font-bold">TOTAL</TableCell>
                             <TableCell className="text-right font-mono font-bold">{(approvalDetails?.total_book || 0).toFixed(3)} kg</TableCell>
                             <TableCell className="text-right font-mono font-bold">{(approvalDetails?.total_entered || 0).toFixed(3)} kg</TableCell>
-                            <TableCell className={`text-right font-mono font-bold text-lg ${
-                              Math.abs(approvalDetails?.total_difference || 0) < 0.05 ? 'text-green-600' : 'text-red-600'
-                            }`}>
+                            <TableCell className={`text-right font-mono font-bold text-lg ${diffColor(approvalDetails?.total_difference || 0)}`}>
                               {((approvalDetails?.total_difference || 0) >= 0 ? '+' : '') + (approvalDetails?.total_difference || 0).toFixed(3)} kg
                             </TableCell>
                           </TableRow>
