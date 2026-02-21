@@ -299,7 +299,7 @@ def parse_excel_file(file_content, file_type: str) -> List[Dict]:
                     continue
                 if 'total' in item_name.lower():
                     continue
-                if item_name.isdigit() and len(item_name) <= 2:
+                if item_name.isdigit():
                     continue
 
                 trans_type = _safe_str(r.get(type_col) if type_col else None).upper()
