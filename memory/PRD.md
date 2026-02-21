@@ -140,6 +140,23 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 - ExecutiveStockEntry.jsx: responsive form layout
 - Specific table columns hidden on mobile with `hidden sm:table-cell`
 
+## Labour Profit Calculation Fix v2 (Feb 21, 2026)
+- **Root cause**: `labor` field in transactions stored 0 for some uploads (depends on Excel column names)
+- **Fix**: All profit endpoints now use `total_amount` as primary source for sale labour
+  - In silver trading, the "Total" column IS the labour Rs per line (silver settled by weight, not Rs)
+  - `total_amount` or `labor` — whichever is non-zero
+- **Purchase labour**: ALWAYS sourced from purchase_ledger's `labour_per_kg / 1000` (per gram)
+  - Individual purchase transactions often have labor=0
+  - Purchase ledger has cumulative accurate data
+- **Endpoints updated**: item-profit, customer-profit, supplier-profit, sales-summary, historical-profit (all views)
+- **Result**: Labour Profit now ₹38.84L (was -₹1.05L), 200/205 items with non-zero labour
+
+## Unmapped Items Cleanup (Feb 21, 2026)
+- Filtered purely numeric item names (e.g., "136") from unmapped items endpoint
+- Filtered test data patterns: TEST_SILVER_ITEM_*, Item X, Batch*
+- Branch transfer parsing already prevents new numeric items (isdigit() check)
+- Unmapped count reduced from 439 to 233 (test data removed)
+
 ## Backlog
 - (P1) Item Mapping: unmapped historical items need mapping
 - (P2) Refactor server.py into proper FastAPI structure (routes, services, models)
