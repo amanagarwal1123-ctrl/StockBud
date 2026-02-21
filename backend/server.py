@@ -4256,7 +4256,7 @@ async def get_historical_profit(
         {"$group": {
             "_id": "$item_name",
             "fine": {"$sum": "$fine"}, "net_wt": {"$sum": "$net_wt"},
-            "labor": {"$sum": "$labor"}, "gr_wt": {"$sum": "$gr_wt"}
+            "labor": {"$sum": "$labor"}, "total_amount": {"$sum": "$total_amount"}, "gr_wt": {"$sum": "$gr_wt"}
         }}
     ]).to_list(None)
 
@@ -4268,7 +4268,7 @@ async def get_historical_profit(
             purchase_basis[master] = {"fine": 0.0, "net_wt": 0.0, "labor": 0.0}
         purchase_basis[master]["fine"] += doc["fine"] or 0
         purchase_basis[master]["net_wt"] += doc["net_wt"] or 0
-        purchase_basis[master]["labor"] += doc["labor"] or 0
+        purchase_basis[master]["labor"] += (doc.get("total_amount") or doc.get("labor") or 0)
     del purchase_agg
 
     # Compute avg tunch and labor/g per master item
