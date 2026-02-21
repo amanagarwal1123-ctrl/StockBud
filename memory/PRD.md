@@ -111,9 +111,10 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
   - Green = match within 20g (0.020 kg)
   - Blue = stock increased (entered > expected)
   - Red = stock decreased (entered < expected)
+- Admin/Manager can **edit verification date** on any entry (pending or approved) via pencil icon
+  - PUT `/api/manager/update-verification-date/{stamp}` — updates date and recalculates book values
 - When admin deletes transactions, expected stock auto-recalculates (computed on-the-fly)
-- Verification date displayed in My Entries badges and Approvals cards
-- Date editable by admin/manager on subsequent iterations
+- Mobile-optimized layout: stacked cards, wrapped badges, compact table with truncation
 
 ## Backlog
 - (P1) Item Mapping: unmapped historical items need mapping
