@@ -4466,7 +4466,7 @@ async def get_historical_profit(
             {"$group": {
                 "_id": {"month": "$month_key", "item": "$item_name"},
                 "fine": {"$sum": "$fine"}, "net_wt": {"$sum": "$net_wt"},
-                "labor": {"$sum": "$labor"}, "count": {"$sum": 1}
+                "labor": {"$sum": "$labor"}, "total_amount": {"$sum": "$total_amount"}, "count": {"$sum": 1}
             }}
         ]).to_list(None)
 
@@ -4481,7 +4481,7 @@ async def get_historical_profit(
                 month_profit[mk]["wt"] += nw / 1000
                 continue
             s_tunch = (doc["fine"] / nw) * 100 if (doc["fine"] or 0) > 0 else 0
-            s_lpg = (doc.get("labor") or 0) / nw
+            s_lpg = (doc.get("total_amount") or doc.get("labor") or 0) / nw
             month_profit[mk]["silver"] += (s_tunch - basis["avg_tunch"]) * nw / 100 / 1000
             month_profit[mk]["labor"] += (s_lpg - basis["labor_per_gram"]) * nw
             month_profit[mk]["wt"] += nw / 1000
