@@ -16,6 +16,7 @@ const API = `${BACKEND_URL}/api`;
 
 export default function ExecutiveStockEntry() {
   const [selectedStamp, setSelectedStamp] = useState('');
+  const [verificationDate, setVerificationDate] = useState(new Date().toISOString().slice(0, 10));
   const [stampItems, setStampItems] = useState([]);
   const [stockData, setStockData] = useState({});
   const [loading, setLoading] = useState(false);
