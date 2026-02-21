@@ -37,6 +37,8 @@ export default function PurchaseRates() {
     item.item_name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const { sortedData: sortedLedger, sortConfig: ledgerSortConfig, requestSort: ledgerRequestSort } = useSortableData(filteredLedger, 'item_name', 'asc');
+
   const handleExport = () => {
     const exportData = filteredLedger.map(item => ({
       'Item Name': item.item_name,
