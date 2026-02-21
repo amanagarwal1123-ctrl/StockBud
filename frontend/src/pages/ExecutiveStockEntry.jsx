@@ -118,14 +118,16 @@ export default function ExecutiveStockEntry() {
       if (editingEntry) {
         await axios.put(`${API}/executive/update-entry/${selectedStamp}`, {
           entries,
-          entered_by: user.username
+          entered_by: user.username,
+          verification_date: verificationDate
         });
         toast.success('Entry updated and resubmitted!');
       } else {
         await axios.post(`${API}/executive/stock-entry`, {
           stamp: selectedStamp,
           entries,
-          entered_by: user.username
+          entered_by: user.username,
+          verification_date: verificationDate
         });
         toast.success('Sent for approval!');
       }
