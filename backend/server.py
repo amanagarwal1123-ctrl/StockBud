@@ -2595,7 +2595,7 @@ async def get_customer_profit(
         
         txn_tunch = float(txn.get('tunch', 0) or 0)
         txn_net_wt = txn.get('net_wt', 0)
-        txn_total = txn.get('labor', 0)  # 'labor' field holds the Total Rs amount
+        txn_total = txn.get('total_amount', 0) or txn.get('labor', 0)  # Total Rs (labour charges)
         is_return = txn['type'] == 'sale_return'
         
         # Get purchase cost from GROUP-AWARE ledger
@@ -3090,7 +3090,7 @@ async def get_sales_summary(
     # Sum including negative values (SR rows are already negative)
     total_net_wt = sum(t.get('net_wt', 0) for t in sales_transactions)
     total_fine_wt = sum(t.get('fine', 0) for t in sales_transactions)
-    total_labor = sum(t.get('labor', 0) for t in sales_transactions)
+    total_labor = sum((t.get('total_amount', 0) or t.get('labor', 0)) for t in sales_transactions)
     total_sales_value = sum(t.get('total_amount', 0) for t in sales_transactions)
     
     return {
@@ -3218,24 +3218,26 @@ async def calculate_profit(
         avg_purchase_tunch = sum(p['tunch'] * abs(p['net_wt']) for p in purchases) / sum(abs(p['net_wt']) for p in purchases) if purchases else 0
         avg_sale_tunch = sum(s['tunch'] * abs(s['net_wt']) for s in sales) / sum(abs(s['net_wt']) for s in sales) if sales else 0
         
-        # Labour per kg calculation
-        # Purchase ledger has labour_per_kg (per kilogram)
-        # Sales have labor (total) and net_wt (in grams)
-        # Need to calculate both in same unit (per gram)
-        
-        # Purchase: total labour / total grams (same unit as sale)
-        purchase_labour_per_gram = sum(abs(p['labor']) for p in purchases) / sum(abs(p['net_wt']) for p in purchases) if purchases else 0
-        
-        # Sale: total labour / total grams
-        sale_labour_per_gram = sum(abs(s['labor']) for s in sales) / sum(abs(s['net_wt']) for s in sales) if sales else 0
-        
-        # USER'S FORMULA:
         # 1. Silver Profit (kg) = (sale tunch - purchase tunch) * sale net weight / 100
         silver_profit_grams = (avg_sale_tunch - avg_purchase_tunch) * total_sale_wt / 100
         silver_profit_kg = silver_profit_grams / 1000  # Convert to kg
         
-        # 2. Labour Profit (INR) = (sale labour per gram - purchase labour per gram) * sale net weight (grams)
-        labor_profit_inr = (sale_labour_per_gram - purchase_labour_per_gram) * total_sale_wt
+        # 2. Labour Profit (INR)
+        # In silver trading, 'total_amount' (the "Total" column) IS the labour Rs per line
+        # Sale labour = sum of total_amount across all sale transactions for this item
+        total_sale_labour = sum(abs(s.get('total_amount', 0) or s.get('labor', 0)) for s in sales)
+        
+        # Purchase labour cost: ALWAYS prefer purchase ledger (individual txns often have labor=0)
+        ledger_item = grp_ledger.get(item_name)
+        if ledger_item and ledger_item.get('labour_per_kg', 0) > 0:
+            purchase_labour_per_gram = ledger_item['labour_per_kg'] / 1000
+        elif purchases and sum(abs(p['net_wt']) for p in purchases) > 0:
+            purchase_labour_per_gram = sum(abs(p.get('total_amount', 0) or p.get('labor', 0)) for p in purchases) / sum(abs(p['net_wt']) for p in purchases)
+        else:
+            purchase_labour_per_gram = 0
+        
+        # Labour profit = total sale labour income - purchase labour cost for sold quantity
+        labor_profit_inr = total_sale_labour - (purchase_labour_per_gram * abs(total_sale_wt))
         
         total_silver_profit_kg += silver_profit_kg
         total_labor_profit_inr += labor_profit_inr
