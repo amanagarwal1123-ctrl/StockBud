@@ -284,13 +284,13 @@ export default function CurrentStock() {
                         <TableCell className="text-right font-mono font-bold text-primary text-lg">
                           {(filteredTotals.net_wt / 1000).toFixed(3)} kg
                         </TableCell>
-                        <TableCell className="text-right font-mono font-bold text-muted-foreground">
+                        <TableCell className="text-right font-mono font-bold text-muted-foreground hidden sm:table-cell">
                           {(filteredTotals.gr_wt / 1000).toFixed(3)} kg
                         </TableCell>
-                        <TableCell className="text-right font-mono font-bold">
+                        <TableCell className="text-right font-mono font-bold hidden sm:table-cell">
                           {(filteredTotals.fine / 1000).toFixed(3)} kg
                         </TableCell>
-                        <TableCell className="text-right font-mono font-bold text-green-600">
+                        <TableCell className="text-right font-mono font-bold text-green-600 hidden md:table-cell">
                           {formatIndianCurrency(filteredTotals.labor)}
                         </TableCell>
                       </TableRow>
