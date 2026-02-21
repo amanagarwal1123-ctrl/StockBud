@@ -286,26 +286,43 @@ export default function ExecutiveStockEntry() {
         </Card>
       )}
 
-      {/* Stamp Selector */}
+      {/* Date & Stamp Selector */}
       <Card className="border-primary/20">
         <CardHeader>
-          <CardTitle>Select Stamp</CardTitle>
-          <CardDescription>Choose warehouse location to count</CardDescription>
+          <CardTitle>Verification Details</CardTitle>
+          <CardDescription>Select the date and stamp for stock verification</CardDescription>
         </CardHeader>
         <CardContent>
-          <Select value={selectedStamp} onValueChange={handleStampChange} disabled={editingEntry !== null}>
-            <SelectTrigger className="w-full md:w-64">
-              <SelectValue placeholder="Choose stamp..." />
-            </SelectTrigger>
-            <SelectContent>
-              {stamps.map(stamp => (
-                <SelectItem key={stamp} value={stamp}>{stamp}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {editingEntry && (
-            <p className="text-xs text-orange-600 mt-2">✏️ Editing {selectedStamp} - Stamp locked</p>
-          )}
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1">
+              <Label className="text-sm font-medium mb-1.5 block">Verification Date</Label>
+              <Input
+                type="date"
+                value={verificationDate}
+                onChange={(e) => setVerificationDate(e.target.value)}
+                disabled={editingEntry !== null}
+                className="w-full sm:w-48"
+                data-testid="verification-date-input"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Date for which stock is being counted</p>
+            </div>
+            <div className="flex-1">
+              <Label className="text-sm font-medium mb-1.5 block">Stamp</Label>
+              <Select value={selectedStamp} onValueChange={handleStampChange} disabled={editingEntry !== null}>
+                <SelectTrigger className="w-full sm:w-64" data-testid="stamp-select">
+                  <SelectValue placeholder="Choose stamp..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {stamps.map(stamp => (
+                    <SelectItem key={stamp} value={stamp}>{stamp}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {editingEntry && (
+                <p className="text-xs text-orange-600 mt-1">Editing {selectedStamp} — stamp locked</p>
+              )}
+            </div>
+          </div>
         </CardContent>
       </Card>
 
