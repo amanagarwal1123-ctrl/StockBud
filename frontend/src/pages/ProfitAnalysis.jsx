@@ -69,9 +69,10 @@ export default function ProfitAnalysis() {
   if (loading) return <div className="flex items-center justify-center h-screen"><div className="text-muted-foreground">Loading...</div></div>;
 
   const allItems = profitData?.all_items || [];
+  const { sortedData: sortedItems, sortConfig, requestSort } = useSortableData(allItems, 'silver_profit_kg', 'desc');
   const startIdx = (currentPage - 1) * itemsPerPage;
-  const paginatedItems = allItems.slice(startIdx, startIdx + itemsPerPage);
-  const totalPages = Math.ceil(allItems.length / itemsPerPage);
+  const paginatedItems = sortedItems.slice(startIdx, startIdx + itemsPerPage);
+  const totalPages = Math.ceil(sortedItems.length / itemsPerPage);
 
   return (
     <div className="p-3 sm:p-6 md:p-8 space-y-4 sm:space-y-6" data-testid="profit-page">
