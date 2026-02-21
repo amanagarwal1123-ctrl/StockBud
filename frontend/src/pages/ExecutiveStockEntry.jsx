@@ -145,6 +145,7 @@ export default function ExecutiveStockEntry() {
   const editEntry = (entry) => {
     setEditingEntry(entry);
     setSelectedStamp(entry.stamp);
+    setVerificationDate(entry.verification_date || entry.entry_day || new Date().toISOString().slice(0, 10));
     
     axios.get(`${API}/master-items`).then(response => {
       const items = response.data.filter(item => item.stamp === entry.stamp);
