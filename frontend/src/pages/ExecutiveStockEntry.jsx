@@ -350,20 +350,18 @@ export default function ExecutiveStockEntry() {
             {loading ? (
               <div className="text-center py-8 text-muted-foreground">Loading items...</div>
             ) : (
-              <div className="space-y-3 max-h-96 overflow-y-auto">
+              <div className="space-y-2 max-h-96 overflow-y-auto">
                 {stampItems.map((item, idx) => (
-                  <div key={idx} className="grid grid-cols-2 gap-3 items-center p-3 border rounded-lg">
-                    <div>
-                      <p className="font-medium text-sm">{item.item_name}</p>
-                    </div>
-                    <div>
-                      <Label className="text-xs">Gross Weight (kg) *</Label>
+                  <div key={idx} className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3 p-2 sm:p-3 border rounded-lg">
+                    <p className="font-medium text-xs sm:text-sm flex-1 min-w-0 truncate">{item.item_name}</p>
+                    <div className="w-full sm:w-40">
                       <Input
                         type="number"
                         step="0.001"
-                        placeholder="0.000"
+                        placeholder="Gross Wt (kg)"
                         value={stockData[item.item_name]?.gross || ''}
                         onChange={(e) => setStockData({...stockData, [item.item_name]: { gross: e.target.value }})}
+                        className="h-8 text-xs sm:text-sm"
                       />
                     </div>
                   </div>
