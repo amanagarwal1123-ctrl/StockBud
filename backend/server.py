@@ -4377,24 +4377,26 @@ async def get_historical_profit(
             {"$group": {
                 "_id": "$item_name",
                 "fine": {"$sum": "$fine"}, "net_wt": {"$sum": "$net_wt"},
-                "labor": {"$sum": "$labor"}
+                "labor": {"$sum": "$labor"}, "total_amount": {"$sum": "$total_amount"}
             }}
         ]).to_list(None)
 
         # Merge sale averages by master item
         item_sale_avg = {}
-        sale_merged = defaultdict(lambda: {"fine": 0.0, "net_wt": 0.0, "labor": 0.0})
+        sale_merged = defaultdict(lambda: {"fine": 0.0, "net_wt": 0.0, "labor": 0.0, "total_amount": 0.0})
         for doc in sale_avg_agg:
             master = resolve(doc["_id"])
             sale_merged[master]["fine"] += doc["fine"] or 0
             sale_merged[master]["net_wt"] += doc["net_wt"] or 0
             sale_merged[master]["labor"] += doc["labor"] or 0
+            sale_merged[master]["total_amount"] += doc.get("total_amount") or 0
         for master, sa in sale_merged.items():
             snw = sa["net_wt"]
             if snw > 0.001:
+                labour_total = sa.get("total_amount") or sa.get("labor") or 0
                 item_sale_avg[master] = {
                     "avg_tunch": (sa["fine"] / snw) * 100 if sa["fine"] > 0 else 0,
-                    "labor_per_gram": sa["labor"] / snw,
+                    "labor_per_gram": labour_total / snw,
                 }
 
         # Calculate per-supplier profit
