@@ -102,6 +102,19 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 - **Result:** 0 negative items, correct Fine/Labour, correct per-stamp weights
 - **Item Groups:** TULSI 70 -264 [+BELT], SNT 40-256 [+PREMIUM], KADA-AS 70 [+FANCY], SLG 70 BICCHIYA-255 [+MICRO], BARTAN-040 [+LOTA]
 
+## Date-Based Stock Verification (Feb 20, 2026)
+- SEE selects a **verification date** when entering stock (defaults to today)
+- System calculates **expected closing stock** as of that date:
+  - Opening stock + all purchases/receives up to that date - all sales/issues up to that date
+- `get_stamp_closing_stock(stamp, as_of_date)` in stock_service.py handles this calculation
+- **Approvals** page shows comparison with color coding:
+  - Green = match within 20g (0.020 kg)
+  - Blue = stock increased (entered > expected)
+  - Red = stock decreased (entered < expected)
+- When admin deletes transactions, expected stock auto-recalculates (computed on-the-fly)
+- Verification date displayed in My Entries badges and Approvals cards
+- Date editable by admin/manager on subsequent iterations
+
 ## Backlog
 - (P1) Item Mapping: unmapped historical items need mapping
 - (P2) Refactor server.py into proper FastAPI structure (routes, services, models)
