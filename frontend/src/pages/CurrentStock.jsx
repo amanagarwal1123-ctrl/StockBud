@@ -466,13 +466,13 @@ function GroupRow({ item, idx, hasMembers, isExpanded, onToggle, onNavigate }) {
           <TableCell className={`text-right font-mono text-sm ${m.net_wt < 0 ? 'text-destructive' : ''}`}>
             {(m.net_wt / 1000).toFixed(3)}
           </TableCell>
-          <TableCell className={`text-right font-mono text-sm text-muted-foreground ${m.gr_wt < 0 ? 'text-destructive' : ''}`}>
+          <TableCell className={`text-right font-mono text-sm text-muted-foreground hidden sm:table-cell ${m.gr_wt < 0 ? 'text-destructive' : ''}`}>
             {(m.gr_wt / 1000).toFixed(3)}
           </TableCell>
-          <TableCell className={`text-right font-mono text-sm ${m.fine < 0 ? 'text-destructive' : ''}`}>
+          <TableCell className={`text-right font-mono text-sm hidden sm:table-cell ${m.fine < 0 ? 'text-destructive' : ''}`}>
             {(m.fine / 1000).toFixed(3)}
           </TableCell>
-          <TableCell className={`text-right font-mono text-sm ${m.labor < 0 ? 'text-destructive' : ''}`}>
+          <TableCell className={`text-right font-mono text-sm hidden md:table-cell ${m.labor < 0 ? 'text-destructive' : ''}`}>
             {formatIndianCurrency(m.labor || 0)}
           </TableCell>
         </TableRow>
