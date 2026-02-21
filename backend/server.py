@@ -4304,7 +4304,7 @@ async def get_historical_profit(
             if not basis or nw < 0.001:
                 continue
             s_tunch = (doc["fine"] / nw) * 100 if (doc["fine"] or 0) > 0 else 0
-            s_lpg = (doc["labor"] or 0) / nw
+            s_lpg = (doc.get("total_amount") or doc.get("labor") or 0) / nw
             silver_kg += (s_tunch - basis["avg_tunch"]) * nw / 100 / 1000
             labor_inr += (s_lpg - basis["labor_per_gram"]) * nw
             total_wt += nw / 1000
