@@ -23,347 +23,210 @@ export default function ProfitAnalysis() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
-  useEffect(() => {
-    fetchProfit();
-    fetchSalesSummary();
-  }, []);
+  useEffect(() => { fetchProfit(); fetchSalesSummary(); }, []);
 
   const fetchProfit = async (start = '', end = '') => {
     try {
       let url = `${API}/analytics/profit`;
-      if (start && end) {
-        url += `?start_date=${start}&end_date=${end}`;
-      }
+      if (start && end) url += `?start_date=${start}&end_date=${end}`;
       const response = await axios.get(url);
       setProfitData(response.data);
-    } catch (error) {
-      console.error('Error fetching profit:', error);
-    } finally {
-      setLoading(false);
-    }
+    } catch (error) { console.error('Error:', error); }
+    finally { setLoading(false); }
   };
 
   const fetchSalesSummary = async (start = '', end = '') => {
     try {
       let url = `${API}/analytics/sales-summary`;
-      if (start && end) {
-        url += `?start_date=${start}&end_date=${end}`;
-      }
+      if (start && end) url += `?start_date=${start}&end_date=${end}`;
       const response = await axios.get(url);
       setSalesSummary(response.data);
-    } catch (error) {
-      console.error('Error fetching sales summary:', error);
-    }
+    } catch (error) { console.error('Error:', error); }
   };
 
   const handleApplyDateRange = () => {
-    if (startDate && endDate) {
-      fetchProfit(startDate, endDate);
-      fetchSalesSummary(startDate, endDate);
-    }
+    if (startDate && endDate) { fetchProfit(startDate, endDate); fetchSalesSummary(startDate, endDate); }
   };
-
-  const handleClearDates = () => {
-    setStartDate('');
-    setEndDate('');
-    fetchProfit();
-    fetchSalesSummary();
-  };
-
+  const handleClearDates = () => { setStartDate(''); setEndDate(''); fetchProfit(); fetchSalesSummary(); };
   const setQuickRange = (days) => {
-    const end = new Date();
-    const start = new Date();
+    const end = new Date(); const start = new Date();
     start.setDate(start.getDate() - days);
-    
-    const startStr = start.toISOString().split('T')[0];
-    const endStr = end.toISOString().split('T')[0];
-    
-    setStartDate(startStr);
-    setEndDate(endStr);
-    fetchProfit(startStr, endStr);
-    fetchSalesSummary(startStr, endStr);
+    const s = start.toISOString().split('T')[0], e = end.toISOString().split('T')[0];
+    setStartDate(s); setEndDate(e); fetchProfit(s, e); fetchSalesSummary(s, e);
   };
 
   const handleExportProfit = () => {
     const exportData = (profitData?.all_items || []).map((item, idx) => ({
-      'Rank': idx + 1,
-      'Item Name': item.item_name,
-      'Net Weight Sold (kg)': item.net_wt_sold_kg,
-      'Avg Purchase Tunch (%)': item.avg_purchase_tunch,
-      'Avg Sale Tunch (%)': item.avg_sale_tunch,
-      'Silver Profit (kg)': item.silver_profit_kg,
-      'Labour Profit (₹)': item.labor_profit_inr
+      'Rank': idx + 1, 'Item Name': item.item_name, 'Net Weight Sold (kg)': item.net_wt_sold_kg,
+      'Avg Purchase Tunch (%)': item.avg_purchase_tunch, 'Avg Sale Tunch (%)': item.avg_sale_tunch,
+      'Silver Profit (kg)': item.silver_profit_kg, 'Labour Profit (₹)': item.labor_profit_inr
     }));
-    
-    const dateStr = startDate && endDate ? `_${startDate}_to_${endDate}` : '';
-    exportToCSV(exportData, `profit_analysis${dateStr}`);
+    exportToCSV(exportData, `profit_analysis${startDate && endDate ? `_${startDate}_to_${endDate}` : ''}`);
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-muted-foreground">Loading profit data...</div>
-      </div>
-    );
-  }
+  if (loading) return <div className="flex items-center justify-center h-screen"><div className="text-muted-foreground">Loading...</div></div>;
 
-  const allProfitableItems = profitData?.all_items || [];
+  const allItems = profitData?.all_items || [];
   const startIdx = (currentPage - 1) * itemsPerPage;
-  const endIdx = startIdx + itemsPerPage;
-  const paginatedItems = allProfitableItems.slice(startIdx, endIdx);
-  const totalPages = Math.ceil(allProfitableItems.length / itemsPerPage);
+  const paginatedItems = allItems.slice(startIdx, startIdx + itemsPerPage);
+  const totalPages = Math.ceil(allItems.length / itemsPerPage);
 
   return (
-    <div className="p-6 md:p-8 space-y-6" data-testid="profit-page">
+    <div className="p-3 sm:p-6 md:p-8 space-y-4 sm:space-y-6" data-testid="profit-page">
       <div>
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
-          Profit Analysis
-        </h1>
-        <p className="text-lg text-muted-foreground mt-2">
-          Silver trading profit based on tunch difference and labour margins
-        </p>
+        <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight">Profit Analysis</h1>
+        <p className="text-xs sm:text-base md:text-lg text-muted-foreground mt-1">Silver trading profit based on tunch &amp; labour</p>
       </div>
 
-      {/* Date Range Selector */}
+      {/* Date Range */}
       <Card className="border-border/40 shadow-sm">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Calendar className="h-5 w-5 text-primary" />
-            Date Range Filter
+        <CardHeader className="p-3 sm:p-6 pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm sm:text-lg">
+            <Calendar className="h-4 w-4 text-primary" />Date Range
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex flex-col md:flex-row gap-4 items-end">
-            <div className="flex-1">
-              <Label htmlFor="start-date" className="text-sm font-medium mb-2">From Date</Label>
-              <Input
-                id="start-date"
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="font-mono"
-              />
+        <CardContent className="p-3 sm:p-6 pt-0">
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 sm:items-end">
+            <div className="flex gap-2 flex-1">
+              <div className="flex-1">
+                <Label className="text-xs">From</Label>
+                <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="font-mono text-xs h-8 sm:h-9" />
+              </div>
+              <div className="flex-1">
+                <Label className="text-xs">To</Label>
+                <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="font-mono text-xs h-8 sm:h-9" />
+              </div>
             </div>
-            <div className="flex-1">
-              <Label htmlFor="end-date" className="text-sm font-medium mb-2">To Date</Label>
-              <Input
-                id="end-date"
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="font-mono"
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button onClick={handleApplyDateRange} disabled={!startDate || !endDate}>
-                Apply
-              </Button>
-              <Button onClick={handleClearDates} variant="outline">
-                Clear
-              </Button>
+            <div className="flex gap-1.5">
+              <Button onClick={handleApplyDateRange} disabled={!startDate || !endDate} size="sm" className="h-8 text-xs">Apply</Button>
+              <Button onClick={handleClearDates} variant="outline" size="sm" className="h-8 text-xs">Clear</Button>
             </div>
           </div>
-          
-          {/* Quick Range Buttons */}
-          <div className="flex flex-wrap gap-2 mt-4">
-            <Button onClick={() => setQuickRange(7)} variant="secondary" size="sm">
-              Last 7 Days
-            </Button>
-            <Button onClick={() => setQuickRange(30)} variant="secondary" size="sm">
-              Last 30 Days
-            </Button>
-            <Button onClick={() => setQuickRange(90)} variant="secondary" size="sm">
-              Last 3 Months
-            </Button>
-            <Button onClick={() => setQuickRange(365)} variant="secondary" size="sm">
-              Last Year
-            </Button>
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {[7, 30, 90, 365].map(d => (
+              <Button key={d} onClick={() => setQuickRange(d)} variant="secondary" size="sm" className="h-6 text-[10px] sm:text-xs sm:h-7">
+                {d < 365 ? `${d}d` : '1yr'}
+              </Button>
+            ))}
           </div>
         </CardContent>
       </Card>
 
-      {/* Profit Cards */}
-      <div className="grid gap-6 md:grid-cols-4">
+      {/* Summary Cards */}
+      <div className="grid gap-3 sm:gap-6 grid-cols-2 md:grid-cols-4">
         <Card className="border-border/40 shadow-sm bg-gradient-to-br from-green-500/10 to-transparent">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <Package className="h-4 w-4 text-green-600" />
-              Silver Profit
+          <CardHeader className="p-2 sm:p-4 pb-1">
+            <CardTitle className="text-[10px] sm:text-sm font-medium text-muted-foreground flex items-center gap-1">
+              <Package className="h-3 w-3 sm:h-4 sm:w-4 text-green-600" />Silver Profit
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold font-mono text-green-600">
+          <CardContent className="p-2 sm:p-4 pt-0">
+            <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono text-green-600">
               {profitData?.silver_profit_kg?.toLocaleString() || 0} kg
             </div>
-            <p className="text-xs text-muted-foreground mt-1">Difference in tunch/purity</p>
           </CardContent>
         </Card>
-
         <Card className="border-border/40 shadow-sm bg-gradient-to-br from-blue-500/10 to-transparent">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-blue-600" />
-              Labour Profit
+          <CardHeader className="p-2 sm:p-4 pb-1">
+            <CardTitle className="text-[10px] sm:text-sm font-medium text-muted-foreground flex items-center gap-1">
+              <DollarSign className="h-3 w-3 sm:h-4 sm:w-4 text-blue-600" />Labour Profit
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold font-mono text-blue-600">
+          <CardContent className="p-2 sm:p-4 pt-0">
+            <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono text-blue-600">
               {formatIndianCurrency(profitData?.labor_profit_inr || 0)}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">Labour margin difference</p>
           </CardContent>
         </Card>
-
         <Card className="border-border/40 shadow-sm bg-gradient-to-br from-accent/10 to-transparent">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <ShoppingCart className="h-4 w-4 text-accent" />
-              Total Sales
+          <CardHeader className="p-2 sm:p-4 pb-1">
+            <CardTitle className="text-[10px] sm:text-sm font-medium text-muted-foreground flex items-center gap-1">
+              <ShoppingCart className="h-3 w-3 sm:h-4 sm:w-4 text-accent" />Total Sales
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-2 sm:p-4 pt-0">
             {salesSummary ? (
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-muted-foreground">Net Wt:</span>
-                  <span className="text-lg font-bold font-mono text-green-600">
-                    {salesSummary.total_net_wt_kg} kg
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-muted-foreground">Fine:</span>
-                  <span className="text-lg font-bold font-mono text-blue-600">
-                    {salesSummary.total_fine_wt_kg} kg
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-muted-foreground">Labour:</span>
-                  <span className="text-lg font-bold font-mono text-purple-600">
-                    {formatIndianCurrency(salesSummary.total_labor)}
-                  </span>
-                </div>
+              <div className="space-y-0.5">
+                <div className="flex justify-between"><span className="text-[10px] text-muted-foreground">Net:</span><span className="text-xs sm:text-sm font-bold font-mono text-green-600">{salesSummary.total_net_wt_kg} kg</span></div>
+                <div className="flex justify-between"><span className="text-[10px] text-muted-foreground">Fine:</span><span className="text-xs sm:text-sm font-bold font-mono text-blue-600">{salesSummary.total_fine_wt_kg} kg</span></div>
+                <div className="flex justify-between"><span className="text-[10px] text-muted-foreground">Labour:</span><span className="text-xs sm:text-sm font-bold font-mono text-purple-600">{formatIndianCurrency(salesSummary.total_labor)}</span></div>
               </div>
             ) : (
-              <div className="text-3xl font-bold font-mono text-accent">
-                {formatIndianCurrency(profitData?.total_sales_value || 0)}
-              </div>
+              <div className="text-lg sm:text-3xl font-bold font-mono text-accent">{formatIndianCurrency(profitData?.total_sales_value || 0)}</div>
             )}
           </CardContent>
         </Card>
-
         <Card className="border-border/40 shadow-sm">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <TrendingUp className="h-4 w-4" />
-              Items Analyzed
+          <CardHeader className="p-2 sm:p-4 pb-1">
+            <CardTitle className="text-[10px] sm:text-sm font-medium text-muted-foreground flex items-center gap-1">
+              <TrendingUp className="h-3 w-3 sm:h-4 sm:w-4" />Items
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold font-mono">
-              {profitData?.total_items_analyzed || 0}
-            </div>
+          <CardContent className="p-2 sm:p-4 pt-0">
+            <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono">{profitData?.total_items_analyzed || 0}</div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Top Profitable Items */}
+      {/* Item Profit Table */}
       <Card className="border-border/40 shadow-sm">
-        <CardHeader>
-          <div className="flex items-center justify-between">
+        <CardHeader className="p-3 sm:p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
-              <CardTitle>Most Profitable Items</CardTitle>
-              <CardDescription>Items generating the highest profit margin</CardDescription>
+              <CardTitle className="text-sm sm:text-base">Most Profitable Items</CardTitle>
+              <CardDescription className="text-xs">Items generating the highest profit margin</CardDescription>
             </div>
-            <Button onClick={handleExportProfit} variant="outline" size="sm">
-              <Download className="h-4 w-4 mr-2" />
-              Export CSV
+            <Button onClick={handleExportProfit} variant="outline" size="sm" className="h-7 text-xs self-start">
+              <Download className="h-3 w-3 mr-1" />Export
             </Button>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-2 sm:p-6 pt-0">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Rank</TableHead>
-                  <TableHead>Item Name</TableHead>
-                  <TableHead className="text-right font-mono">Net Wt Sold (kg)</TableHead>
-                  <TableHead className="text-right">Avg Purchase Tunch</TableHead>
-                  <TableHead className="text-right">Avg Sale Tunch</TableHead>
-                  <TableHead className="text-right font-mono">Silver Profit (kg)</TableHead>
-                  <TableHead className="text-right font-mono">Labour Profit (₹)</TableHead>
+                  <TableHead className="text-xs w-8">#</TableHead>
+                  <TableHead className="text-xs">Item</TableHead>
+                  <TableHead className="text-right text-xs hidden sm:table-cell">Sold (kg)</TableHead>
+                  <TableHead className="text-right text-xs hidden md:table-cell">Buy Tunch</TableHead>
+                  <TableHead className="text-right text-xs hidden md:table-cell">Sell Tunch</TableHead>
+                  <TableHead className="text-right text-xs">Silver</TableHead>
+                  <TableHead className="text-right text-xs">Labour</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedItems.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                      No profit data available
-                    </TableCell>
+                {paginatedItems.map((item, idx) => (
+                  <TableRow key={idx}>
+                    <TableCell className="text-xs py-1.5 text-muted-foreground">{startIdx + idx + 1}</TableCell>
+                    <TableCell className="text-xs py-1.5 font-medium max-w-[100px] sm:max-w-none truncate">{item.item_name}</TableCell>
+                    <TableCell className="text-right font-mono text-xs py-1.5 hidden sm:table-cell">{item.net_wt_sold_kg}</TableCell>
+                    <TableCell className="text-right font-mono text-xs py-1.5 hidden md:table-cell">{item.avg_purchase_tunch}%</TableCell>
+                    <TableCell className="text-right font-mono text-xs py-1.5 hidden md:table-cell">{item.avg_sale_tunch}%</TableCell>
+                    <TableCell className="text-right font-mono text-xs py-1.5 text-green-600 font-semibold">{item.silver_profit_kg} kg</TableCell>
+                    <TableCell className="text-right font-mono text-xs py-1.5 text-blue-600 font-semibold">{formatIndianCurrency(item.labor_profit_inr)}</TableCell>
                   </TableRow>
-                ) : (
-                  paginatedItems.map((item, idx) => {
-                    const actualRank = startIdx + idx + 1;
-                    return (
-                      <TableRow key={idx} className="table-row">
-                        <TableCell>
-                          <Badge variant="outline" className="font-mono">#{actualRank}</Badge>
-                        </TableCell>
-                        <TableCell className="font-medium">{item.item_name}</TableCell>
-                        <TableCell className="text-right font-mono">{item.net_wt_sold_kg}</TableCell>
-                        <TableCell className="text-right font-mono">{item.avg_purchase_tunch}%</TableCell>
-                        <TableCell className="text-right font-mono">{item.avg_sale_tunch}%</TableCell>
-                        <TableCell className="text-right font-mono text-green-600 font-semibold">
-                          {item.silver_profit_kg} kg
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-blue-600 font-semibold">
-                          {formatIndianCurrency(item.labor_profit_inr)}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
+                ))}
               </TableBody>
             </Table>
           </div>
 
-          {/* Pagination Controls */}
-          {allProfitableItems.length > 10 && (
-            <div className="flex items-center justify-between mt-4 pt-4 border-t">
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Items per page:</span>
-                <Select value={String(itemsPerPage)} onValueChange={(val) => { setItemsPerPage(Number(val)); setCurrentPage(1); }}>
-                  <SelectTrigger className="w-20">
-                    <SelectValue />
-                  </SelectTrigger>
+          {/* Pagination */}
+          {allItems.length > 10 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between mt-3 pt-3 border-t gap-2">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-muted-foreground">Per page:</span>
+                <Select value={String(itemsPerPage)} onValueChange={(v) => { setItemsPerPage(Number(v)); setCurrentPage(1); }}>
+                  <SelectTrigger className="w-16 h-7 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="10">10</SelectItem>
-                    <SelectItem value="20">20</SelectItem>
-                    <SelectItem value="30">30</SelectItem>
+                    {[10, 20, 30].map(n => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-              
-              <div className="flex items-center gap-2">
-                <Button
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                  variant="outline"
-                  size="sm"
-                >
-                  Previous
-                </Button>
-                <span className="text-sm text-muted-foreground">
-                  Page {currentPage} of {totalPages} ({allProfitableItems.length} total)
-                </span>
-                <Button
-                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages}
-                  variant="outline"
-                  size="sm"
-                >
-                  Next
-                </Button>
+              <div className="flex items-center gap-1.5">
+                <Button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} variant="outline" size="sm" className="h-7 text-xs">Prev</Button>
+                <span className="text-xs text-muted-foreground">{currentPage}/{totalPages}</span>
+                <Button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} variant="outline" size="sm" className="h-7 text-xs">Next</Button>
               </div>
             </div>
           )}
