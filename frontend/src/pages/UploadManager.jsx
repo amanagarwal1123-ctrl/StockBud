@@ -121,10 +121,10 @@ export default function UploadManager() {
   };
 
   return (
-    <div className="p-6 md:p-8 space-y-6" data-testid="upload-page">
+    <div className="p-3 sm:p-6 md:p-8 space-y-6" data-testid="upload-page">
       <div>
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight" data-testid="upload-title">Upload Files</h1>
-        <p className="text-lg text-muted-foreground mt-2">Upload your purchase, sale, and physical inventory Excel files</p>
+        <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight" data-testid="upload-title">Upload Files</h1>
+        <p className="text-xs sm:text-base md:text-lg text-muted-foreground mt-2">Upload your purchase, sale, and physical inventory Excel files</p>
       </div>
 
       <Tabs defaultValue="transactions" className="space-y-6">
@@ -141,7 +141,7 @@ export default function UploadManager() {
           </div>
         </TabsContent>
         <TabsContent value="transactions" className="space-y-6">
-          <div className="grid gap-6 md:grid-cols-2">
+          <div className="grid gap-3 sm:gap-6 grid-cols-2 md:grid-cols-2">
             <FileUploadCard type="purchase" title="Purchase File" description="Upload your purchase transactions Excel file" />
             <FileUploadCard type="sale" title="Sale File" description="Upload your sale transactions Excel file" />
           </div>

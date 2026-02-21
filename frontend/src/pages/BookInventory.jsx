@@ -57,24 +57,24 @@ export default function BookInventory() {
   }
 
   return (
-    <div className="p-6 md:p-8 space-y-6" data-testid="book-inventory-page">
+    <div className="p-3 sm:p-6 md:p-8 space-y-6" data-testid="book-inventory-page">
       <div>
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight" data-testid="book-inventory-title">
+        <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight" data-testid="book-inventory-title">
           Book Inventory
         </h1>
-        <p className="text-lg text-muted-foreground mt-2">
+        <p className="text-xs sm:text-base md:text-lg text-muted-foreground mt-2">
           Calculated inventory based on purchases and sales
         </p>
       </div>
 
       {/* Stats */}
-      <div className="grid gap-6 md:grid-cols-3">
+      <div className="grid gap-3 sm:gap-6 grid-cols-2 md:grid-cols-3">
         <Card className="border-border/40 shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Items</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold font-mono" data-testid="total-items-count">{inventory.length}</div>
+            <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono" data-testid="total-items-count">{inventory.length}</div>
           </CardContent>
         </Card>
         <Card className="border-border/40 shadow-sm">
@@ -82,7 +82,7 @@ export default function BookInventory() {
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Stamps</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold font-mono">{Object.keys(byStamp).length}</div>
+            <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono">{Object.keys(byStamp).length}</div>
           </CardContent>
         </Card>
         <Card className="border-border/40 shadow-sm">
@@ -90,7 +90,7 @@ export default function BookInventory() {
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Gross Weight</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold font-mono">
+            <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono">
               {inventory.reduce((sum, item) => sum + item.gr_wt, 0).toFixed(3)}g
             </div>
           </CardContent>

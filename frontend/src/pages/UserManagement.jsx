@@ -136,7 +136,7 @@ export default function UserManagement() {
 
   if (!isAdmin) {
     return (
-      <div className="p-6 md:p-8">
+      <div className="p-3 sm:p-6 md:p-8">
         <Card className="border-destructive/50">
           <CardContent className="pt-6">
             <p className="text-center text-destructive">
@@ -157,13 +157,13 @@ export default function UserManagement() {
   }
 
   return (
-    <div className="p-6 md:p-8 space-y-6">
+    <div className="p-3 sm:p-6 md:p-8 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
+          <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight">
             User Management
           </h1>
-          <p className="text-lg text-muted-foreground mt-2">
+          <p className="text-xs sm:text-base md:text-lg text-muted-foreground mt-2">
             Manage user accounts and permissions
           </p>
         </div>

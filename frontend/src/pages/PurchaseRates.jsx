@@ -53,24 +53,24 @@ export default function PurchaseRates() {
   }
 
   return (
-    <div className="p-6 md:p-8 space-y-6">
+    <div className="p-3 sm:p-6 md:p-8 space-y-6">
       <div>
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
+        <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight">
           Purchase Rate Ledger
         </h1>
-        <p className="text-lg text-muted-foreground mt-2">
+        <p className="text-xs sm:text-base md:text-lg text-muted-foreground mt-2">
           Cumulative purchase rates (tunch & labour) for profit calculation
         </p>
       </div>
 
       {/* Stats */}
-      <div className="grid gap-6 md:grid-cols-1">
+      <div className="grid gap-3 sm:gap-6 grid-cols-2 md:grid-cols-1">
         <Card className="border-border/40 shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Items</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold font-mono text-primary">{ledger.length}</div>
+            <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono text-primary">{ledger.length}</div>
           </CardContent>
         </Card>
       </div>

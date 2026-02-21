@@ -153,12 +153,12 @@ export default function PartyAnalytics() {
   };
 
   return (
-    <div className="p-6 md:p-8 space-y-6" data-testid="party-analytics-page">
+    <div className="p-3 sm:p-6 md:p-8 space-y-6" data-testid="party-analytics-page">
       <div>
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight" data-testid="party-analytics-title">
+        <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight" data-testid="party-analytics-title">
           Party Analytics
         </h1>
-        <p className="text-lg text-muted-foreground mt-2">
+        <p className="text-xs sm:text-base md:text-lg text-muted-foreground mt-2">
           Customer and supplier insights with profitability analysis
         </p>
       </div>
@@ -223,7 +223,7 @@ export default function PartyAnalytics() {
 
       {/* Top Party Cards */}
       {(analytics?.top_customer || analytics?.top_supplier) && (
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid gap-3 sm:gap-6 grid-cols-2 md:grid-cols-2">
           {analytics?.top_customer && (
             <Card className="border-2 border-primary/20 shadow-md bg-gradient-to-br from-primary/5 to-transparent">
               <CardHeader>

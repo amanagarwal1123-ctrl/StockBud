@@ -87,12 +87,12 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="p-6 md:p-8 space-y-6" data-testid="dashboard-page">
+    <div className="p-3 sm:p-6 md:p-8 space-y-6" data-testid="dashboard-page">
       <div>
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight" data-testid="dashboard-title">
+        <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight" data-testid="dashboard-title">
           Dashboard
         </h1>
-        <p className="text-lg text-muted-foreground mt-2">
+        <p className="text-xs sm:text-base md:text-lg text-muted-foreground mt-2">
           StockBud - Intelligent inventory management for your jewelry business
         </p>
       </div>
@@ -121,7 +121,7 @@ export default function Dashboard() {
       )}
 
       {/* Stats Grid */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:gap-6 grid-cols-2 md:grid-cols-2 lg:grid-cols-4">
         {statCards.map((stat) => (
           <Card
             key={stat.title}
@@ -137,7 +137,7 @@ export default function Dashboard() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold font-mono">{stat.value}</div>
+              <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono">{stat.value}</div>
             </CardContent>
           </Card>
         ))}

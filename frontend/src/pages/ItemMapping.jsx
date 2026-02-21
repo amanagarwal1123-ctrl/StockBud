@@ -142,12 +142,12 @@ export default function ItemMapping() {
   }
 
   return (
-    <div className="p-6 md:p-8 space-y-6">
+    <div className="p-3 sm:p-6 md:p-8 space-y-6">
       <div>
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
+        <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight">
           Item Name Mapping
         </h1>
-        <p className="text-lg text-muted-foreground mt-2">
+        <p className="text-xs sm:text-base md:text-lg text-muted-foreground mt-2">
           Map transaction item names to master stock items (STOCK 2026) - {allMasterItems.length} master items available
         </p>
       </div>

@@ -62,7 +62,7 @@ export default function ItemDetail() {
 
   if (!itemData) {
     return (
-      <div className="p-6 md:p-8">
+      <div className="p-3 sm:p-6 md:p-8">
         <Button onClick={() => navigate(-1)} variant="outline" className="mb-4">
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back
@@ -73,20 +73,20 @@ export default function ItemDetail() {
   }
 
   return (
-    <div className="p-6 md:p-8 space-y-6" data-testid="item-detail-page">
+    <div className="p-3 sm:p-6 md:p-8 space-y-6" data-testid="item-detail-page">
       <div className="flex items-center justify-between">
         <div>
           <Button onClick={() => navigate(-1)} variant="ghost" className="mb-2" data-testid="back-button">
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back
           </Button>
-          <h1 className="text-4xl md:text-5xl font-bold tracking-tight">{itemData.item_name}</h1>
-          <p className="text-lg text-muted-foreground mt-2">Complete item history and statistics</p>
+          <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight">{itemData.item_name}</h1>
+          <p className="text-xs sm:text-base md:text-lg text-muted-foreground mt-2">Complete item history and statistics</p>
         </div>
       </div>
 
       {/* Key Stats */}
-      <div className="grid gap-6 md:grid-cols-4">
+      <div className="grid gap-3 sm:gap-6 grid-cols-2 md:grid-cols-4">
         <Card className="border-border/40 shadow-sm bg-gradient-to-br from-primary/10 to-transparent">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
@@ -95,7 +95,7 @@ export default function ItemDetail() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold font-mono text-primary">
+            <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono text-primary">
               {itemData.current_stock_kg} kg
             </div>
           </CardContent>
@@ -109,7 +109,7 @@ export default function ItemDetail() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold font-mono text-accent">
+            <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono text-accent">
               {itemData.tunch_margin}%
             </div>
             <p className="text-xs text-muted-foreground mt-1">
@@ -123,7 +123,7 @@ export default function ItemDetail() {
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Purchases</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold font-mono">{itemData.total_purchases}</div>
+            <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono">{itemData.total_purchases}</div>
           </CardContent>
         </Card>
 
@@ -132,7 +132,7 @@ export default function ItemDetail() {
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Sales</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold font-mono">{itemData.total_sales}</div>
+            <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono">{itemData.total_sales}</div>
           </CardContent>
         </Card>
       </div>

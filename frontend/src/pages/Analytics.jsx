@@ -105,18 +105,18 @@ export default function Analytics() {
   }
 
   return (
-    <div className="p-6 md:p-8 space-y-6" data-testid="analytics-page">
+    <div className="p-3 sm:p-6 md:p-8 space-y-6" data-testid="analytics-page">
       <div>
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight" data-testid="analytics-title">
+        <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight" data-testid="analytics-title">
           Analytics & Insights
         </h1>
-        <p className="text-lg text-muted-foreground mt-2">
+        <p className="text-xs sm:text-base md:text-lg text-muted-foreground mt-2">
           Item movement analysis and exceptions
         </p>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid gap-6 md:grid-cols-4">
+      <div className="grid gap-3 sm:gap-6 grid-cols-2 md:grid-cols-4">
         <Card className="border-border/40 shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
@@ -125,7 +125,7 @@ export default function Analytics() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold font-mono">{categoryCounts.fast}</div>
+            <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono">{categoryCounts.fast}</div>
           </CardContent>
         </Card>
         <Card className="border-border/40 shadow-sm">
@@ -136,7 +136,7 @@ export default function Analytics() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold font-mono">{categoryCounts.good}</div>
+            <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono">{categoryCounts.good}</div>
           </CardContent>
         </Card>
         <Card className="border-border/40 shadow-sm">
@@ -147,7 +147,7 @@ export default function Analytics() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold font-mono">{categoryCounts.slow}</div>
+            <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono">{categoryCounts.slow}</div>
           </CardContent>
         </Card>
         <Card className="border-border/40 shadow-sm">
@@ -158,7 +158,7 @@ export default function Analytics() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold font-mono">{categoryCounts.dead}</div>
+            <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono">{categoryCounts.dead}</div>
           </CardContent>
         </Card>
       </div>

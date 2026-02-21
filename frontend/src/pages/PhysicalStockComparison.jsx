@@ -194,12 +194,12 @@ export default function PhysicalStockComparison() {
   };
 
   return (
-    <div className="p-6 md:p-8 space-y-6">
+    <div className="p-3 sm:p-6 md:p-8 space-y-6">
       <div>
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
+        <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight">
           Physical vs Book Stock
         </h1>
-        <p className="text-lg text-muted-foreground mt-2">
+        <p className="text-xs sm:text-base md:text-lg text-muted-foreground mt-2">
           Compare your physical count with calculated book inventory
         </p>
       </div>
@@ -365,7 +365,7 @@ export default function PhysicalStockComparison() {
       {/* Summary Cards - Only show for Admin */}
       {summary && isAdmin && (
         <>
-          <div className="grid gap-6 md:grid-cols-4">
+          <div className="grid gap-3 sm:gap-6 grid-cols-2 md:grid-cols-4">
             <Card className="border-border/40 shadow-sm bg-gradient-to-br from-blue-500/10 to-transparent">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium text-muted-foreground">Book Stock</CardTitle>
@@ -425,7 +425,7 @@ export default function PhysicalStockComparison() {
                 <CardTitle className="text-sm font-medium text-muted-foreground">Accuracy</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold font-mono text-primary">
+                <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono text-primary">
                   {summary.match_count}/{summary.match_count + summary.discrepancy_count}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Items matched</p>

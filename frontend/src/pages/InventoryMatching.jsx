@@ -68,13 +68,13 @@ export default function InventoryMatching() {
   };
 
   return (
-    <div className="p-6 md:p-8 space-y-6" data-testid="matching-page">
+    <div className="p-3 sm:p-6 md:p-8 space-y-6" data-testid="matching-page">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-4xl md:text-5xl font-bold tracking-tight" data-testid="matching-title">
+          <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight" data-testid="matching-title">
             Inventory Matching
           </h1>
-          <p className="text-lg text-muted-foreground mt-2">
+          <p className="text-xs sm:text-base md:text-lg text-muted-foreground mt-2">
             Compare book inventory with physical stock
           </p>
         </div>

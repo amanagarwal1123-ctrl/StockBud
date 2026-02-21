@@ -108,7 +108,7 @@ export default function PolytheneManagement() {
 
   if (!isAdmin) {
     return (
-      <div className="p-6 md:p-8">
+      <div className="p-3 sm:p-6 md:p-8">
         <Card className="border-destructive/50">
           <CardContent className="pt-6">
             <p className="text-center text-destructive">Access Denied. Admin privileges required.</p>
@@ -119,12 +119,12 @@ export default function PolytheneManagement() {
   }
 
   return (
-    <div className="p-6 md:p-8 space-y-6">
+    <div className="p-3 sm:p-6 md:p-8 space-y-6">
       <div>
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
+        <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight">
           Polythene Management
         </h1>
-        <p className="text-lg text-muted-foreground mt-2">
+        <p className="text-xs sm:text-base md:text-lg text-muted-foreground mt-2">
           View and manage all polythene adjustments
         </p>
       </div>
