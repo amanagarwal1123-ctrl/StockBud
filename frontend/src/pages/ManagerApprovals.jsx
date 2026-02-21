@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
-import { CheckSquare, XSquare, Clock, Download } from 'lucide-react';
+import { CheckSquare, XSquare, Download, Calendar, Pencil } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { exportToCSV } from '@/utils/exportCSV';
 import { toast } from 'sonner';
@@ -16,30 +17,39 @@ import { toast } from 'sonner';
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
+const diffColor = (d) => {
+  if (Math.abs(d) < 0.020) return 'text-green-600';
+  return d > 0 ? 'text-blue-600' : 'text-red-600';
+};
+const diffBg = (d) => {
+  if (Math.abs(d) < 0.020) return 'bg-green-50';
+  return d > 0 ? 'bg-blue-50' : 'bg-red-50';
+};
+const diffBadgeCls = (d) => {
+  if (Math.abs(d) < 0.020) return 'bg-green-600';
+  return d > 0 ? 'bg-blue-600' : 'bg-red-600';
+};
+
 export default function ManagerApprovals() {
   const [allEntries, setAllEntries] = useState([]);
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [approvalDetails, setApprovalDetails] = useState(null);
   const [allDetails, setAllDetails] = useState({});
   const [rejectionMessage, setRejectionMessage] = useState('');
+  const [editingDate, setEditingDate] = useState({});
   const [loading, setLoading] = useState(true);
   const { isManager, isAdmin } = useAuth();
 
   useEffect(() => {
-    if (isManager || isAdmin) {
-      fetchAllEntries();
-    }
+    if (isManager || isAdmin) fetchAllEntries();
   }, [isManager, isAdmin]);
 
   const fetchAllEntries = async () => {
     try {
       const response = await axios.get(`${API}/manager/all-entries`);
       setAllEntries(response.data);
-      
       const pending = response.data.filter(e => e.status === 'pending');
-      for (const entry of pending) {
-        fetchDetailsForBadge(entry.stamp);
-      }
+      for (const entry of pending) fetchDetailsForBadge(entry.stamp);
     } catch (error) {
       console.error('Error fetching entries:', error);
     } finally {
@@ -50,7 +60,7 @@ export default function ManagerApprovals() {
   const fetchDetailsForBadge = async (stamp) => {
     try {
       const response = await axios.get(`${API}/manager/approval-details/${stamp}`);
-      setAllDetails(prev => ({...prev, [stamp]: response.data}));
+      setAllDetails(prev => ({ ...prev, [stamp]: response.data }));
     } catch (error) {
       console.error('Failed to load details:', error);
     }
@@ -66,6 +76,23 @@ export default function ManagerApprovals() {
     }
   };
 
+  const updateVerificationDate = async (stamp, newDate) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.put(`${API}/manager/update-verification-date/${stamp}`, 
+        { verification_date: newDate },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success(`Date updated to ${newDate}`);
+      setEditingDate(prev => ({ ...prev, [stamp]: false }));
+      fetchAllEntries();
+      fetchDetailsForBadge(stamp);
+      if (selectedEntry === stamp) fetchApprovalDetails(stamp);
+    } catch (error) {
+      toast.error('Failed to update date');
+    }
+  };
+
   const exportStampDifferences = async (stamp) => {
     try {
       const response = await axios.get(`${API}/manager/approval-details/${stamp}`);
@@ -75,8 +102,7 @@ export default function ManagerApprovals() {
         'Entered Gross (kg)': (item.entered_gross || 0).toFixed(3),
         'Difference (kg)': (item.difference || 0).toFixed(3)
       }));
-      exportToCSV(exportData, `${stamp}_complete_comparison`);
-      toast.success('Comparison exported!');
+      exportToCSV(exportData, `${stamp}_comparison`);
     } catch (error) {
       toast.error('Failed to export');
     }
@@ -87,24 +113,18 @@ export default function ManagerApprovals() {
       toast.error('Please enter a rejection message');
       return;
     }
-
-    // Use approvalDetails (from View Details) or allDetails (from badge pre-fetch)
     let details = allDetails[stamp] || approvalDetails;
     if (!details) {
       await fetchDetailsForBadge(stamp);
       details = allDetails[stamp];
     }
-    
     const totalDiff = details?.total_difference ? details.total_difference * 1000 : 0;
-    
+
     try {
       await axios.post(`${API}/manager/approve-stamp`, {
-        stamp: stamp,
-        approve: approve,
-        total_difference: totalDiff,
+        stamp, approve, total_difference: totalDiff,
         rejection_message: approve ? null : rejectionMessage
       });
-      
       toast.success(`${stamp} ${approve ? 'approved' : 'rejected'}!`);
       setSelectedEntry(null);
       setApprovalDetails(null);
@@ -117,244 +137,258 @@ export default function ManagerApprovals() {
 
   if (!isManager && !isAdmin) {
     return (
-      <div className="p-6 md:p-8">
-        <Alert variant="destructive">
-          <AlertDescription>Access Denied. Manager privileges required.</AlertDescription>
-        </Alert>
-      </div>
+      <div className="p-4"><Alert variant="destructive"><AlertDescription>Access Denied.</AlertDescription></Alert></div>
     );
   }
-
-  /** Color logic: Green = within 20g, Blue = increased, Red = decreased */
-  const diffColor = (diff) => {
-    if (Math.abs(diff) < 0.020) return 'text-green-600';
-    return diff > 0 ? 'text-blue-600' : 'text-red-600';
-  };
-  const diffBg = (diff) => {
-    if (Math.abs(diff) < 0.020) return 'bg-green-50';
-    return diff > 0 ? 'bg-blue-50' : 'bg-red-50';
-  };
 
   const pendingEntries = allEntries.filter(e => e.status === 'pending');
   const approvedEntries = allEntries.filter(e => e.status === 'approved');
   const rejectedEntries = allEntries.filter(e => e.status === 'rejected');
 
   return (
-    <div className="p-6 md:p-8 space-y-6">
+    <div className="p-3 sm:p-6 md:p-8 space-y-4 sm:space-y-6" data-testid="approvals-page">
       <div>
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight">Stamp Approvals</h1>
-        <p className="text-lg text-muted-foreground mt-2">Review and approve stock entries</p>
+        <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight">Stamp Approvals</h1>
+        <p className="text-sm sm:text-lg text-muted-foreground mt-1">Review and approve stock entries</p>
       </div>
 
-      <Tabs defaultValue="pending" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="pending">Pending ({pendingEntries.length})</TabsTrigger>
-          <TabsTrigger value="approved">Approved ({approvedEntries.length})</TabsTrigger>
-          <TabsTrigger value="rejected">Rejected ({rejectedEntries.length})</TabsTrigger>
+      <Tabs defaultValue="pending" className="space-y-4">
+        <TabsList className="w-full sm:w-auto">
+          <TabsTrigger value="pending" className="text-xs sm:text-sm">Pending ({pendingEntries.length})</TabsTrigger>
+          <TabsTrigger value="approved" className="text-xs sm:text-sm">Approved ({approvedEntries.length})</TabsTrigger>
+          <TabsTrigger value="rejected" className="text-xs sm:text-sm">Rejected ({rejectedEntries.length})</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="pending">
+        {/* ===== PENDING ===== */}
+        <TabsContent value="pending" className="space-y-3">
           {pendingEntries.map((entry) => (
-            <Card key={`pending-${entry.stamp}-${entry.entry_day || ''}`} className="border-orange-500/20">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      {entry.stamp}
-                      <Badge variant="outline" className="text-orange-600">Pending</Badge>
-                      {entry.verification_date && (
-                        <Badge variant="outline" className="text-blue-700 border-blue-300 bg-blue-50">
-                          Stock for: {entry.verification_date}
-                        </Badge>
-                      )}
-                      {allDetails[entry.stamp] && (
-                        <Badge className={Math.abs(allDetails[entry.stamp].total_difference) < 0.020 ? 'bg-green-600' : allDetails[entry.stamp].total_difference > 0 ? 'bg-blue-600' : 'bg-red-600'}>
-                          Diff: {allDetails[entry.stamp].total_difference >= 0 ? '+' : ''}{allDetails[entry.stamp].total_difference?.toFixed(3)} kg
-                        </Badge>
-                      )}
-                    </CardTitle>
-                    <CardDescription>
-                      By {entry.entered_by} on {new Date(entry.entry_date).toLocaleString()}
-                      {entry.iteration > 1 && <span className="ml-2 text-orange-600">• Iteration {entry.iteration}</span>}
-                    </CardDescription>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button onClick={() => fetchApprovalDetails(entry.stamp)} variant="outline" size="sm">View Details</Button>
-                    <Button onClick={() => handleApproval(entry.stamp, true)} size="sm">
-                      <CheckSquare className="h-4 w-4 mr-1" />Approve
-                    </Button>
-                    <Button onClick={() => handleApproval(entry.stamp, false)} variant="destructive" size="sm">
-                      <XSquare className="h-4 w-4 mr-1" />Reject
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              
-              {selectedEntry === entry.stamp && approvalDetails && (
-                <CardContent>
-                  <div className="bg-muted/30 p-4 rounded-lg space-y-4">
-                    <p className="font-semibold">Book vs Entered Comparison{approvalDetails?.verification_date ? ` (as of ${approvalDetails.verification_date})` : ''}</p>
-                    <div className="max-h-64 overflow-y-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Item</TableHead>
-                            <TableHead className="text-right">Book (kg)</TableHead>
-                            <TableHead className="text-right">Entered (kg)</TableHead>
-                            <TableHead className="text-right">Diff (kg)</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {approvalDetails.comparison?.map((item, i) => (
-                            <TableRow key={i} className={`${item.was_entered ? '' : 'opacity-40'} ${item.was_entered ? diffBg(item.difference || 0) : ''}`}>
-                              <TableCell className="text-sm">{item.item_name}</TableCell>
-                              <TableCell className="text-right font-mono text-sm">{(item.book_gross || 0).toFixed(3)}</TableCell>
-                              <TableCell className="text-right font-mono text-sm">{(item.entered_gross || 0).toFixed(3)}</TableCell>
-                              <TableCell className={`text-right font-mono text-sm font-semibold ${diffColor(item.difference || 0)}`}>
-                                {(item.difference || 0) >= 0 ? '+' : ''}{(item.difference || 0).toFixed(3)}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                          <TableRow className="bg-primary/10 border-t-2">
-                            <TableCell className="font-bold">TOTAL</TableCell>
-                            <TableCell className="text-right font-mono font-bold">{(approvalDetails?.total_book || 0).toFixed(3)} kg</TableCell>
-                            <TableCell className="text-right font-mono font-bold">{(approvalDetails?.total_entered || 0).toFixed(3)} kg</TableCell>
-                            <TableCell className={`text-right font-mono font-bold text-lg ${diffColor(approvalDetails?.total_difference || 0)}`}>
-                              {((approvalDetails?.total_difference || 0) >= 0 ? '+' : '') + (approvalDetails?.total_difference || 0).toFixed(3)} kg
-                            </TableCell>
-                          </TableRow>
-                        </TableBody>
-                      </Table>
-                    </div>
-                    
-                    {/* Rejection Message Input */}
-                    <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
-                      <Label className="font-semibold mb-2">Rejection Message (Required to reject)</Label>
-                      <Textarea
-                        placeholder="Explain what needs to be corrected (e.g., Item 84-18 weight incorrect, please recheck)..."
-                        value={rejectionMessage}
-                        onChange={(e) => setRejectionMessage(e.target.value)}
-                        rows={3}
-                        className="mt-2"
-                      />
-                    </div>
-                  </div>
-                </CardContent>
-              )}
-            </Card>
+            <EntryCard
+              key={`p-${entry.stamp}-${entry.entry_day}`}
+              entry={entry}
+              status="pending"
+              details={allDetails[entry.stamp]}
+              isExpanded={selectedEntry === entry.stamp}
+              approvalDetails={selectedEntry === entry.stamp ? approvalDetails : null}
+              editingDate={editingDate}
+              setEditingDate={setEditingDate}
+              onViewDetails={() => fetchApprovalDetails(entry.stamp)}
+              onApprove={() => handleApproval(entry.stamp, true)}
+              onReject={() => handleApproval(entry.stamp, false)}
+              onDateUpdate={updateVerificationDate}
+              onExport={() => exportStampDifferences(entry.stamp)}
+              rejectionMessage={rejectionMessage}
+              setRejectionMessage={setRejectionMessage}
+            />
           ))}
+          {pendingEntries.length === 0 && <p className="text-muted-foreground text-center py-8">No pending entries</p>}
         </TabsContent>
 
-        <TabsContent value="approved">
+        {/* ===== APPROVED ===== */}
+        <TabsContent value="approved" className="space-y-3">
           {approvedEntries.map((entry) => (
-            <Card key={`approved-${entry.stamp}-${entry.entry_day || ''}`} className="border-green-500/20">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <CardTitle className="flex items-center gap-2">
-                      {entry.stamp}
-                      {entry.verification_date && <Badge variant="outline" className="text-blue-700 border-blue-300 bg-blue-50">Stock for: {entry.verification_date}</Badge>}
-                      {entry.entry_day && <span className="text-xs text-muted-foreground font-normal bg-muted px-1.5 py-0.5 rounded">{entry.entry_day}</span>}
-                    </CardTitle>
-                    <CardDescription>
-                      By {entry.entered_by} • Approved by {entry.approved_by} on {entry.approved_at ? new Date(entry.approved_at).toLocaleString() : '—'}
-                      {entry.iteration > 1 && <span className="ml-2">• {entry.iteration} iterations</span>}
-                    </CardDescription>
-                    <div className="mt-3 flex gap-2">
-                      <Badge className="bg-green-600">APPROVED</Badge>
-                      <Button onClick={() => fetchApprovalDetails(entry.stamp)} variant="outline" size="sm" data-testid={`view-details-${entry.stamp}`}>View Details</Button>
-                      <Button onClick={() => exportStampDifferences(entry.stamp)} variant="outline" size="sm">
-                        <Download className="h-4 w-4 mr-1" />Export All
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </CardHeader>
-              
-              {selectedEntry === entry.stamp && approvalDetails && (
-                <CardContent>
-                  <div className="bg-muted/30 p-4 rounded-lg space-y-4">
-                    <p className="font-semibold">Book vs Entered Comparison{approvalDetails?.verification_date ? ` (as of ${approvalDetails.verification_date})` : ''}</p>
-                    <div className="max-h-64 overflow-y-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Item</TableHead>
-                            <TableHead className="text-right">Book (kg)</TableHead>
-                            <TableHead className="text-right">Entered (kg)</TableHead>
-                            <TableHead className="text-right">Diff (kg)</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {approvalDetails.comparison?.map((item, i) => (
-                            <TableRow key={i} className={`${item.was_entered ? '' : 'opacity-40'} ${item.was_entered ? diffBg(item.difference || 0) : ''}`}>
-                              <TableCell className="text-sm">{item.item_name}</TableCell>
-                              <TableCell className="text-right font-mono text-sm">{(item.book_gross || 0).toFixed(3)}</TableCell>
-                              <TableCell className="text-right font-mono text-sm">{(item.entered_gross || 0).toFixed(3)}</TableCell>
-                              <TableCell className={`text-right font-mono text-sm font-semibold ${diffColor(item.difference || 0)}`}>
-                                {(item.difference || 0) >= 0 ? '+' : ''}{(item.difference || 0).toFixed(3)}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                          <TableRow className="bg-primary/10 border-t-2">
-                            <TableCell className="font-bold">TOTAL</TableCell>
-                            <TableCell className="text-right font-mono font-bold">{(approvalDetails?.total_book || 0).toFixed(3)} kg</TableCell>
-                            <TableCell className="text-right font-mono font-bold">{(approvalDetails?.total_entered || 0).toFixed(3)} kg</TableCell>
-                            <TableCell className={`text-right font-mono font-bold text-lg ${diffColor(approvalDetails?.total_difference || 0)}`}>
-                              {((approvalDetails?.total_difference || 0) >= 0 ? '+' : '') + (approvalDetails?.total_difference || 0).toFixed(3)} kg
-                            </TableCell>
-                          </TableRow>
-                        </TableBody>
-                      </Table>
-                    </div>
-                    
-                    {/* Rejection Message Input */}
-                    <div className="p-4 bg-red-50 rounded-lg border border-red-200">
-                      <Label className="font-semibold mb-2">Rejection Message (Required to reject)</Label>
-                      <Textarea
-                        placeholder="Explain what needs to be corrected..."
-                        value={rejectionMessage}
-                        onChange={(e) => setRejectionMessage(e.target.value)}
-                        rows={3}
-                        className="mt-2"
-                        data-testid={`rejection-msg-${entry.stamp}`}
-                      />
-                      <Button onClick={() => handleApproval(entry.stamp, false)} variant="destructive" size="sm" className="mt-3" data-testid={`reject-btn-${entry.stamp}`}>
-                        <XSquare className="h-4 w-4 mr-1" />Reject
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              )}
-            </Card>
+            <EntryCard
+              key={`a-${entry.stamp}-${entry.entry_day}`}
+              entry={entry}
+              status="approved"
+              details={allDetails[entry.stamp]}
+              isExpanded={selectedEntry === entry.stamp}
+              approvalDetails={selectedEntry === entry.stamp ? approvalDetails : null}
+              editingDate={editingDate}
+              setEditingDate={setEditingDate}
+              onViewDetails={() => fetchApprovalDetails(entry.stamp)}
+              onReject={() => handleApproval(entry.stamp, false)}
+              onDateUpdate={updateVerificationDate}
+              onExport={() => exportStampDifferences(entry.stamp)}
+              rejectionMessage={rejectionMessage}
+              setRejectionMessage={setRejectionMessage}
+            />
           ))}
+          {approvedEntries.length === 0 && <p className="text-muted-foreground text-center py-8">No approved entries</p>}
         </TabsContent>
 
-        <TabsContent value="rejected">
+        {/* ===== REJECTED ===== */}
+        <TabsContent value="rejected" className="space-y-3">
           {rejectedEntries.map((entry) => (
-            <Card key={`rejected-${entry.stamp}-${entry.entry_day || ''}`} className="border-red-500/20">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <CardTitle>{entry.stamp}</CardTitle>
-                    <CardDescription>
-                      By {entry.entered_by} • Rejected by {entry.approved_by || 'Manager'} on {new Date(entry.approved_at).toLocaleString()}
+            <Card key={`r-${entry.stamp}-${entry.entry_day}`} className="border-red-500/20">
+              <CardHeader className="p-3 sm:p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <CardTitle className="text-base sm:text-lg">{entry.stamp}</CardTitle>
+                    <CardDescription className="text-xs sm:text-sm">
+                      By {entry.entered_by} — Rejected on {entry.approved_at ? new Date(entry.approved_at).toLocaleDateString() : '—'}
                     </CardDescription>
                     {entry.rejection_message && (
-                      <Alert className="mt-3 border-red-500/50 bg-red-50">
-                        <AlertDescription>
-                          <strong>Rejection Message:</strong> {entry.rejection_message}
+                      <Alert className="mt-2 border-red-500/50 bg-red-50 p-2">
+                        <AlertDescription className="text-xs sm:text-sm">
+                          <strong>Reason:</strong> {entry.rejection_message}
                         </AlertDescription>
                       </Alert>
                     )}
                   </div>
-                  <Badge className="bg-red-600">REJECTED</Badge>
+                  <Badge className="bg-red-600 self-start">REJECTED</Badge>
                 </div>
               </CardHeader>
             </Card>
           ))}
+          {rejectedEntries.length === 0 && <p className="text-muted-foreground text-center py-8">No rejected entries</p>}
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+/** Reusable entry card for pending & approved tabs */
+function EntryCard({
+  entry, status, details, isExpanded, approvalDetails,
+  editingDate, setEditingDate, onViewDetails, onApprove, onReject,
+  onDateUpdate, onExport, rejectionMessage, setRejectionMessage
+}) {
+  const stamp = entry.stamp;
+  const vDate = entry.verification_date || entry.entry_day || '';
+  const isEditing = editingDate[stamp];
+  const [tempDate, setTempDate] = useState(vDate);
+  const isPending = status === 'pending';
+  const borderCls = isPending ? 'border-orange-500/20' : 'border-green-500/20';
+
+  return (
+    <Card className={borderCls} data-testid={`entry-card-${stamp}`}>
+      <CardHeader className="p-3 sm:p-6">
+        {/* Row 1: Stamp name + status badge + diff badge */}
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+          <span className="font-bold text-base sm:text-lg">{stamp}</span>
+          <Badge variant="outline" className={isPending ? 'text-orange-600 text-[10px] sm:text-xs' : 'text-green-600 text-[10px] sm:text-xs'}>
+            {status.toUpperCase()}
+          </Badge>
+          {details && (
+            <Badge className={`${diffBadgeCls(details.total_difference)} text-[10px] sm:text-xs px-1.5`}>
+              {details.total_difference >= 0 ? '+' : ''}{details.total_difference?.toFixed(3)} kg
+            </Badge>
+          )}
+        </div>
+
+        {/* Row 2: Date info + edit */}
+        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+          {isEditing ? (
+            <div className="flex items-center gap-1.5">
+              <Input
+                type="date"
+                value={tempDate}
+                onChange={(e) => setTempDate(e.target.value)}
+                className="h-7 text-xs w-36"
+                data-testid={`date-input-${stamp}`}
+              />
+              <Button size="sm" className="h-7 text-xs px-2" onClick={() => onDateUpdate(stamp, tempDate)} data-testid={`save-date-${stamp}`}>Save</Button>
+              <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={() => setEditingDate(p => ({ ...p, [stamp]: false }))}>Cancel</Button>
+            </div>
+          ) : (
+            <>
+              {vDate && (
+                <Badge variant="outline" className="text-[10px] sm:text-xs text-blue-700 border-blue-300 bg-blue-50">
+                  <Calendar className="h-3 w-3 mr-0.5" />Stock for: {vDate}
+                </Badge>
+              )}
+              <button
+                onClick={() => { setTempDate(vDate || new Date().toISOString().slice(0, 10)); setEditingDate(p => ({ ...p, [stamp]: true })); }}
+                className="text-muted-foreground hover:text-primary p-0.5"
+                title="Edit verification date"
+                data-testid={`edit-date-${stamp}`}
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Row 3: Metadata */}
+        <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5">
+          By {entry.entered_by} on {new Date(entry.entry_date).toLocaleDateString()}
+          {entry.iteration > 1 && <span className="ml-1 text-orange-600">• Iter {entry.iteration}</span>}
+          {!isPending && entry.approved_by && <span> • {status === 'approved' ? 'Approved' : 'Reviewed'} by {entry.approved_by}</span>}
+        </p>
+
+        {/* Row 4: Actions */}
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          <Button onClick={onViewDetails} variant="outline" size="sm" className="h-7 text-xs" data-testid={`view-details-${stamp}`}>Details</Button>
+          {isPending && onApprove && (
+            <Button onClick={onApprove} size="sm" className="h-7 text-xs" data-testid={`approve-${stamp}`}>
+              <CheckSquare className="h-3 w-3 mr-1" />Approve
+            </Button>
+          )}
+          {onReject && (
+            <Button onClick={onReject} variant="destructive" size="sm" className="h-7 text-xs" data-testid={`reject-${stamp}`}>
+              <XSquare className="h-3 w-3 mr-1" />Reject
+            </Button>
+          )}
+          <Button onClick={onExport} variant="outline" size="sm" className="h-7 text-xs">
+            <Download className="h-3 w-3 mr-1" />Export
+          </Button>
+        </div>
+      </CardHeader>
+
+      {/* Expanded comparison */}
+      {isExpanded && approvalDetails && (
+        <CardContent className="p-2 sm:p-6 pt-0">
+          <ComparisonTable details={approvalDetails} />
+          {/* Rejection message */}
+          <div className="mt-3 p-3 bg-orange-50 rounded-lg border border-orange-200">
+            <Label className="text-xs font-semibold">Rejection Message (required to reject)</Label>
+            <Textarea
+              placeholder="What needs correction..."
+              value={rejectionMessage}
+              onChange={(e) => setRejectionMessage(e.target.value)}
+              rows={2}
+              className="mt-1 text-sm"
+              data-testid={`rejection-msg-${stamp}`}
+            />
+          </div>
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
+/** Comparison table with color-coded diffs */
+function ComparisonTable({ details }) {
+  return (
+    <div className="bg-muted/30 p-2 sm:p-4 rounded-lg">
+      <p className="font-semibold text-sm mb-2">
+        Book vs Entered{details.verification_date ? ` (as of ${details.verification_date})` : ''}
+      </p>
+      <div className="max-h-64 overflow-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="text-xs">Item</TableHead>
+              <TableHead className="text-right text-xs">Book</TableHead>
+              <TableHead className="text-right text-xs">Entered</TableHead>
+              <TableHead className="text-right text-xs">Diff</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {details.comparison?.map((item, i) => {
+              const d = item.difference || 0;
+              return (
+                <TableRow key={i} className={`${item.was_entered ? '' : 'opacity-40'} ${item.was_entered ? diffBg(d) : ''}`}>
+                  <TableCell className="text-xs py-1.5 max-w-[120px] sm:max-w-none truncate">{item.item_name}</TableCell>
+                  <TableCell className="text-right font-mono text-xs py-1.5">{(item.book_gross || 0).toFixed(3)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs py-1.5">{(item.entered_gross || 0).toFixed(3)}</TableCell>
+                  <TableCell className={`text-right font-mono text-xs py-1.5 font-semibold ${diffColor(d)}`}>
+                    {d >= 0 ? '+' : ''}{d.toFixed(3)}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+            <TableRow className="bg-primary/10 border-t-2">
+              <TableCell className="font-bold text-xs">TOTAL</TableCell>
+              <TableCell className="text-right font-mono text-xs font-bold">{(details.total_book || 0).toFixed(3)}</TableCell>
+              <TableCell className="text-right font-mono text-xs font-bold">{(details.total_entered || 0).toFixed(3)}</TableCell>
+              <TableCell className={`text-right font-mono text-xs font-bold ${diffColor(details.total_difference || 0)}`}>
+                {(details.total_difference || 0) >= 0 ? '+' : ''}{(details.total_difference || 0).toFixed(3)}
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }
