@@ -3223,8 +3223,8 @@ async def calculate_profit(
         # Sales have labor (total) and net_wt (in grams)
         # Need to calculate both in same unit (per gram)
         
-        # Purchase: labour_per_kg → labour_per_gram
-        purchase_labour_per_gram = sum(abs(p['labor']) / 1000 for p in purchases) / sum(abs(p['net_wt']) for p in purchases) if purchases else 0
+        # Purchase: total labour / total grams (same unit as sale)
+        purchase_labour_per_gram = sum(abs(p['labor']) for p in purchases) / sum(abs(p['net_wt']) for p in purchases) if purchases else 0
         
         # Sale: total labour / total grams
         sale_labour_per_gram = sum(abs(s['labor']) for s in sales) / sum(abs(s['net_wt']) for s in sales) if sales else 0
