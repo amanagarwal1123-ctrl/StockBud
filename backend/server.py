@@ -1708,14 +1708,19 @@ async def update_verification_date(stamp: str, request: Dict, current_user: dict
     if not new_date:
         raise HTTPException(status_code=400, detail="verification_date required")
     
-    result = await db.stock_entries.update_one(
+    # Find latest entry for this stamp
+    entry = await db.stock_entries.find_one(
         {'stamp': stamp, 'status': {'$in': ['pending', 'approved']}},
-        {'$set': {'verification_date': new_date}},
         sort=[('entry_date', -1)]
     )
     
-    if result.modified_count == 0:
-        # Try without status filter (for any entry)
+    if entry:
+        await db.stock_entries.update_one(
+            {'_id': entry['_id']},
+            {'$set': {'verification_date': new_date}}
+        )
+    else:
+        # Try any entry for this stamp
         await db.stock_entries.update_many(
             {'stamp': stamp},
             {'$set': {'verification_date': new_date}}
