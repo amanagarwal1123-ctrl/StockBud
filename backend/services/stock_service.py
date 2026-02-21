@@ -243,3 +243,100 @@ async def get_current_inventory():
         "total_net_wt": round(total_net_wt, 3),
         "negative_items": negative_items
     }
+
+
+async def get_stamp_closing_stock(stamp: str, as_of_date: str):
+    """Calculate closing gross weight (in kg) for each item in a stamp as of a date.
+
+    Logic: opening_stock + transactions(date <= as_of_date)
+    Uses per-stamp item identity (not merged groups) so stamp tallies are correct.
+    Returns: dict {item_name: gross_wt_kg}
+    """
+    # Load master items for this stamp
+    master_items = await db.master_items.find({'stamp': stamp}, {'_id': 0}).to_list(10000)
+    master_names = {m['item_name'] for m in master_items}
+
+    # Mappings: which transaction names resolve to items in this stamp
+    mappings = await db.item_mappings.find({}, {'_id': 0}).to_list(10000)
+    mapping_dict = {m['transaction_name']: m['master_name'] for m in mappings}
+
+    # Reverse: master_name -> set of transaction_names
+    reverse_map = defaultdict(set)
+    for txn, master in mapping_dict.items():
+        reverse_map[master].add(txn)
+
+    # Groups: for physical identity resolution
+    groups = await db.item_groups.find({}, {'_id': 0}).to_list(1000)
+    all_group_members = set()
+    for g in groups:
+        all_group_members.update(g.get('members', []))
+
+    # Build set of ALL names that map to items in this stamp
+    all_names_for_stamp = set(master_names)
+    for name in master_names:
+        all_names_for_stamp.update(reverse_map.get(name, set()))
+
+    # 1. Opening stock
+    opening = await db.opening_stock.find({}, {'_id': 0}).to_list(10000)
+    item_gross = defaultdict(float)
+
+    for item in opening:
+        raw_name = item['item_name'].strip()
+        # Resolve: if raw_name maps to something in our stamp, use the stamp item
+        if raw_name in master_names:
+            item_gross[raw_name] += item.get('gr_wt', 0)
+        elif raw_name in all_names_for_stamp:
+            resolved = mapping_dict.get(raw_name, raw_name)
+            if resolved in master_names:
+                # But preserve physical identity if it's a group member
+                physical = raw_name if raw_name in all_group_members else resolved
+                if physical in master_names:
+                    item_gross[physical] += item.get('gr_wt', 0)
+                else:
+                    item_gross[resolved] += item.get('gr_wt', 0)
+
+    # 2. Transactions up to and including as_of_date
+    end_date = as_of_date + ' 23:59:59'
+    transactions = await db.transactions.find(
+        {'date': {'$lte': end_date}},
+        {'_id': 0}
+    ).to_list(100000)
+
+    for t in transactions:
+        raw_name = t.get('item_name', '').strip()
+        # Determine which stamp item this belongs to
+        target = None
+        if raw_name in master_names:
+            target = raw_name
+        elif raw_name in all_names_for_stamp:
+            resolved = mapping_dict.get(raw_name, raw_name)
+            physical = raw_name if raw_name in all_group_members and raw_name in master_names else resolved
+            if physical in master_names:
+                target = physical
+            elif resolved in master_names:
+                target = resolved
+
+        if not target:
+            continue
+
+        gr = t.get('gr_wt', 0)
+        if t['type'] in ['purchase', 'purchase_return', 'receive']:
+            item_gross[target] += gr
+        else:
+            item_gross[target] -= gr
+
+    # Polythene adjustments (not date-filtered — they're permanent adjustments)
+    polythene = await db.polythene_adjustments.find({}, {'_id': 0}).to_list(10000)
+    for adj in polythene:
+        adj_name = adj['item_name']
+        resolved = mapping_dict.get(adj_name, adj_name)
+        if resolved in master_names:
+            pw = adj['poly_weight'] * 1000  # kg to grams
+            if adj['operation'] == 'add':
+                item_gross[resolved] += pw
+            else:
+                item_gross[resolved] -= pw
+
+    # Convert to kg and return
+    return {name: round(gr / 1000, 3) for name, gr in item_gross.items()}
+
