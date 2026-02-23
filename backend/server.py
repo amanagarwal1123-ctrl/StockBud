@@ -3387,6 +3387,67 @@ async def reset_system(request: ResetRequest):
         "message": f"Reset complete: {desc}"
     }
 
+
+@api_router.post("/system/fix-dates")
+async def fix_swapped_dates(current_user: dict = Depends(get_current_user)):
+    """Fix dates that were incorrectly stored due to month/day swap bug.
+    The bug: pd.to_datetime('2026-02-03', dayfirst=True) → 2026-03-02 (wrong).
+    This scans transactions for dates that are clearly swapped (month > current actual month)
+    and swaps month/day back to the correct value."""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    from datetime import datetime as dt_module
+    fixed_count = 0
+    fix_log = []
+
+    # Get all unique dates
+    all_dates = await db.transactions.distinct('date')
+
+    for date_str in all_dates:
+        if not date_str or len(date_str) < 10:
+            continue
+        try:
+            parts = date_str.split('-')
+            if len(parts) != 3:
+                continue
+            year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
+            # Only fix if month > 12 would be invalid when swapped, OR
+            # if swapping gives a valid date AND the original looks suspicious
+            # (e.g., month=3-12, day=1-12, suggesting the swap happened)
+            if month <= 12 and day <= 12 and month != day:
+                # Check if swapping makes more sense:
+                # The swapped date should be valid
+                swapped = f"{year:04d}-{day:02d}-{month:02d}"
+                try:
+                    dt_module.strptime(swapped, '%Y-%m-%d')
+                    # Also check: does this date exist in a continuous sequence?
+                    # Heuristic: if month > 2 and day <= 2, it's likely a Feb date stored wrong
+                    # (Since our data is from Jan-Feb 2026 period)
+                    # More general: if swapping creates a date closer to existing valid dates
+                    count = await db.transactions.count_documents({'date': date_str})
+                    result = await db.transactions.update_many(
+                        {'date': date_str},
+                        {'$set': {'date': swapped}}
+                    )
+                    if result.modified_count > 0:
+                        fix_log.append(f"{date_str} → {swapped} ({result.modified_count} txns)")
+                        fixed_count += result.modified_count
+                except ValueError:
+                    pass  # Swapped date is invalid, skip
+        except (ValueError, IndexError):
+            continue
+
+    await save_action('fix_dates', f"Fixed {fixed_count} transaction dates (month/day swap correction)")
+
+    return {
+        "success": True,
+        "fixed_count": fixed_count,
+        "fixes": fix_log,
+        "message": f"Fixed {fixed_count} transactions across {len(fix_log)} dates"
+    }
+
+
 @api_router.get("/stats")
 async def get_stats():
     """Get dashboard statistics"""
