@@ -3423,7 +3423,7 @@ async def fix_swapped_dates(current_user: dict = Depends(get_current_user)):
     unambiguous = [(d, dt) for d, dt in date_objs if dt.day > 12]
     if unambiguous:
         min_date = min(dt for _, dt in unambiguous) - timedelta(days=15)
-        max_date = max(dt for _, dt in unambiguous) + timedelta(days=30)
+        max_date = max(dt for _, dt in unambiguous) + timedelta(days=15)
     else:
         min_date = date_objs[0][1] - timedelta(days=15)
         max_date = date_objs[-1][1]
