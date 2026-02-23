@@ -3392,68 +3392,67 @@ async def reset_system(request: ResetRequest):
 async def fix_swapped_dates(current_user: dict = Depends(get_current_user)):
     """Fix dates that were incorrectly stored due to month/day swap bug in normalize_date.
     The bug: pd.to_datetime('YYYY-MM-DD', dayfirst=True) swaps month/day for ISO strings.
-    Strategy: within each batch, detect dates that break sequential continuity and swap them."""
+    Strategy: detect dates where month/day are both ≤12, and swapping would produce a date
+    that fills a gap in the otherwise sequential date stream."""
     if current_user['role'] != 'admin':
         raise HTTPException(status_code=403, detail="Admin only")
 
-    from datetime import datetime as dt_cls
+    from datetime import datetime as dt_cls, timedelta
     fixed_count = 0
     fix_log = []
 
-    # Process each batch independently
-    batch_ids = await db.transactions.distinct('batch_id')
+    all_dates = sorted(await db.transactions.distinct('date'))
+    if not all_dates:
+        return {"success": True, "fixed_count": 0, "fixes": [], "message": "No dates to fix"}
 
-    for batch_id in batch_ids:
-        dates_in_batch = await db.transactions.distinct('date', {'batch_id': batch_id})
-        if not dates_in_batch:
+    # Parse all dates
+    date_objs = []
+    for d in all_dates:
+        try:
+            date_objs.append((d, dt_cls.strptime(d, '%Y-%m-%d')))
+        except ValueError:
             continue
 
-        # Parse all dates and detect the "core" month(s) — the month with most dates
-        parsed = []
-        for d in dates_in_batch:
-            try:
-                parts = d.split('-')
-                if len(parts) == 3:
-                    parsed.append((d, int(parts[0]), int(parts[1]), int(parts[2])))
-            except (ValueError, IndexError):
-                continue
+    # Detect suspicious gaps: if sorted dates have a gap > 28 days, something is wrong
+    # For each date where month ≤ 12 and day ≤ 12 (swappable), check if swapping
+    # produces a date that falls within the expected range
+    if len(date_objs) < 2:
+        return {"success": True, "fixed_count": 0, "fixes": [], "message": "Not enough dates"}
 
-        if not parsed:
+    # Find dates where day > 12 (unambiguous) to establish the valid date range
+    unambiguous = [(d, dt) for d, dt in date_objs if dt.day > 12]
+    if unambiguous:
+        min_date = min(dt for _, dt in unambiguous) - timedelta(days=15)
+        max_date = max(dt for _, dt in unambiguous) + timedelta(days=30)
+    else:
+        min_date = date_objs[0][1] - timedelta(days=15)
+        max_date = date_objs[-1][1]
+
+    # For each swappable date, check if swapping puts it in the valid range
+    for date_str, dt in date_objs:
+        if dt.month == dt.day:
+            continue  # Swap would give same result
+        if dt.day > 12 or dt.month > 12:
+            continue  # Not swappable
+        # Try swapping
+        try:
+            swapped_dt = dt_cls(dt.year, dt.day, dt.month)
+        except ValueError:
             continue
+        swapped_str = swapped_dt.strftime('%Y-%m-%d')
 
-        # Find the most common month — this is likely the correct month
-        month_counts = {}
-        for _, y, m, d in parsed:
-            # For dates where day > 12, month is unambiguous (wasn't swapped)
-            if d > 12:
-                month_counts[m] = month_counts.get(m, 0) + 1
+        # If current date is outside the valid range but swapped is inside, fix it
+        current_in_range = min_date <= dt <= max_date
+        swapped_in_range = min_date <= swapped_dt <= max_date
 
-        if not month_counts:
-            continue
-
-        dominant_month = max(month_counts, key=month_counts.get)
-
-        # Fix dates where month != dominant_month, day <= 12, and swapping would
-        # put them in the dominant month
-        for date_str, year, month, day in parsed:
-            if month == dominant_month:
-                continue  # Already in correct month
-            if day > 12:
-                continue  # Day > 12 means month is unambiguous
-            # Check if swapping gives us the dominant month
-            if day == dominant_month and month <= 31:
-                swapped = f"{year:04d}-{day:02d}-{month:02d}"
-                try:
-                    dt_cls.strptime(swapped, '%Y-%m-%d')
-                    result = await db.transactions.update_many(
-                        {'date': date_str, 'batch_id': batch_id},
-                        {'$set': {'date': swapped}}
-                    )
-                    if result.modified_count > 0:
-                        fix_log.append(f"{date_str} → {swapped} ({result.modified_count} txns, batch {batch_id[:8]})")
-                        fixed_count += result.modified_count
-                except ValueError:
-                    pass
+        if not current_in_range and swapped_in_range:
+            result = await db.transactions.update_many(
+                {'date': date_str},
+                {'$set': {'date': swapped_str}}
+            )
+            if result.modified_count > 0:
+                fix_log.append(f"{date_str} → {swapped_str} ({result.modified_count} txns)")
+                fixed_count += result.modified_count
 
     await save_action('fix_dates', f"Fixed {fixed_count} transaction dates (month/day swap correction)")
 
