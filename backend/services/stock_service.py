@@ -334,17 +334,30 @@ async def get_stamp_closing_stock(stamp: str, as_of_date: str):
         else:
             item_gross[target] -= gr
 
-    # Polythene adjustments (not date-filtered — they're permanent adjustments)
-    polythene = await db.polythene_adjustments.find({}, {'_id': 0}).to_list(10000)
+    # Polythene adjustments — date-filtered up to as_of_date
+    poly_end = as_of_date + ' 23:59:59'
+    polythene = await db.polythene_adjustments.find(
+        {'date': {'$lte': poly_end}},
+        {'_id': 0}
+    ).to_list(10000)
     for adj in polythene:
         adj_name = adj['item_name']
-        resolved = mapping_dict.get(adj_name, adj_name)
-        if resolved in master_names:
-            pw = adj['poly_weight'] * 1000  # kg to grams
-            if adj['operation'] == 'add':
-                item_gross[resolved] += pw
-            else:
-                item_gross[resolved] -= pw
+        # Direct match to this stamp's items
+        if adj_name in master_names:
+            target = adj_name
+        elif adj_name in all_names_for_stamp:
+            resolved = mapping_dict.get(adj_name, adj_name)
+            target = resolved if resolved in master_names else None
+        else:
+            target = None
+
+        if not target:
+            continue
+        pw = adj['poly_weight'] * 1000  # kg to grams
+        if adj['operation'] == 'add':
+            item_gross[target] += pw
+        else:
+            item_gross[target] -= pw
 
     # Convert to kg and return
     return {name: round(gr / 1000, 3) for name, gr in item_gross.items()}
