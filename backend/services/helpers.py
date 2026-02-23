@@ -45,12 +45,33 @@ def parse_labor_value(tag_no):
 
 
 def normalize_date(date_value):
-    """Normalize date to YYYY-MM-DD format. Uses dayfirst=True for DD/MM/YYYY (Indian format)."""
-    if not date_value or pd.isna(date_value):
+    """Normalize date to YYYY-MM-DD format.
+    Handles:
+      - Native datetime/Timestamp objects (from pandas Excel reading)
+      - ISO format strings YYYY-MM-DD (from SheetJS / JS Date serialization)
+      - Indian DD/MM/YYYY format strings
+    """
+    if not date_value or (isinstance(date_value, float) and pd.isna(date_value)):
         return ''
+    # If already a datetime-like object, format directly (no string parsing ambiguity)
+    if hasattr(date_value, 'strftime'):
+        return date_value.strftime('%Y-%m-%d')
     date_str = str(date_value).strip()
-    if ' ' in date_str:
+    if not date_str or date_str.lower() == 'nan':
+        return ''
+    # Strip time component
+    if 'T' in date_str:
+        date_str = date_str.split('T')[0]
+    elif ' ' in date_str:
         date_str = date_str.split(' ')[0]
+    # If already in ISO YYYY-MM-DD format, parse WITHOUT dayfirst to avoid month/day swap
+    if re.match(r'^\d{4}-\d{1,2}-\d{1,2}$', date_str):
+        try:
+            dt = pd.to_datetime(date_str, dayfirst=False)
+            return dt.strftime('%Y-%m-%d')
+        except:
+            return date_str
+    # For DD/MM/YYYY, DD-MM-YYYY, D/M/YYYY etc. — use dayfirst=True
     try:
         dt = pd.to_datetime(date_str, dayfirst=True)
         return dt.strftime('%Y-%m-%d')
