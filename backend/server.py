@@ -3464,6 +3464,89 @@ async def fix_swapped_dates(current_user: dict = Depends(get_current_user)):
     }
 
 
+@api_router.get("/debug/item-closing/{item_name}")
+async def debug_item_closing(item_name: str, as_of_date: str = None, current_user: dict = Depends(get_current_user)):
+    """Debug endpoint: shows full breakdown of closing stock calculation for an item."""
+    if current_user['role'] not in ['admin', 'manager']:
+        raise HTTPException(status_code=403, detail="Admin/Manager only")
+
+    # Find item in master
+    master_item = await db.master_items.find_one({'item_name': item_name}, {'_id': 0})
+    if not master_item:
+        raise HTTPException(status_code=404, detail=f"Item '{item_name}' not found in master items")
+
+    stamp = master_item.get('stamp', 'Unassigned')
+
+    # Opening stock
+    opening_docs = await db.opening_stock.find({'item_name': item_name}, {'_id': 0}).to_list(10)
+    opening_gr = sum(d.get('gr_wt', 0) for d in opening_docs)
+
+    # Find all names that map to this item
+    mappings = await db.item_mappings.find({'master_name': item_name}, {'_id': 0}).to_list(100)
+    all_names = [item_name] + [m['transaction_name'] for m in mappings]
+
+    # Transactions
+    query = {'item_name': {'$in': all_names}}
+    if as_of_date:
+        query['date'] = {'$lte': as_of_date + ' 23:59:59'}
+
+    txns = await db.transactions.find(query, {'_id': 0}).to_list(100000)
+
+    from collections import defaultdict
+    by_date_type = defaultdict(lambda: defaultdict(float))
+    total_in = 0
+    total_out = 0
+    for t in txns:
+        gr = t.get('gr_wt', 0)
+        by_date_type[t['date']][t['type']] += gr
+        if t['type'] in ['purchase', 'purchase_return', 'receive']:
+            total_in += gr
+        else:
+            total_out += gr
+
+    # Polythene
+    poly_query = {'item_name': {'$in': all_names}}
+    if as_of_date:
+        poly_query['date'] = {'$lte': as_of_date + ' 23:59:59'}
+    polythene = await db.polythene_adjustments.find(poly_query, {'_id': 0}).to_list(100)
+    poly_total = 0
+    for p in polythene:
+        pw = p['poly_weight'] * 1000  # kg to grams
+        if p['operation'] == 'add':
+            poly_total += pw
+        else:
+            poly_total -= pw
+
+    closing = opening_gr + total_in - total_out + poly_total
+
+    daily_breakdown = []
+    for d in sorted(by_date_type.keys()):
+        day_data = {'date': d}
+        for tp, val in by_date_type[d].items():
+            day_data[tp] = round(val / 1000, 3)
+        daily_breakdown.append(day_data)
+
+    return {
+        'item_name': item_name,
+        'stamp': stamp,
+        'as_of_date': as_of_date or 'all dates',
+        'all_transaction_names': all_names,
+        'opening_gr_wt_kg': round(opening_gr / 1000, 3),
+        'total_inflow_kg': round(total_in / 1000, 3),
+        'total_outflow_kg': round(total_out / 1000, 3),
+        'polythene_adjustment_kg': round(poly_total / 1000, 3),
+        'closing_gr_wt_kg': round(closing / 1000, 3),
+        'transaction_count': len(txns),
+        'daily_breakdown': daily_breakdown,
+        'polythene_entries': [{
+            'date': p.get('date', '?'),
+            'operation': p['operation'],
+            'weight_kg': p['poly_weight']
+        } for p in polythene]
+    }
+
+
+
 @api_router.get("/stats")
 async def get_stats():
     """Get dashboard statistics"""
