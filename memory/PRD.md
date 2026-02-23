@@ -175,6 +175,14 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
 - Truncated party names with max-w for mobile
 - Added pagination to Customer Profit and Supplier Profit tabs
 
+## Stamp Closing Stock Double-Count Fix (Feb 21, 2026)
+- **Bug**: `get_stamp_closing_stock()` double-counted items that were mapped to a group leader in another stamp
+  - Example: TULSI 70 BELT (STAMP 6) mapped to TULSI 70 -264 (STAMP 3)
+  - BELT's transactions were counted in BOTH stamps → 87 kg over-counted in STAMP 3
+- **Fix**: When building `all_names_for_stamp`, exclude transaction names that are themselves
+  master items in OTHER stamps. A mapped name is only included if it's not a master item elsewhere.
+- **Result**: All 21 stamps now show 0.000 kg difference between inventory and closing stock
+
 ## Backlog
 - (P1) Item Mapping: unmapped historical items need mapping
 - (P2) Refactor server.py into proper FastAPI structure (routes, services, models)
