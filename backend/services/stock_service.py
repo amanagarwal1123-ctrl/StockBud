@@ -256,6 +256,11 @@ async def get_stamp_closing_stock(stamp: str, as_of_date: str):
     master_items = await db.master_items.find({'stamp': stamp}, {'_id': 0}).to_list(10000)
     master_names = {m['item_name'] for m in master_items}
 
+    # Load ALL master item names (any stamp) — to detect when a mapped name
+    # is itself a master item in another stamp (should NOT be counted here)
+    all_master_items = await db.master_items.find({}, {'_id': 0, 'item_name': 1, 'stamp': 1}).to_list(10000)
+    all_master_names = {m['item_name'] for m in all_master_items}
+
     # Mappings: which transaction names resolve to items in this stamp
     mappings = await db.item_mappings.find({}, {'_id': 0}).to_list(10000)
     mapping_dict = {m['transaction_name']: m['master_name'] for m in mappings}
@@ -272,9 +277,13 @@ async def get_stamp_closing_stock(stamp: str, as_of_date: str):
         all_group_members.update(g.get('members', []))
 
     # Build set of ALL names that map to items in this stamp
+    # EXCLUDE names that are themselves master items in OTHER stamps
     all_names_for_stamp = set(master_names)
     for name in master_names:
-        all_names_for_stamp.update(reverse_map.get(name, set()))
+        for txn_name in reverse_map.get(name, set()):
+            # Only include if txn_name is NOT a master item in another stamp
+            if txn_name not in all_master_names or txn_name in master_names:
+                all_names_for_stamp.add(txn_name)
 
     # 1. Opening stock
     opening = await db.opening_stock.find({}, {'_id': 0}).to_list(10000)
@@ -282,7 +291,7 @@ async def get_stamp_closing_stock(stamp: str, as_of_date: str):
 
     for item in opening:
         raw_name = item['item_name'].strip()
-        # Resolve: if raw_name maps to something in our stamp, use the stamp item
+        # Direct match to this stamp's items
         if raw_name in master_names:
             item_gross[raw_name] += item.get('gr_wt', 0)
         elif raw_name in all_names_for_stamp:
