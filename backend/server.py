@@ -3390,53 +3390,70 @@ async def reset_system(request: ResetRequest):
 
 @api_router.post("/system/fix-dates")
 async def fix_swapped_dates(current_user: dict = Depends(get_current_user)):
-    """Fix dates that were incorrectly stored due to month/day swap bug.
-    The bug: pd.to_datetime('2026-02-03', dayfirst=True) → 2026-03-02 (wrong).
-    This scans transactions for dates that are clearly swapped (month > current actual month)
-    and swaps month/day back to the correct value."""
+    """Fix dates that were incorrectly stored due to month/day swap bug in normalize_date.
+    The bug: pd.to_datetime('YYYY-MM-DD', dayfirst=True) swaps month/day for ISO strings.
+    Strategy: within each batch, detect dates that break sequential continuity and swap them."""
     if current_user['role'] != 'admin':
         raise HTTPException(status_code=403, detail="Admin only")
 
-    from datetime import datetime as dt_module
+    from datetime import datetime as dt_cls
     fixed_count = 0
     fix_log = []
 
-    # Get all unique dates
-    all_dates = await db.transactions.distinct('date')
+    # Process each batch independently
+    batch_ids = await db.transactions.distinct('batch_id')
 
-    for date_str in all_dates:
-        if not date_str or len(date_str) < 10:
+    for batch_id in batch_ids:
+        dates_in_batch = await db.transactions.distinct('date', {'batch_id': batch_id})
+        if not dates_in_batch:
             continue
-        try:
-            parts = date_str.split('-')
-            if len(parts) != 3:
+
+        # Parse all dates and detect the "core" month(s) — the month with most dates
+        parsed = []
+        for d in dates_in_batch:
+            try:
+                parts = d.split('-')
+                if len(parts) == 3:
+                    parsed.append((d, int(parts[0]), int(parts[1]), int(parts[2])))
+            except (ValueError, IndexError):
                 continue
-            year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
-            # Only fix if month > 12 would be invalid when swapped, OR
-            # if swapping gives a valid date AND the original looks suspicious
-            # (e.g., month=3-12, day=1-12, suggesting the swap happened)
-            if month <= 12 and day <= 12 and month != day:
-                # Check if swapping makes more sense:
-                # The swapped date should be valid
+
+        if not parsed:
+            continue
+
+        # Find the most common month — this is likely the correct month
+        month_counts = {}
+        for _, y, m, d in parsed:
+            # For dates where day > 12, month is unambiguous (wasn't swapped)
+            if d > 12:
+                month_counts[m] = month_counts.get(m, 0) + 1
+
+        if not month_counts:
+            continue
+
+        dominant_month = max(month_counts, key=month_counts.get)
+
+        # Fix dates where month != dominant_month, day <= 12, and swapping would
+        # put them in the dominant month
+        for date_str, year, month, day in parsed:
+            if month == dominant_month:
+                continue  # Already in correct month
+            if day > 12:
+                continue  # Day > 12 means month is unambiguous
+            # Check if swapping gives us the dominant month
+            if day == dominant_month and month <= 31:
                 swapped = f"{year:04d}-{day:02d}-{month:02d}"
                 try:
-                    dt_module.strptime(swapped, '%Y-%m-%d')
-                    # Also check: does this date exist in a continuous sequence?
-                    # Heuristic: if month > 2 and day <= 2, it's likely a Feb date stored wrong
-                    # (Since our data is from Jan-Feb 2026 period)
-                    # More general: if swapping creates a date closer to existing valid dates
-                    count = await db.transactions.count_documents({'date': date_str})
+                    dt_cls.strptime(swapped, '%Y-%m-%d')
                     result = await db.transactions.update_many(
-                        {'date': date_str},
+                        {'date': date_str, 'batch_id': batch_id},
                         {'$set': {'date': swapped}}
                     )
                     if result.modified_count > 0:
-                        fix_log.append(f"{date_str} → {swapped} ({result.modified_count} txns)")
+                        fix_log.append(f"{date_str} → {swapped} ({result.modified_count} txns, batch {batch_id[:8]})")
                         fixed_count += result.modified_count
                 except ValueError:
-                    pass  # Swapped date is invalid, skip
-        except (ValueError, IndexError):
-            continue
+                    pass
 
     await save_action('fix_dates', f"Fixed {fixed_count} transaction dates (month/day swap correction)")
 
