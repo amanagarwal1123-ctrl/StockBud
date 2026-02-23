@@ -183,6 +183,12 @@ Silver wholesale inventory management software. Calculates "book inventory" by p
   master items in OTHER stamps. A mapped name is only included if it's not a master item elsewhere.
 - **Result**: All 21 stamps now show 0.000 kg difference between inventory and closing stock
 
+## Polythene Date-Filtering in Stamp Closing Stock (Feb 21, 2026)
+- Polythene adjustments in `get_stamp_closing_stock()` are now date-filtered (up to verification_date)
+- Previously they were applied unconditionally ("permanent adjustments")
+- Also applies cross-stamp exclusion to polythene items (prevents counting in wrong stamp via mapping)
+- Verified: stock on day before adjustment excludes poly, stock on adjustment day includes it
+
 ## Backlog
 - (P1) Item Mapping: unmapped historical items need mapping
 - (P2) Refactor server.py into proper FastAPI structure (routes, services, models)
