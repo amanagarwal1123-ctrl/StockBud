@@ -3113,7 +3113,7 @@ async def get_sales_summary(
         query['date'] = {'$gte': start_date, '$lte': end_date_with_time}
     
     # Get ALL sale transactions (S and SR - SR have negative values already)
-    sales_transactions = await db.transactions.find(query, {"_id": 0}).to_list(10000)
+    sales_transactions = await db.transactions.find(query, {"_id": 0}).to_list(100000)
     
     # Filter out excluded items
     sales_transactions = [t for t in sales_transactions if t['item_name'] not in EXCLUDED_ITEMS]
