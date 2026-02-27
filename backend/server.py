@@ -86,14 +86,19 @@ def _resolve_col(df_columns_set, possible_names):
 
 
 def _safe_float(val, default=0.0):
-    """Fast float conversion"""
+    """Fast float conversion — handles comma-separated numbers (e.g., 1,705.433)"""
     if val is None or val == '':
         return default
     try:
         f = float(val)
         return default if math.isnan(f) else f
     except (ValueError, TypeError):
-        return default
+        # Try removing commas (Indian/international thousand separators)
+        try:
+            f = float(str(val).replace(',', ''))
+            return default if math.isnan(f) else f
+        except (ValueError, TypeError):
+            return default
 
 
 def _safe_str(val, default=''):
