@@ -1006,8 +1006,13 @@ async def _process_upload(upload_id: str, meta: dict):
         if file_type in ('purchase', 'sale', 'branch_transfer'):
             deleted_count = 0
             if start_date and end_date:
+                # Map file_type to actual stored transaction types for deletion
+                if file_type == 'branch_transfer':
+                    delete_types = ['issue', 'receive']
+                else:
+                    delete_types = [file_type, f"{file_type}_return"]
                 delete_result = await db.transactions.delete_many({
-                    "type": {"$in": [file_type, f"{file_type}_return"]},
+                    "type": {"$in": delete_types},
                     "date": {"$gte": start_date, "$lte": end_date}
                 })
                 deleted_count = delete_result.deleted_count
