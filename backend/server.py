@@ -2686,7 +2686,7 @@ async def get_supplier_profit(
         query['date'] = {'$gte': start_date, '$lte': end_date_with_time}
     
     # Get all transactions
-    all_transactions = await db.transactions.find(query, {"_id": 0}).to_list(10000)
+    all_transactions = await db.transactions.find(query, {"_id": 0}).to_list(100000)
     
     # Group-aware mappings
     all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
@@ -2802,7 +2802,7 @@ async def get_purchase_ledger():
 async def get_unmapped_items():
     """Get all unmapped items from transactions AND historical_transactions"""
     # Get item names from both collections
-    transactions = await db.transactions.find({}, {"_id": 0, "item_name": 1}).to_list(10000)
+    transactions = await db.transactions.find({}, {"_id": 0, "item_name": 1}).to_list(100000)
     historical_names = set()
     async for doc in db.historical_transactions.find({}, {"_id": 0, "item_name": 1}):
         historical_names.add(doc['item_name'])
@@ -3021,7 +3021,7 @@ async def get_party_analysis(
         end_date_with_time = end_date + ' 23:59:59'
         query['date'] = {'$gte': start_date, '$lte': end_date_with_time}
     
-    transactions = await db.transactions.find(query, {"_id": 0}).to_list(10000)
+    transactions = await db.transactions.find(query, {"_id": 0}).to_list(100000)
     
     customers = defaultdict(lambda: {
         'party_name': '',
@@ -3160,7 +3160,7 @@ async def calculate_profit(
         end_date_with_time = end_date + ' 23:59:59'
         query['date'] = {'$gte': start_date, '$lte': end_date_with_time}
     
-    transactions = await db.transactions.find(query, {"_id": 0}).to_list(10000)
+    transactions = await db.transactions.find(query, {"_id": 0}).to_list(100000)
     
     # Filter out excluded items AND items without stamps (unmapped)
     filtered_transactions = []
