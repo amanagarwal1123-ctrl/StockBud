@@ -3577,6 +3577,46 @@ async def get_stats():
         "total_parties": total_parties
     }
 
+
+@api_router.get("/stats/transaction-summary")
+async def get_transaction_summary():
+    """Get detailed transaction summary with weight totals per type — useful for reconciliation."""
+    pipeline = [
+        {'$group': {
+            '_id': '$type',
+            'count': {'$sum': 1},
+            'total_gr_wt': {'$sum': '$gr_wt'},
+            'total_net_wt': {'$sum': '$net_wt'},
+        }},
+        {'$sort': {'_id': 1}}
+    ]
+    results = {}
+    async for doc in db.transactions.aggregate(pipeline):
+        results[doc['_id']] = {
+            'count': doc['count'],
+            'gr_wt_kg': round(doc['total_gr_wt'] / 1000, 3),
+            'net_wt_kg': round(doc['total_net_wt'] / 1000, 3),
+        }
+
+    # Calculate summary totals
+    sale_gr = results.get('sale', {}).get('gr_wt_kg', 0)
+    sale_ret_gr = results.get('sale_return', {}).get('gr_wt_kg', 0)
+    purchase_gr = results.get('purchase', {}).get('gr_wt_kg', 0)
+    purchase_ret_gr = results.get('purchase_return', {}).get('gr_wt_kg', 0)
+    issue_gr = results.get('issue', {}).get('gr_wt_kg', 0)
+    receive_gr = results.get('receive', {}).get('gr_wt_kg', 0)
+
+    return {
+        "by_type": results,
+        "summary": {
+            "net_sale_gr_wt_kg": round(sale_gr + sale_ret_gr, 3),
+            "net_purchase_gr_wt_kg": round(purchase_gr + purchase_ret_gr, 3),
+            "net_branch_transfer_gr_wt_kg": round(issue_gr - receive_gr, 3),
+            "total_outflow_gr_wt_kg": round(sale_gr + sale_ret_gr + issue_gr, 3),
+        },
+        "dates": sorted(await db.transactions.distinct('date'))
+    }
+
 @api_router.delete("/transactions/all")
 async def clear_all_transactions():
     """Clear all transactions only (preserves opening stock and master data)"""
