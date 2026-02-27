@@ -1391,8 +1391,13 @@ async def upload_transaction_file(
     # If date range provided, DELETE existing transactions in that range
     deleted_count = 0
     if start_date and end_date:
+        # Map file_type to actual stored transaction types for deletion
+        if file_type == 'branch_transfer':
+            delete_types = ['issue', 'receive']
+        else:
+            delete_types = [file_type, f"{file_type}_return"]
         delete_query = {
-            "type": {"$in": [file_type, f"{file_type}_return"]},
+            "type": {"$in": delete_types},
             "date": {"$gte": start_date, "$lte": end_date}
         }
         delete_result = await db.transactions.delete_many(delete_query)
