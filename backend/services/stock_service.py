@@ -10,7 +10,7 @@ async def get_current_inventory():
     EXCLUDED_ITEMS = ["SILVER ORNAMENTS"]
 
     opening = await db.opening_stock.find({}, {"_id": 0}).to_list(10000)
-    transactions = await db.transactions.find({}, {"_id": 0}).to_list(10000)
+    transactions = await db.transactions.find({}, {"_id": 0}).to_list(100000)
 
     mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
     master_items = await db.master_items.find({}, {"_id": 0}).to_list(10000)
