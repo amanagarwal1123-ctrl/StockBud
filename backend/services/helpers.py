@@ -1,13 +1,24 @@
 import re
-import pandas as pd
+import math
 from datetime import datetime, timezone
 from database import db
 from models import ActionHistory
 
 
+def _is_na(val):
+    """Lightweight NaN/None check — replaces pd.isna() to avoid top-level pandas import."""
+    if val is None:
+        return True
+    if isinstance(val, float) and math.isnan(val):
+        return True
+    if isinstance(val, str) and val.strip().lower() == 'nan':
+        return True
+    return False
+
+
 def normalize_stamp(stamp_value):
     """Normalize stamp to consistent 'STAMP X' format (ALL CAPS)"""
-    if not stamp_value or pd.isna(stamp_value):
+    if not stamp_value or _is_na(stamp_value):
         return 'Unassigned'
     stamp_str = str(stamp_value).strip()
     if not stamp_str or stamp_str.lower() == 'unassigned':
@@ -21,7 +32,7 @@ def normalize_stamp(stamp_value):
 def get_column_value(row, possible_names, default=''):
     """Try multiple column name variations"""
     for name in possible_names:
-        if name in row.index and pd.notna(row.get(name)):
+        if name in row.index and not _is_na(row.get(name)):
             val = row.get(name)
             if val != '' and str(val).strip() != '':
                 return val
@@ -30,7 +41,7 @@ def get_column_value(row, possible_names, default=''):
 
 def parse_labor_value(tag_no):
     """Extract labor value and type from Tag.No. like '13 Wt' or '17 Pc'"""
-    if not tag_no or pd.isna(tag_no):
+    if not tag_no or _is_na(tag_no):
         return 0.0, None
     tag_str = str(tag_no).strip().upper()
     parts = tag_str.split()
@@ -51,7 +62,7 @@ def normalize_date(date_value):
       - ISO format strings YYYY-MM-DD (from SheetJS / JS Date serialization)
       - Indian DD/MM/YYYY format strings
     """
-    if not date_value or (isinstance(date_value, float) and pd.isna(date_value)):
+    if not date_value or _is_na(date_value):
         return ''
     # If already a datetime-like object, format directly (no string parsing ambiguity)
     if hasattr(date_value, 'strftime'):
@@ -67,12 +78,13 @@ def normalize_date(date_value):
     # If already in ISO YYYY-MM-DD format, parse WITHOUT dayfirst to avoid month/day swap
     if re.match(r'^\d{4}-\d{1,2}-\d{1,2}$', date_str):
         try:
-            dt = pd.to_datetime(date_str, dayfirst=False)
-            return dt.strftime('%Y-%m-%d')
-        except:
+            parts = date_str.split('-')
+            return f"{int(parts[0]):04d}-{int(parts[1]):02d}-{int(parts[2]):02d}"
+        except (ValueError, IndexError):
             return date_str
-    # For DD/MM/YYYY, DD-MM-YYYY, D/M/YYYY etc. — use dayfirst=True
+    # For DD/MM/YYYY, DD-MM-YYYY, D/M/YYYY etc. — use pandas with dayfirst=True (lazy import)
     try:
+        import pandas as pd
         dt = pd.to_datetime(date_str, dayfirst=True)
         return dt.strftime('%Y-%m-%d')
     except:
