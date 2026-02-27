@@ -9,15 +9,15 @@ async def get_current_inventory():
     Returns per-member breakdowns for expandable UI."""
     EXCLUDED_ITEMS = ["SILVER ORNAMENTS"]
 
-    opening = await db.opening_stock.find({}, {"_id": 0}).to_list(10000)
-    transactions = await db.transactions.find({}, {"_id": 0}).to_list(100000)
+    opening = await db.opening_stock.find({}, {"_id": 0}).to_list(None)
+    transactions = await db.transactions.find({}, {"_id": 0}).to_list(None)
 
-    mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(10000)
-    master_items = await db.master_items.find({}, {"_id": 0}).to_list(10000)
+    mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
+    master_items = await db.master_items.find({}, {"_id": 0}).to_list(None)
     master_stamp_dict = {m['item_name']: m['stamp'] for m in master_items}
 
     groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
-    ledger_items = await db.purchase_ledger.find({}, {"_id": 0}).to_list(10000)
+    ledger_items = await db.purchase_ledger.find({}, {"_id": 0}).to_list(None)
 
     mapping_dict, member_to_leader, group_members = build_group_maps(groups, mappings)
     group_ledger = build_group_ledger(ledger_items, groups, mappings)
@@ -139,7 +139,7 @@ async def get_current_inventory():
             member_data[key][m_key]['labor'] -= trans.get('labor', 0)
 
     # --- Polythene adjustments ---
-    polythene_adjustments = await db.polythene_adjustments.find({}, {"_id": 0}).to_list(10000)
+    polythene_adjustments = await db.polythene_adjustments.find({}, {"_id": 0}).to_list(None)
     poly_map = defaultdict(float)
     for adj in polythene_adjustments:
         adj_item_name = adj['item_name']
@@ -253,16 +253,16 @@ async def get_stamp_closing_stock(stamp: str, as_of_date: str):
     Returns: dict {item_name: gross_wt_kg}
     """
     # Load master items for this stamp
-    master_items = await db.master_items.find({'stamp': stamp}, {'_id': 0}).to_list(10000)
+    master_items = await db.master_items.find({'stamp': stamp}, {'_id': 0}).to_list(None)
     master_names = {m['item_name'] for m in master_items}
 
     # Load ALL master item names (any stamp) — to detect when a mapped name
     # is itself a master item in another stamp (should NOT be counted here)
-    all_master_items = await db.master_items.find({}, {'_id': 0, 'item_name': 1, 'stamp': 1}).to_list(10000)
+    all_master_items = await db.master_items.find({}, {'_id': 0, 'item_name': 1, 'stamp': 1}).to_list(None)
     all_master_names = {m['item_name'] for m in all_master_items}
 
     # Mappings: which transaction names resolve to items in this stamp
-    mappings = await db.item_mappings.find({}, {'_id': 0}).to_list(10000)
+    mappings = await db.item_mappings.find({}, {'_id': 0}).to_list(None)
     mapping_dict = {m['transaction_name']: m['master_name'] for m in mappings}
 
     # Reverse: master_name -> set of transaction_names
@@ -286,7 +286,7 @@ async def get_stamp_closing_stock(stamp: str, as_of_date: str):
                 all_names_for_stamp.add(txn_name)
 
     # 1. Opening stock
-    opening = await db.opening_stock.find({}, {'_id': 0}).to_list(10000)
+    opening = await db.opening_stock.find({}, {'_id': 0}).to_list(None)
     item_gross = defaultdict(float)
 
     for item in opening:
@@ -309,7 +309,7 @@ async def get_stamp_closing_stock(stamp: str, as_of_date: str):
     transactions = await db.transactions.find(
         {'date': {'$lte': end_date}},
         {'_id': 0}
-    ).to_list(100000)
+    ).to_list(None)
 
     for t in transactions:
         raw_name = t.get('item_name', '').strip()
@@ -339,7 +339,7 @@ async def get_stamp_closing_stock(stamp: str, as_of_date: str):
     polythene = await db.polythene_adjustments.find(
         {'date': {'$lte': poly_end}},
         {'_id': 0}
-    ).to_list(10000)
+    ).to_list(None)
     for adj in polythene:
         adj_name = adj['item_name']
         # Direct match to this stamp's items
