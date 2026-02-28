@@ -458,20 +458,6 @@ export default function Layout({ children }) {
               </AlertDialogContent>
             </AlertDialog>
             )}
-
-            {/* Fix Dates - Admin only */}
-            {isAdmin && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full justify-start text-xs mt-1"
-                data-testid="fix-dates-button"
-                onClick={handleFixDates}
-              >
-                <RotateCcw className="h-3.5 w-3.5 mr-2" />
-                Fix Swapped Dates
-              </Button>
-            )}
             
             <div className="mt-3 rounded-lg bg-gradient-to-r from-primary/10 via-secondary/10 to-accent/10 p-3 text-xs">
               <p className="font-medium text-foreground">StockBud v2.0</p>
