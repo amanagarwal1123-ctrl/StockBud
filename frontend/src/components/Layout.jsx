@@ -198,20 +198,6 @@ export default function Layout({ children }) {
     }
   };
 
-  const handleFixDates = async () => {
-    try {
-      const response = await axios.post(`${API}/system/fix-dates`);
-      const data = response.data;
-      if (data.fixed_count > 0) {
-        toast.success(`Fixed ${data.fixed_count} transactions: ${data.fixes.join(', ')}`);
-      } else {
-        toast.info('No date issues found — all dates look correct.');
-      }
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Fix dates failed');
-    }
-  };
-
   const toggleCategory = (catId) => {
     setResetCategories(prev => 
       prev.includes(catId) ? prev.filter(c => c !== catId) : [...prev, catId]
