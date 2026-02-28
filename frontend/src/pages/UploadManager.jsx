@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,7 @@ import { useUpload } from '../context/UploadContext';
 export default function UploadManager() {
   const { uploads, startUpload } = useUpload();
   const [uploadedFiles, setUploadedFiles] = useState({});
+  const [masterDateRange, setMasterDateRange] = useState({ start: '', end: '' });
   const [dateRanges, setDateRanges] = useState({
     purchase: { start: '', end: '' },
     sale: { start: '', end: '' },
@@ -18,6 +19,20 @@ export default function UploadManager() {
   });
 
   const isUploading = uploads.some(u => u.status === 'uploading');
+
+  const applyMasterDates = () => {
+    if (!masterDateRange.start || !masterDateRange.end) {
+      toast.error('Please select both master dates first');
+      return;
+    }
+    setDateRanges(prev => ({
+      ...prev,
+      purchase: { start: masterDateRange.start, end: masterDateRange.end },
+      sale: { start: masterDateRange.start, end: masterDateRange.end },
+      branch_transfer: { start: masterDateRange.start, end: masterDateRange.end },
+    }));
+    toast.success(`Date range applied: ${masterDateRange.start} to ${masterDateRange.end}`);
+  };
 
   const handleFileUpload = async (fileType, file) => {
     if (!file) return;
@@ -44,9 +59,9 @@ export default function UploadManager() {
     };
 
     let confirmMessage = `Are you sure you want to upload ${fileTypeNames[fileType]}?\n\nFile: ${file.name}\n\n`;
-    if (fileType === 'purchase' || fileType === 'sale') {
+    if (fileType === 'purchase' || fileType === 'sale' || fileType === 'branch_transfer') {
       const range = dateRanges[fileType];
-      confirmMessage += `Date Range: ${range.start} to ${range.end}\n\nThis will REPLACE all ${fileType} transactions in this date range.`;
+      confirmMessage += `Date Range: ${range.start} to ${range.end}\n\nOnly dates present in the file will be replaced. Other dates are untouched.`;
     } else if (fileType === 'physical_stock') {
       confirmMessage += `Verification Date: ${dateRanges.physical_stock.date}`;
     } else {
@@ -69,36 +84,36 @@ export default function UploadManager() {
 
     return (
       <Card className="border-border/40 shadow-sm">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-xl">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-lg">
             <FileSpreadsheet className="h-5 w-5 text-primary" />
             {title}
           </CardTitle>
-          <CardDescription>{description}</CardDescription>
+          <CardDescription className="text-xs">{description}</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-3">
           {needsDateRange && (
             <div className="grid grid-cols-2 gap-3 pb-3 border-b">
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">From Date *</label>
-                <Input type="date" value={dateRanges[type]?.start || ''} onChange={(e) => setDateRanges(prev => ({ ...prev, [type]: { ...prev[type], start: e.target.value } }))} className="text-sm" required />
+                <Input type="date" value={dateRanges[type]?.start || ''} onChange={(e) => setDateRanges(prev => ({ ...prev, [type]: { ...prev[type], start: e.target.value } }))} className="text-sm h-9" data-testid={`date-start-${type}`} required />
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">To Date *</label>
-                <Input type="date" value={dateRanges[type]?.end || ''} onChange={(e) => setDateRanges(prev => ({ ...prev, [type]: { ...prev[type], end: e.target.value } }))} className="text-sm" required />
+                <Input type="date" value={dateRanges[type]?.end || ''} onChange={(e) => setDateRanges(prev => ({ ...prev, [type]: { ...prev[type], end: e.target.value } }))} className="text-sm h-9" data-testid={`date-end-${type}`} required />
               </div>
             </div>
           )}
           {needsDate && (
             <div className="pb-3 border-b">
               <label className="text-xs font-medium text-muted-foreground mb-1 block">Verification Date *</label>
-              <Input type="date" value={dateRanges.physical_stock?.date || ''} onChange={(e) => setDateRanges(prev => ({ ...prev, physical_stock: { date: e.target.value } }))} className="text-sm" required />
+              <Input type="date" value={dateRanges.physical_stock?.date || ''} onChange={(e) => setDateRanges(prev => ({ ...prev, physical_stock: { date: e.target.value } }))} className="text-sm h-9" required />
             </div>
           )}
-          <label htmlFor={isUploading ? undefined : `${type}-upload`} className={`upload-zone flex flex-col items-center justify-center gap-3 border-2 border-dashed rounded-xl p-12 transition-all ${isUploading ? 'border-muted-foreground/10 bg-muted/20 cursor-not-allowed opacity-50' : 'border-muted-foreground/25 cursor-pointer hover:border-primary/50 bg-muted/5'}`} data-testid={`upload-zone-${type}`}>
+          <label htmlFor={isUploading ? undefined : `${type}-upload`} className={`upload-zone flex flex-col items-center justify-center gap-3 border-2 border-dashed rounded-xl p-8 transition-all ${isUploading ? 'border-muted-foreground/10 bg-muted/20 cursor-not-allowed opacity-50' : 'border-muted-foreground/25 cursor-pointer hover:border-primary/50 bg-muted/5'}`} data-testid={`upload-zone-${type}`}>
             {uploadedFiles[type] ? (
               <>
-                <CheckCircle2 className="h-12 w-12 text-emerald-600" />
+                <CheckCircle2 className="h-10 w-10 text-emerald-600" />
                 <div className="text-center">
                   <p className="font-medium text-sm">{uploadedFiles[type]}</p>
                   <p className="text-xs text-muted-foreground mt-1">Click to upload another file</p>
@@ -106,7 +121,7 @@ export default function UploadManager() {
               </>
             ) : (
               <>
-                <Upload className="h-12 w-12 text-muted-foreground" />
+                <Upload className="h-10 w-10 text-muted-foreground" />
                 <div className="text-center">
                   <p className="font-medium text-sm">Click to upload or drag and drop</p>
                   <p className="text-xs text-muted-foreground mt-1">Excel files (.xlsx, .xls)</p>
@@ -141,7 +156,26 @@ export default function UploadManager() {
           </div>
         </TabsContent>
         <TabsContent value="transactions" className="space-y-6">
-          <div className="grid gap-3 sm:gap-6 grid-cols-2 md:grid-cols-2">
+          {/* Master Date Range */}
+          <Card className="border-primary/20 bg-primary/5" data-testid="master-date-card">
+            <CardContent className="p-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-end gap-3">
+                <div className="flex items-center gap-2 text-sm font-semibold text-primary shrink-0">
+                  <Calendar className="h-4 w-4" />
+                  Master Date Range
+                </div>
+                <div className="grid grid-cols-2 gap-3 flex-1 w-full sm:w-auto">
+                  <Input type="date" value={masterDateRange.start} onChange={(e) => setMasterDateRange(prev => ({ ...prev, start: e.target.value }))} className="text-sm h-9 bg-background" data-testid="master-date-start" />
+                  <Input type="date" value={masterDateRange.end} onChange={(e) => setMasterDateRange(prev => ({ ...prev, end: e.target.value }))} className="text-sm h-9 bg-background" data-testid="master-date-end" />
+                </div>
+                <Button size="sm" onClick={applyMasterDates} className="h-9 shrink-0" data-testid="apply-master-dates">
+                  Apply to All
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">Set once, applies to Purchase, Sale, and Branch Transfer. You can still change individual dates below.</p>
+            </CardContent>
+          </Card>
+          <div className="grid gap-3 sm:gap-6 grid-cols-1 md:grid-cols-2">
             <FileUploadCard type="purchase" title="Purchase File" description="Upload your purchase transactions Excel file" />
             <FileUploadCard type="sale" title="Sale File" description="Upload your sale transactions Excel file" />
           </div>
