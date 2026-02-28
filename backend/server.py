@@ -1408,28 +1408,39 @@ async def upload_transaction_file(
     
     batch_id = str(uuid.uuid4())
     
-    # If date range provided, DELETE existing transactions in that range
+    # DELETE only dates that exist in the new file (prevents losing data for dates not in the file)
     deleted_count = 0
-    if start_date and end_date:
-        # Map file_type to actual stored transaction types for deletion
-        if file_type == 'branch_transfer':
-            delete_types = ['issue', 'receive']
-        else:
-            delete_types = [file_type, f"{file_type}_return"]
-        delete_query = {
+    if file_type == 'branch_transfer':
+        delete_types = ['issue', 'receive']
+    else:
+        delete_types = [file_type, f"{file_type}_return"]
+
+    new_dates = sorted(set(r.get('date', '') for r in records if r.get('date')))
+    if new_dates:
+        # Backup replaced records for undo
+        old_records = await db.transactions.find(
+            {"type": {"$in": delete_types}, "date": {"$in": new_dates}}, {"_id": 0}
+        ).to_list(None)
+        if old_records:
+            await db.replaced_records.insert_one({
+                "batch_id": batch_id,
+                "records": old_records,
+                "replaced_at": datetime.now(timezone.utc).isoformat()
+            })
+        delete_result = await db.transactions.delete_many({
             "type": {"$in": delete_types},
-            "date": {"$gte": start_date, "$lte": end_date}
-        }
-        delete_result = await db.transactions.delete_many(delete_query)
+            "date": {"$in": new_dates}
+        })
         deleted_count = delete_result.deleted_count
     
-    # Prepare and batch-insert (skip Pydantic for speed on large files)
+    # Prepare and batch-insert
     transactions = _prepare_transactions(records, batch_id)
     await batch_insert(db.transactions, transactions)
     
-    message = f"Uploaded {len(transactions)} {file_type} records"
+    dates_str = f"{new_dates[0]} to {new_dates[-1]}" if new_dates else "unknown"
+    message = f"Uploaded {len(transactions)} {file_type} records for {dates_str}"
     if deleted_count > 0:
-        message += f" (replaced {deleted_count} existing records from {start_date} to {end_date})"
+        message += f" (replaced {deleted_count} old records)"
     
     await save_action(
         f'upload_{file_type}',
