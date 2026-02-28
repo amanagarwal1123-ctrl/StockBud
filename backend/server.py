@@ -2445,7 +2445,7 @@ async def normalize_all_stamps(current_user: dict = Depends(get_current_user)):
 
 @api_router.post("/history/undo-upload")
 async def undo_upload(batch_id: str):
-    """Undo a specific file upload by batch_id"""
+    """Undo a specific file upload by batch_id — restores previously replaced data"""
     
     # Find the action
     action = await db.action_history.find_one({"data_snapshot.batch_id": batch_id})
@@ -2455,16 +2455,29 @@ async def undo_upload(batch_id: str):
     # Delete all transactions with this batch_id
     delete_result = await db.transactions.delete_many({"batch_id": batch_id})
     
+    # Restore backed-up records if they exist
+    restored_count = 0
+    backup = await db.replaced_records.find_one({"batch_id": batch_id}, {"_id": 0})
+    if backup and backup.get("records"):
+        await batch_insert(db.transactions, backup["records"])
+        restored_count = len(backup["records"])
+        await db.replaced_records.delete_one({"batch_id": batch_id})
+    
     # Mark action as undone
     await db.action_history.update_one(
         {"data_snapshot.batch_id": batch_id},
         {"$set": {"can_undo": False}}
     )
     
+    msg = f"Undone: {action.get('description', 'Upload')}. Removed {delete_result.deleted_count} records"
+    if restored_count > 0:
+        msg += f", restored {restored_count} previous records"
+    
     return {
         "success": True,
-        "message": f"Undone: {action.get('description', 'Upload')}",
-        "deleted_count": delete_result.deleted_count
+        "message": msg,
+        "deleted_count": delete_result.deleted_count,
+        "restored_count": restored_count
     }
 
 
