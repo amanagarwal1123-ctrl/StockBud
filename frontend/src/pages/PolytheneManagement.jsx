@@ -187,6 +187,39 @@ export default function PolytheneManagement() {
         </CardContent>
       </Card>
 
+      {/* Polythene Summary - shown when filtered by item */}
+      {filterItem && filteredEntries.length > 0 && (() => {
+        const totalAdd = filteredEntries
+          .filter(e => e.operation === 'add')
+          .reduce((sum, e) => sum + (e.poly_weight || 0), 0);
+        const totalSubtract = filteredEntries
+          .filter(e => e.operation === 'subtract')
+          .reduce((sum, e) => sum + (e.poly_weight || 0), 0);
+        const net = totalAdd - totalSubtract;
+        return (
+          <div className="grid grid-cols-3 gap-3" data-testid="polythene-summary">
+            <Card className="border-green-200 bg-green-50/50">
+              <CardContent className="p-4 text-center">
+                <p className="text-xs font-medium text-green-700 mb-1">Total Add</p>
+                <p className="text-xl font-bold text-green-700 font-mono" data-testid="poly-total-add">+{totalAdd.toFixed(3)} kg</p>
+              </CardContent>
+            </Card>
+            <Card className="border-red-200 bg-red-50/50">
+              <CardContent className="p-4 text-center">
+                <p className="text-xs font-medium text-red-700 mb-1">Total Subtract</p>
+                <p className="text-xl font-bold text-red-700 font-mono" data-testid="poly-total-subtract">-{totalSubtract.toFixed(3)} kg</p>
+              </CardContent>
+            </Card>
+            <Card className={`${net >= 0 ? 'border-blue-200 bg-blue-50/50' : 'border-orange-200 bg-orange-50/50'}`}>
+              <CardContent className="p-4 text-center">
+                <p className="text-xs font-medium text-muted-foreground mb-1">Net Polythene</p>
+                <p className={`text-xl font-bold font-mono ${net >= 0 ? 'text-blue-700' : 'text-orange-700'}`} data-testid="poly-net-total">{net >= 0 ? '+' : ''}{net.toFixed(3)} kg</p>
+              </CardContent>
+            </Card>
+          </div>
+        );
+      })()}
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
