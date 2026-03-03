@@ -1,56 +1,51 @@
-# StockBud - Product Requirements Document
+# StockBud - Silver Stock Trading Application
 
-## Problem Statement
-Silver wholesale inventory management software. Calculates "book inventory" by processing sales, purchase, and branch transfer Excel files, comparing against a "physical inventory" file.
+## Original Problem Statement
+Silver stock tracking application for managing inventory, sales, purchases, branch transfers, and profit analysis for a jewelry business. Key features include file upload for transaction data, stamp-based inventory management, executive stock verification workflow, and analytics.
 
-## Architecture
-- **Backend:** FastAPI, Motor (async MongoDB), JWT auth
-- **Frontend:** React, TailwindCSS, shadcn/ui, Recharts, Axios, SheetJS (xlsx)
-- **Database:** MongoDB (test_database)
+## Core Architecture
+- **Backend**: FastAPI (Python) + MongoDB
+- **Frontend**: React + Shadcn/UI
+- **Database**: MongoDB (motor async driver)
 
-## Key Credentials
-- Admin: admin / admin123
-- Manager: SMANAGER / manager123
-- SEE: SEE1 / executive123
+## Key Collections
+- `transactions` - Sales, purchases, returns, branch transfers
+- `master_items` - Item catalog with stamp assignments
+- `item_mappings` - Maps transaction names to master item names
+- `item_groups` - Groups related items under leaders
+- `purchase_ledger` - Purchase cost basis for profit calculation
+- `opening_stock` - Starting inventory
+- `physical_stock` - Physical count data
+- `stock_entries` - Executive stock verification entries
+- `stamp_approvals` - Manager approval records
+- `polythene_adjustments` - Weight adjustments
+- `upload_sessions` / `upload_chunks` - Chunked upload state
 
-## Upload Logic (CRITICAL — Feb 28, 2026)
-- **Date-based replacement**: Only deletes records for dates that EXIST in the new upload file (not the full user-selected range). Prevents data loss for dates not in the file.
-- **Backup on replace**: Replaced records saved in `replaced_records` collection keyed by batch_id
-- **Undo restores**: Undo deletes new records AND restores backed-up previous records
-- **Type-safe**: Purchase upload only touches purchase/purchase_return. Sale only touches sale/sale_return. Branch transfer touches issue/receive.
-- **Master Date Range**: Shared date picker on Transactions tab applies to all file types at once. Individual overrides still possible.
-- **Success message**: Includes actual date range from file data
+## What's Been Implemented
+- Full CRUD for transactions, stock, mappings, groups
+- File upload (direct + chunked) for purchase/sale/branch/stock
+- Profit calculation (silver + labour) with group-aware resolution
+- Stamp-based inventory with approval workflow
+- Historical data upload and analytics
+- User management with role-based access
 
-## Query Limits
-- All `to_list()` calls use `None` (unlimited). No silent truncation regardless of data volume (supports 2-3 lakh entries/year).
+## Key Fixes (Feb-Mar 2026)
+1. **Date parsing bug** - Fixed month/day swap in normalize_date
+2. **Memory crash** - Removed top-level pandas import
+3. **Data truncation** - Removed to_list(10000) limits
+4. **Comma number parsing** - Fixed _safe_float for Indian number formats
+5. **Upload data loss** - Fixed delete logic to only delete dates present in uploaded file
+6. **Stamp approval date bug** - Fixed approval-details endpoint to accept verification_date parameter (multiple entries for same stamp now show correct Book values per date)
+7. **Upload stops after 2 files** - Reset file input value after selection
+8. **Item mappings** - Imported 216 mappings from user's deployed version
 
-## Critical Bugs Fixed
+## Pending / Known Issues
+- User needs to re-upload sale data for Feb 26-27 if preview data was affected
+- Profit discrepancy between deployed/preview explained by data differences + new data
 
-### Upload Data Loss (Feb 28, 2026)
-- **Bug**: Uploading with date range Jan 27-Feb 26 deleted ALL records in that range, even if file only had some dates
-- **Fix**: Delete only targets dates present in the new file via `$in` query
+## Upcoming Tasks
+- P1: Refactor server.py into proper FastAPI structure (routers, services, models)
+- Ongoing: Data parity between deployed and preview environments
 
-### Undo Upload Restore (Feb 28, 2026)
-- **Bug**: Undoing a replacing upload permanently lost the original data
-- **Fix**: Backup replaced records in `replaced_records` collection, restore on undo
-
-### to_list(10000) Truncation (Feb 27, 2026)
-- **Bug**: MongoDB queries capped at 10,000 records. 10,500+ sale records were silently truncated (~80 kg missing)
-- **Fix**: All queries now use to_list(None) — no limit
-
-### Date Parsing (Feb 23, 2026)
-- **Bug**: `pd.to_datetime('YYYY-MM-DD', dayfirst=True)` swapped month/day for ISO dates
-- **Fix**: Detect ISO format, skip dayfirst. Migration corrected 2,037 records.
-
-### Memory (Feb 27, 2026)
-- **Bug**: `helpers.py` top-level `import pandas` loaded 150MB on startup
-- **Fix**: Lazy import, `_is_na()` replaces `pd.isna()`. Startup: 26MB
-
-### Branch Transfer Delete (Feb 27, 2026)
-- **Bug**: Re-upload used type `branch_transfer` but stored types are `issue`/`receive`
-- **Fix**: Delete correctly targets `['issue', 'receive']`
-
-## Backlog
-- (P1) Refactor server.py into proper FastAPI modules
-- (P2) Upload validation preview (record count + weight totals before confirming)
-- (P2) Item mapping cleanup tooling after master stock re-uploads
+## Credentials
+- Admin: username=admin, password=admin123
