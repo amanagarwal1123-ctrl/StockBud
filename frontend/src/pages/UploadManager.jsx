@@ -128,7 +128,7 @@ export default function UploadManager() {
                 </div>
               </>
             )}
-            <input id={`${type}-upload`} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => handleFileUpload(type, e.target.files[0])} disabled={isUploading} />
+            <input id={`${type}-upload`} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => { if (e.target.files[0]) handleFileUpload(type, e.target.files[0]); e.target.value = ''; }} disabled={isUploading} />
           </label>
         </CardContent>
       </Card>

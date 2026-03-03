@@ -49,7 +49,7 @@ export default function ManagerApprovals() {
       const response = await axios.get(`${API}/manager/all-entries`);
       setAllEntries(response.data);
       const pending = response.data.filter(e => e.status === 'pending');
-      for (const entry of pending) fetchDetailsForBadge(entry.stamp);
+      for (const entry of pending) fetchDetailsForBadge(entry.stamp, entry.verification_date || entry.entry_day);
     } catch (error) {
       console.error('Error fetching entries:', error);
     } finally {
@@ -57,20 +57,23 @@ export default function ManagerApprovals() {
     }
   };
 
-  const fetchDetailsForBadge = async (stamp) => {
+  const fetchDetailsForBadge = async (stamp, verificationDate) => {
     try {
-      const response = await axios.get(`${API}/manager/approval-details/${stamp}`);
-      setAllDetails(prev => ({ ...prev, [stamp]: response.data }));
+      const params = verificationDate ? `?verification_date=${verificationDate}` : '';
+      const response = await axios.get(`${API}/manager/approval-details/${stamp}${params}`);
+      const key = verificationDate ? `${stamp}__${verificationDate}` : stamp;
+      setAllDetails(prev => ({ ...prev, [key]: response.data }));
     } catch (error) {
       console.error('Failed to load details:', error);
     }
   };
 
-  const fetchApprovalDetails = async (stamp) => {
+  const fetchApprovalDetails = async (stamp, verificationDate) => {
     try {
-      const response = await axios.get(`${API}/manager/approval-details/${stamp}`);
+      const params = verificationDate ? `?verification_date=${verificationDate}` : '';
+      const response = await axios.get(`${API}/manager/approval-details/${stamp}${params}`);
       setApprovalDetails(response.data);
-      setSelectedEntry(stamp);
+      setSelectedEntry(`${stamp}__${verificationDate || ''}`);
     } catch (error) {
       toast.error('Failed to load details');
     }
@@ -86,16 +89,17 @@ export default function ManagerApprovals() {
       toast.success(`Date updated to ${newDate}`);
       setEditingDate(prev => ({ ...prev, [stamp]: false }));
       fetchAllEntries();
-      fetchDetailsForBadge(stamp);
-      if (selectedEntry === stamp) fetchApprovalDetails(stamp);
+      fetchDetailsForBadge(stamp, newDate);
+      if (selectedEntry?.startsWith(stamp)) fetchApprovalDetails(stamp, newDate);
     } catch (error) {
       toast.error('Failed to update date');
     }
   };
 
-  const exportStampDifferences = async (stamp) => {
+  const exportStampDifferences = async (stamp, verificationDate) => {
     try {
-      const response = await axios.get(`${API}/manager/approval-details/${stamp}`);
+      const params = verificationDate ? `?verification_date=${verificationDate}` : '';
+      const response = await axios.get(`${API}/manager/approval-details/${stamp}${params}`);
       const exportData = response.data.comparison.map(item => ({
         'Item Name': item.item_name,
         'Book Gross (kg)': (item.book_gross || 0).toFixed(3),
@@ -108,15 +112,16 @@ export default function ManagerApprovals() {
     }
   };
 
-  const handleApproval = async (stamp, approve) => {
+  const handleApproval = async (stamp, approve, verificationDate) => {
     if (!approve && !rejectionMessage.trim()) {
       toast.error('Please enter a rejection message');
       return;
     }
-    let details = allDetails[stamp] || approvalDetails;
+    const detailKey = verificationDate ? `${stamp}__${verificationDate}` : stamp;
+    let details = allDetails[detailKey] || approvalDetails;
     if (!details) {
-      await fetchDetailsForBadge(stamp);
-      details = allDetails[stamp];
+      await fetchDetailsForBadge(stamp, verificationDate);
+      details = allDetails[detailKey];
     }
     const totalDiff = details?.total_difference ? details.total_difference * 1000 : 0;
 
@@ -161,48 +166,56 @@ export default function ManagerApprovals() {
 
         {/* ===== PENDING ===== */}
         <TabsContent value="pending" className="space-y-3">
-          {pendingEntries.map((entry) => (
+          {pendingEntries.map((entry) => {
+            const vd = entry.verification_date || entry.entry_day || '';
+            const detailKey = `${entry.stamp}__${vd}`;
+            return (
             <EntryCard
-              key={`p-${entry.stamp}-${entry.entry_day}`}
+              key={`p-${entry.stamp}-${vd}`}
               entry={entry}
               status="pending"
-              details={allDetails[entry.stamp]}
-              isExpanded={selectedEntry === entry.stamp}
-              approvalDetails={selectedEntry === entry.stamp ? approvalDetails : null}
+              details={allDetails[detailKey]}
+              isExpanded={selectedEntry === detailKey}
+              approvalDetails={selectedEntry === detailKey ? approvalDetails : null}
               editingDate={editingDate}
               setEditingDate={setEditingDate}
-              onViewDetails={() => fetchApprovalDetails(entry.stamp)}
-              onApprove={() => handleApproval(entry.stamp, true)}
-              onReject={() => handleApproval(entry.stamp, false)}
+              onViewDetails={() => fetchApprovalDetails(entry.stamp, vd)}
+              onApprove={() => handleApproval(entry.stamp, true, vd)}
+              onReject={() => handleApproval(entry.stamp, false, vd)}
               onDateUpdate={updateVerificationDate}
-              onExport={() => exportStampDifferences(entry.stamp)}
+              onExport={() => exportStampDifferences(entry.stamp, vd)}
               rejectionMessage={rejectionMessage}
               setRejectionMessage={setRejectionMessage}
             />
-          ))}
+            );
+          })}
           {pendingEntries.length === 0 && <p className="text-muted-foreground text-center py-8">No pending entries</p>}
         </TabsContent>
 
         {/* ===== APPROVED ===== */}
         <TabsContent value="approved" className="space-y-3">
-          {approvedEntries.map((entry) => (
+          {approvedEntries.map((entry) => {
+            const vd = entry.verification_date || entry.entry_day || '';
+            const detailKey = `${entry.stamp}__${vd}`;
+            return (
             <EntryCard
-              key={`a-${entry.stamp}-${entry.entry_day}`}
+              key={`a-${entry.stamp}-${vd}`}
               entry={entry}
               status="approved"
-              details={allDetails[entry.stamp]}
-              isExpanded={selectedEntry === entry.stamp}
-              approvalDetails={selectedEntry === entry.stamp ? approvalDetails : null}
+              details={allDetails[detailKey]}
+              isExpanded={selectedEntry === detailKey}
+              approvalDetails={selectedEntry === detailKey ? approvalDetails : null}
               editingDate={editingDate}
               setEditingDate={setEditingDate}
-              onViewDetails={() => fetchApprovalDetails(entry.stamp)}
-              onReject={() => handleApproval(entry.stamp, false)}
+              onViewDetails={() => fetchApprovalDetails(entry.stamp, vd)}
+              onReject={() => handleApproval(entry.stamp, false, vd)}
               onDateUpdate={updateVerificationDate}
-              onExport={() => exportStampDifferences(entry.stamp)}
+              onExport={() => exportStampDifferences(entry.stamp, vd)}
               rejectionMessage={rejectionMessage}
               setRejectionMessage={setRejectionMessage}
             />
-          ))}
+            );
+          })}
           {approvedEntries.length === 0 && <p className="text-muted-foreground text-center py-8">No approved entries</p>}
         </TabsContent>
 

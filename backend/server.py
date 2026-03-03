@@ -1639,19 +1639,31 @@ async def save_executive_stock_entry(
     return {'success': True, 'message': 'Stock entry saved successfully'}
 
 @api_router.get("/manager/approval-details/{stamp}")
-async def get_approval_details(stamp: str, current_user: dict = Depends(get_current_user)):
+async def get_approval_details(stamp: str, verification_date: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     """Get detailed approval data — compares entered stock vs expected closing stock
-    for the verification_date. Auto-refreshes when transactions change."""
+    for the verification_date. Auto-refreshes when transactions change.
+    If verification_date is provided, looks up that specific entry instead of the latest."""
     
     if current_user['role'] not in ['manager', 'admin']:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    # Get latest pending or approved entry for this stamp (most recent first)
-    entry = await db.stock_entries.find_one(
-        {'stamp': stamp, 'status': {'$in': ['pending', 'approved']}},
-        {"_id": 0},
-        sort=[('entry_date', -1)]
-    )
+    # If verification_date provided, find the SPECIFIC entry for that date
+    if verification_date:
+        entry = await db.stock_entries.find_one(
+            {'stamp': stamp, 'verification_date': verification_date, 'status': {'$in': ['pending', 'approved']}},
+            {"_id": 0},
+            sort=[('entry_date', -1)]
+        )
+    else:
+        entry = None
+    
+    # Fallback: get latest pending or approved entry for this stamp
+    if not entry:
+        entry = await db.stock_entries.find_one(
+            {'stamp': stamp, 'status': {'$in': ['pending', 'approved']}},
+            {"_id": 0},
+            sort=[('entry_date', -1)]
+        )
     
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")

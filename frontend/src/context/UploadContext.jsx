@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 
@@ -18,6 +18,22 @@ export function UploadProvider({ children }) {
   const removeUpload = (id) => {
     setUploads(prev => prev.filter(u => u.id !== id));
   };
+
+  // Safety: auto-clear uploads stuck in 'uploading' for > 10 minutes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setUploads(prev => {
+        const now = Date.now();
+        return prev.filter(u => {
+          if (u.status === 'uploading' && u._startTime && (now - u._startTime > 600000)) {
+            return false; // Remove stuck uploads
+          }
+          return true;
+        });
+      });
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const pollUploadStatus = async (uploadId, trackId) => {
     for (let attempt = 0; attempt < 180; attempt++) {
@@ -62,7 +78,8 @@ export function UploadProvider({ children }) {
     setUploads(prev => [...prev, {
       id: trackId, fileType, fileName: file.name,
       label: fileTypeLabels[fileType] || fileType,
-      percent: 0, message: 'Preparing...', status: 'uploading'
+      percent: 0, message: 'Preparing...', status: 'uploading',
+      _startTime: Date.now()
     }]);
 
     try {
