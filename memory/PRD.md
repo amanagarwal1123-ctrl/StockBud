@@ -38,6 +38,13 @@ Silver stock tracking application for managing inventory, sales, purchases, bran
 6. **Stamp approval date bug** - Fixed approval-details endpoint to accept verification_date parameter (multiple entries for same stamp now show correct Book values per date)
 7. **Upload stops after 2 files** - Reset file input value after selection
 8. **Item mappings** - Imported 216 mappings from user's deployed version
+9. **P0: Auth on all data-changing endpoints** - Added Depends(get_current_user) to upload, reset, delete endpoints
+10. **P1: Reset collection mismatch** - Reset/normalization now targets physical_stock (not just physical_inventory)
+11. **P1: Identity spoofing** - entered_by/adjusted_by now derived from current_user, not client request
+12. **P1: Stamp verification date** - stamp_verifications now uses entry's verification_date, not approval date
+13. **P2: Item stats math** - Returns properly included in weight totals, averages, and current stock
+14. **P2: Notification schema** - Read query now matches write schema (target_user + for_role)
+15. **P2: Polythene delete auth** - Only admins can delete polythene entries
 
 ## Pending / Known Issues
 - User needs to re-upload sale data for Feb 26-27 if preview data was affected
