@@ -592,6 +592,8 @@ def parse_excel_streaming(file_path: str, file_type: str) -> List[Dict]:
 @api_router.post("/opening-stock/upload")
 async def upload_opening_stock(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     """Upload opening stock - Parse and MERGE items by name (sum weights regardless of stamp)"""
+    if current_user['role'] not in ['admin', 'manager']:
+        raise HTTPException(status_code=403, detail="Admin or Manager only")
     content = await file.read()
     
     try:
@@ -897,6 +899,8 @@ async def _load_upload_meta(upload_id: str) -> dict:
 @api_router.post("/upload/init")
 async def init_chunked_upload(request: Dict, current_user: dict = Depends(get_current_user)):
     """Initialize a chunked file upload"""
+    if current_user['role'] not in ['admin', 'manager']:
+        raise HTTPException(status_code=403, detail="Admin or Manager only")
     file_type = request.get('file_type')
     if file_type not in ['purchase', 'sale', 'branch_transfer', 'opening_stock', 'physical_stock', 'master_stock', 'historical_sale', 'historical_purchase']:
         raise HTTPException(status_code=400, detail="Invalid file_type")
@@ -912,6 +916,7 @@ async def init_chunked_upload(request: Dict, current_user: dict = Depends(get_cu
         'total_chunks': request.get('total_chunks', 0),
         'received': 0,
         'created_at': datetime.now(timezone.utc).isoformat(),
+        'owner_username': current_user['username'],
     }
     await _save_upload_meta(upload_id, meta)
 
@@ -921,9 +926,13 @@ async def init_chunked_upload(request: Dict, current_user: dict = Depends(get_cu
 @api_router.post("/upload/chunk/{upload_id}")
 async def upload_chunk(upload_id: str, chunk_index: int, file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     """Receive a single chunk of a large file — stored in MongoDB for cross-pod access"""
+    if current_user['role'] not in ['admin', 'manager']:
+        raise HTTPException(status_code=403, detail="Admin or Manager only")
     meta = await _load_upload_meta(upload_id)
     if not meta:
         raise HTTPException(status_code=404, detail="Upload session not found")
+    if meta.get('owner_username') and meta['owner_username'] != current_user['username']:
+        raise HTTPException(status_code=403, detail="Not the owner of this upload session")
 
     content = await file.read()
 
@@ -1139,9 +1148,13 @@ async def _process_upload(upload_id: str, meta: dict):
 @api_router.post("/upload/finalize/{upload_id}")
 async def finalize_chunked_upload(upload_id: str, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
     """Reassemble chunks and process the complete file in background"""
+    if current_user['role'] not in ['admin', 'manager']:
+        raise HTTPException(status_code=403, detail="Admin or Manager only")
     meta = await _load_upload_meta(upload_id)
     if not meta:
         raise HTTPException(status_code=404, detail="Upload session not found")
+    if meta.get('owner_username') and meta['owner_username'] != current_user['username']:
+        raise HTTPException(status_code=403, detail="Not the owner of this upload session")
 
     # Verify ALL chunks are present before processing
     chunk_count = await db.upload_chunks.count_documents({"upload_id": upload_id})
@@ -1172,6 +1185,8 @@ async def get_upload_status(upload_id: str, current_user: dict = Depends(get_cur
     meta = await _load_upload_meta(upload_id)
     if not meta:
         raise HTTPException(status_code=404, detail="Upload session not found")
+    if meta.get('owner_username') and meta['owner_username'] != current_user['username']:
+        raise HTTPException(status_code=403, detail="Not the owner of this upload session")
 
     status = meta.get('status', 'unknown')
 
@@ -1395,6 +1410,8 @@ async def upload_transaction_file(
     current_user: dict = Depends(get_current_user)
 ):
     """Upload purchase, sale, or branch_transfer Excel file"""
+    if current_user['role'] not in ['admin', 'manager']:
+        raise HTTPException(status_code=403, detail="Admin or Manager only")
     if file_type not in ['purchase', 'sale', 'branch_transfer']:
         raise HTTPException(status_code=400, detail="file_type must be 'purchase', 'sale', or 'branch_transfer'")
     
@@ -2028,7 +2045,6 @@ async def adjust_polythene(
     item_name: str,
     poly_weight: float,
     operation: str,
-    adjusted_by: str = None,
     current_user: dict = Depends(get_current_user)
 ):
     """Adjust polythene weight for an item (gross weight changes, net stays same)"""
@@ -2215,8 +2231,6 @@ async def create_new_item_from_unmapped(
     
     return {'success': True, 'message': f'New item "{transaction_name}" created with stamp: {stamp}'}
 
-
-    return {'success': True}
 
 @api_router.get("/transactions")
 async def get_transactions(type: Optional[str] = None, limit: int = 5000, current_user: dict = Depends(get_current_user)):
@@ -2534,6 +2548,8 @@ async def undo_upload(batch_id: str, current_user: dict = Depends(get_current_us
 @api_router.post("/master-stock/upload")
 async def upload_master_stock(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     """Upload STOCK 2026 as master reference - FINAL item names and stamps"""
+    if current_user['role'] not in ['admin', 'manager']:
+        raise HTTPException(status_code=403, detail="Admin or Manager only")
     content = await file.read()
     
     try:
@@ -2957,6 +2973,8 @@ async def create_mapping(transaction_name: str, master_name: str, current_user: 
 @api_router.post("/stamp-verification/save")
 async def save_stamp_verification(request: Dict, current_user: dict = Depends(get_current_user)):
     """Save stamp verification record"""
+    if current_user['role'] not in ['admin', 'manager']:
+        raise HTTPException(status_code=403, detail="Admin or Manager only")
     stamp = request.get('stamp', '')
     # Normalize stamp format to match master items
     import re as _re
@@ -2969,7 +2987,6 @@ async def save_stamp_verification(request: Dict, current_user: dict = Depends(ge
     difference = request.get('difference', 0)
     is_match = request.get('is_match', False)
     verification_date = request.get('verification_date', datetime.now(timezone.utc).isoformat()[:10])
-    """Save stamp verification record"""
     
     # Save to history
     await save_action(
@@ -2993,7 +3010,8 @@ async def save_stamp_verification(request: Dict, current_user: dict = Depends(ge
         'difference': difference,
         'is_match': is_match,
         'verification_date': verification_date,
-        'verified_at': datetime.now(timezone.utc).isoformat()
+        'verified_at': datetime.now(timezone.utc).isoformat(),
+        'verified_by': current_user['username']
     }
     
     # Update or insert
@@ -4286,16 +4304,20 @@ async def create_order(order: OrderCreate, current_user: dict = Depends(get_curr
 
 @api_router.get("/orders")
 async def get_orders(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
-    """Get all orders"""
+    """Get all orders (admin/manager see all, others see only their own)"""
     query = {}
     if status:
         query['status'] = status
+    if current_user['role'] not in ['admin', 'manager']:
+        query['ordered_by'] = current_user['username']
     orders = await db.orders.find(query, {"_id": 0}).sort("ordered_at", -1).to_list(1000)
     return {"orders": orders}
 
 @api_router.put("/orders/{order_id}/received")
 async def mark_order_received(order_id: str, current_user: dict = Depends(get_current_user)):
-    """Mark order as received"""
+    """Mark order as received (admin/manager only)"""
+    if current_user['role'] not in ['admin', 'manager']:
+        raise HTTPException(status_code=403, detail="Admin or Manager only")
     result = await db.orders.update_one(
         {'id': order_id},
         {'$set': {
@@ -4336,7 +4358,9 @@ async def cancel_order(order_id: str, current_user: dict = Depends(get_current_u
 
 @api_router.get("/orders/overdue")
 async def check_overdue_orders(current_user: dict = Depends(get_current_user)):
-    """Check for orders that are overdue (ordered > 7 days ago, not received)"""
+    """Check for orders that are overdue (admin/manager only)"""
+    if current_user['role'] not in ['admin', 'manager']:
+        raise HTTPException(status_code=403, detail="Admin or Manager only")
     cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     overdue = await db.orders.find({
         'status': 'ordered',

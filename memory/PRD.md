@@ -69,6 +69,15 @@ Silver stock tracking application for managing inventory, sales, purchases, bran
 31. **Notification mark-read mismatch** - Expanded update filter to match fetch scope ($or with target_user, role, and for_role)
 32. **history/undo ObjectId fix** - Added _id:0 projection to prevent serialization error
 
+## Key Fixes (Feb 2026 - Session 3: Codex Batch 3)
+33. **Admin role on upload/mass-write endpoints** - Added admin/manager role check to 6 upload endpoints: opening-stock/upload, upload/init, upload/chunk, upload/finalize, transactions/upload, master-stock/upload
+34. **Upload session ownership** - upload/init now stores owner_username; chunk, finalize, and status endpoints verify the caller owns the session
+35. **Stamp verification role guard** - stamp-verification/save restricted to admin/manager, now stores verified_by=current_user['username']
+36. **Order operations RBAC** - GET /orders scoped to own orders for non-admin users; PUT /orders/{id}/received and GET /orders/overdue restricted to admin/manager
+37. **Dead code removal** - Removed unreachable `return {'success': True}` at line 2219
+38. **Unused param cleanup** - Removed unused `adjusted_by` parameter from /polythene/adjust endpoint
+39. **Stray docstring cleanup** - Removed duplicate docstring inside save_stamp_verification
+
 ## Upcoming Tasks
 - P1: Refactor server.py into proper FastAPI structure (routers, services, models)
 - Ongoing: Data parity between deployed and preview environments
