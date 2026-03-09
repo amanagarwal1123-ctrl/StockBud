@@ -849,10 +849,8 @@ async def initialize_admin():
     
     return {
         "success": True,
-        "message": "Admin user created",
-        "username": "admin",
-        "password": "admin123",
-        "warning": "Please change password after first login!"
+        "message": "Admin user created. Use the credentials you set to login.",
+        "username": "admin"
     }
 
 async def batch_insert(collection, documents: list):
@@ -1169,7 +1167,7 @@ async def finalize_chunked_upload(upload_id: str, background_tasks: BackgroundTa
 
 
 @api_router.get("/upload/status/{upload_id}")
-async def get_upload_status(upload_id: str):
+async def get_upload_status(upload_id: str, current_user: dict = Depends(get_current_user)):
     """Poll processing status of a chunked upload"""
     meta = await _load_upload_meta(upload_id)
     if not meta:
@@ -1316,6 +1314,8 @@ def _parse_raw_rows(raw_rows: List[Dict], cols: set, file_type: str) -> List[Dic
 async def client_batch_upload(request: Dict, current_user: dict = Depends(get_current_user)):
     """Accept a batch of pre-parsed rows from client-side Excel reading.
     No file upload, no Excel parsing on server — completely OOM-safe."""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
     file_type = request.get('file_type')
     if not file_type:
         raise HTTPException(status_code=400, detail="file_type is required")
@@ -1745,7 +1745,7 @@ async def get_all_polythene_adjustments(current_user: dict = Depends(get_current
     return entries
 
 @api_router.get("/polythene/item/{item_name}")
-async def get_item_polythene_history(item_name: str):
+async def get_item_polythene_history(item_name: str, current_user: dict = Depends(get_current_user)):
     """Get all polythene adjustments for a specific item"""
     
     entries = await db.polythene_adjustments.find(
@@ -1934,7 +1934,7 @@ async def approve_stamp(
     return {'success': True, 'message': f'{stamp} {"approved" if approve else "rejected"}', 'iterations': iteration}
 
 @api_router.get("/stamp-verification/history")
-async def get_stamp_verification_history():
+async def get_stamp_verification_history(current_user: dict = Depends(get_current_user)):
     """Get verification history for all stamps"""
     
     # Get all stamps from master
@@ -2009,9 +2009,14 @@ async def get_my_notifications(current_user: dict = Depends(get_current_user)):
 
 @api_router.post("/notifications/{notification_id}/read")
 async def mark_notification_read(notification_id: str, current_user: dict = Depends(get_current_user)):
-    """Mark notification as read (scoped to current user)"""
+    """Mark notification as read (matches same scope as fetch query)"""
     await db.notifications.update_one(
-        {'id': notification_id, 'target_user': current_user['username']},
+        {'id': notification_id, '$or': [
+            {'target_user': current_user['username']},
+            {'target_user': current_user['role']},
+            {'target_user': 'all'},
+            {'for_role': {'$in': [current_user['role'], 'all']}}
+        ]},
         {'$set': {'read': True}}
     )
 
@@ -2127,6 +2132,8 @@ async def adjust_polythene_batch(
 @api_router.get("/polythene/today/{username}")
 async def get_today_polythene_entries(username: str, current_user: dict = Depends(get_current_user)):
     """Get ALL polythene entries by user for today (no limit)"""
+    if current_user['username'] != username and current_user['role'] not in ['admin', 'manager']:
+        raise HTTPException(status_code=403, detail="Can only view your own entries")
     today = datetime.now(timezone.utc).date().isoformat()
     
     entries = await db.polythene_adjustments.find(
@@ -2170,6 +2177,8 @@ async def create_new_item_from_unmapped(
     current_user: dict = Depends(get_current_user)
 ):
     """Create a completely new item from unmapped transaction name"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
     
     # Check for duplicates
     existing = await db.master_items.find_one({"item_name": transaction_name})
@@ -2210,14 +2219,14 @@ async def create_new_item_from_unmapped(
     return {'success': True}
 
 @api_router.get("/transactions")
-async def get_transactions(type: Optional[str] = None, limit: int = 5000):
+async def get_transactions(type: Optional[str] = None, limit: int = 5000, current_user: dict = Depends(get_current_user)):
     """Get all transactions"""
     query = {} if not type else {"type": type}
     transactions = await db.transactions.find(query, {"_id": 0}).sort("date", -1).to_list(limit)
     return transactions
 
 @api_router.get("/inventory/current")
-async def get_current_inventory_endpoint():
+async def get_current_inventory_endpoint(current_user: dict = Depends(get_current_user)):
     """Calculate current inventory: Opening Stock + Purchases - Sales"""
     return await get_current_inventory()
 
@@ -2228,6 +2237,8 @@ async def upload_physical_stock(
     current_user: dict = Depends(get_current_user)
 ):
     """Upload physical stock file with verification date"""
+    if current_user['role'] not in ['admin', 'manager']:
+        raise HTTPException(status_code=403, detail="Admin or manager only")
     content = await file.read()
     
     try:
@@ -2291,7 +2302,7 @@ async def upload_physical_stock(
         raise HTTPException(status_code=400, detail=f"Error processing file: {str(e)}")
 
 @api_router.get("/physical-stock/compare")
-async def compare_physical_with_book():
+async def compare_physical_with_book(current_user: dict = Depends(get_current_user)):
     """Compare physical stock with book stock and show differences"""
     
     # Get book stock — use stamp_items (ungrouped, per-stamp) for correct comparison
@@ -2402,7 +2413,7 @@ async def get_recent_uploads(current_user: dict = Depends(get_current_user)):
 
 
 @api_router.get("/inventory/stamp-breakdown/{stamp}")
-async def get_stamp_breakdown(stamp: str):
+async def get_stamp_breakdown(stamp: str, current_user: dict = Depends(get_current_user)):
     """Get detailed breakdown for a specific stamp using the authoritative inventory calculation"""
     
     # Use the single source of truth: get_current_inventory
@@ -2594,6 +2605,8 @@ async def upload_master_stock(file: UploadFile = File(...), current_user: dict =
 @api_router.post("/purchase-ledger/upload")
 async def upload_purchase_ledger(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     """Upload PURCHASE_CUMUL file to create/update purchase rate ledger"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
     content = await file.read()
     
     try:
@@ -2645,7 +2658,8 @@ async def upload_purchase_ledger(file: UploadFile = File(...), current_user: dic
 @api_router.get("/analytics/customer-profit")
 async def get_customer_profit(
     start_date: Optional[str] = None,
-    end_date: Optional[str] = None
+    end_date: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
 ):
     """Calculate profit per customer (silver & labour).
     Sale returns are treated as purchases — we 'buy back' at the return rate,
@@ -2754,7 +2768,8 @@ async def get_customer_profit(
 @api_router.get("/analytics/supplier-profit")
 async def get_supplier_profit(
     start_date: Optional[str] = None,
-    end_date: Optional[str] = None
+    end_date: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
 ):
     """Calculate profit per supplier based on items they supply"""
     
@@ -2871,13 +2886,13 @@ async def get_supplier_profit(
 
 
 @api_router.get("/purchase-ledger/all")
-async def get_purchase_ledger():
+async def get_purchase_ledger(current_user: dict = Depends(get_current_user)):
     """Get all purchase rate ledger items"""
     ledger = await db.purchase_ledger.find({}, {"_id": 0}).sort("item_name", 1).to_list(None)
     return ledger
 
 @api_router.get("/mappings/unmapped")
-async def get_unmapped_items():
+async def get_unmapped_items(current_user: dict = Depends(get_current_user)):
     """Get all unmapped items from transactions AND historical_transactions"""
     # Get item names from both collections
     transactions = await db.transactions.find({}, {"_id": 0, "item_name": 1}).to_list(None)
@@ -2914,6 +2929,8 @@ async def get_unmapped_items():
 @api_router.post("/mappings/create")
 async def create_mapping(transaction_name: str, master_name: str, current_user: dict = Depends(get_current_user)):
     """Create a mapping from transaction name to master name"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
     # Verify master name exists
     master = await db.master_items.find_one({"item_name": master_name}, {"_id": 0})
     if not master:
@@ -3029,7 +3046,7 @@ async def save_stamp_verification(request: Dict, current_user: dict = Depends(ge
     }
 
 @api_router.get("/stamp-verification/all")
-async def get_all_verifications():
+async def get_all_verifications(current_user: dict = Depends(get_current_user)):
     """Get all saved stamp verifications with details"""
     verifications = await db.stamp_verifications.find({}, {"_id": 0}).sort("verified_at", -1).to_list(500)
     for v in verifications:
@@ -3055,7 +3072,7 @@ async def delete_stamp_verification(stamp: str, verification_date: str, current_
     return {"success": True, "message": f"Verification for {stamp} on {verification_date} deleted"}
 
 @api_router.get("/mappings/all")
-async def get_all_mappings():
+async def get_all_mappings(current_user: dict = Depends(get_current_user)):
     """Get all item mappings"""
     mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
     return mappings
@@ -3063,13 +3080,15 @@ async def get_all_mappings():
 @api_router.delete("/mappings/{transaction_name}")
 async def delete_mapping(transaction_name: str, current_user: dict = Depends(get_current_user)):
     """Delete a mapping"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
     result = await db.item_mappings.delete_one({"transaction_name": transaction_name})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Mapping not found")
     return {"success": True, "message": "Mapping deleted"}
 
 @api_router.get("/master-items")
-async def get_master_items(search: Optional[str] = None):
+async def get_master_items(search: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     """Get all master items with optional search"""
     query = {}
     if search:
@@ -3090,7 +3109,8 @@ async def get_master_items(search: Optional[str] = None):
 @api_router.get("/analytics/party-analysis")
 async def get_party_analysis(
     start_date: Optional[str] = None,
-    end_date: Optional[str] = None
+    end_date: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
 ):
     """Analyze parties (customers and suppliers) with silver weight comparisons"""
     
@@ -3177,7 +3197,8 @@ async def get_party_analysis(
 @api_router.get("/analytics/sales-summary")
 async def get_sales_summary(
     start_date: Optional[str] = None,
-    end_date: Optional[str] = None
+    end_date: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
 ):
     """Get total sales summary with net weight, fine weight, and labour (including returns)"""
     
@@ -3213,7 +3234,8 @@ async def get_sales_summary(
 @api_router.get("/analytics/profit")
 async def calculate_profit(
     start_date: Optional[str] = None,
-    end_date: Optional[str] = None
+    end_date: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
 ):
     """Calculate profit: Silver profit (in kg) and Labour profit (in INR)"""
     
@@ -3378,7 +3400,7 @@ async def calculate_profit(
     }
 
 @api_router.get("/history/actions")
-async def get_action_history(limit: int = 20):
+async def get_action_history(limit: int = 20, current_user: dict = Depends(get_current_user)):
     """Get recent actions for undo/redo"""
     actions = await db.action_history.find({}, {"_id": 0}).sort("timestamp", -1).limit(limit).to_list(limit)
     return actions
@@ -3386,7 +3408,9 @@ async def get_action_history(limit: int = 20):
 @api_router.post("/history/undo")
 async def undo_last_action(current_user: dict = Depends(get_current_user)):
     """Undo last action"""
-    last_action = await db.action_history.find_one({"can_undo": True}, sort=[("timestamp", -1)])
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    last_action = await db.action_history.find_one({"can_undo": True}, {"_id": 0}, sort=[("timestamp", -1)])
     
     if not last_action:
         raise HTTPException(status_code=404, detail="No action to undo")
@@ -3644,7 +3668,7 @@ async def debug_item_closing(item_name: str, as_of_date: str = None, current_use
 
 
 @api_router.get("/stats")
-async def get_stats():
+async def get_stats(current_user: dict = Depends(get_current_user)):
     """Get dashboard statistics"""
     total_transactions = await db.transactions.count_documents({})
     total_purchases = await db.transactions.count_documents({"type": "purchase"})
@@ -3665,7 +3689,7 @@ async def get_stats():
 
 
 @api_router.get("/stats/transaction-summary")
-async def get_transaction_summary():
+async def get_transaction_summary(current_user: dict = Depends(get_current_user)):
     """Get detailed transaction summary with weight totals per type — useful for reconciliation."""
     pipeline = [
         {'$group': {
@@ -3712,7 +3736,7 @@ async def clear_all_transactions(current_user: dict = Depends(get_current_user))
     return {"success": True, "deleted_count": result.deleted_count}
 
 @api_router.get("/item/{item_name}")
-async def get_item_detail(item_name: str):
+async def get_item_detail(item_name: str, current_user: dict = Depends(get_current_user)):
     """Get detailed information about a specific item"""
     
     # Get all transactions for this item
@@ -3773,6 +3797,8 @@ async def get_item_detail(item_name: str):
 @api_router.post("/item/{item_name}/assign-stamp")
 async def assign_stamp_to_item(item_name: str, stamp: str = Query(...), current_user: dict = Depends(get_current_user)):
     """Assign stamp to all instances of an item"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
     
     # Normalize stamp to consistent format "STAMP X" (ALL CAPS)
     import re
@@ -4031,7 +4057,8 @@ async def categorize_items(current_user: dict = Depends(get_current_user)):
 async def get_item_buffers(
     stamp: Optional[str] = None,
     tier: Optional[str] = None,
-    status: Optional[str] = None
+    status: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
 ):
     """Get all item buffer configurations with optional filters"""
     query = {}
@@ -4071,6 +4098,8 @@ async def get_item_buffers(
 @api_router.put("/item-buffers/{item_name}")
 async def update_item_buffer(item_name: str, minimum_stock_kg: float = Query(...), current_user: dict = Depends(get_current_user)):
     """Update minimum stock for an item"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
     result = await db.item_buffers.update_one(
         {'item_name': item_name},
         {'$set': {'minimum_stock_kg': round(minimum_stock_kg, 3), 'updated_at': datetime.now(timezone.utc).isoformat()}}
@@ -4082,7 +4111,7 @@ async def update_item_buffer(item_name: str, minimum_stock_kg: float = Query(...
 # ==================== ITEM GROUPS (merge similar items) ====================
 
 @api_router.get("/item-groups")
-async def get_item_groups():
+async def get_item_groups(current_user: dict = Depends(get_current_user)):
     """Get all item groups with their members and mapped items"""
     groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
     # Also get item mappings to show which items map to each member
@@ -4122,7 +4151,7 @@ async def delete_item_group(group_name: str, current_user: dict = Depends(get_cu
 
 
 @api_router.get("/item-groups/suggestions")
-async def suggest_item_groups():
+async def suggest_item_groups(current_user: dict = Depends(get_current_user)):
     """List all master items + auto-detected groups from mappings"""
     items = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(None)
     existing = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
@@ -4152,7 +4181,7 @@ async def suggest_item_groups():
 # ==================== STAMP DETAIL (click a stamp to see items + assign) ====================
 
 @api_router.get("/stamps/{stamp_name}/detail")
-async def get_stamp_detail(stamp_name: str):
+async def get_stamp_detail(stamp_name: str, current_user: dict = Depends(get_current_user)):
     """Get all items in a stamp with stock info (per-stamp, not grouped)"""
     master_items = await db.master_items.find(
         {"stamp": stamp_name}, {"_id": 0}
@@ -4190,7 +4219,7 @@ async def get_stamp_detail(stamp_name: str):
 # ==================== STAMP-USER ASSIGNMENT ====================
 
 @api_router.get("/stamp-assignments")
-async def get_stamp_assignments():
+async def get_stamp_assignments(current_user: dict = Depends(get_current_user)):
     """Get all stamp-to-user assignments"""
     assignments = await db.stamp_assignments.find({}, {"_id": 0}).to_list(100)
     return {"assignments": assignments}
@@ -4256,7 +4285,7 @@ async def create_order(order: OrderCreate, current_user: dict = Depends(get_curr
     return {"success": True, "order_id": order_doc['id'], "message": "Order created"}
 
 @api_router.get("/orders")
-async def get_orders(status: Optional[str] = None):
+async def get_orders(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     """Get all orders"""
     query = {}
     if status:
@@ -4542,7 +4571,8 @@ async def auto_stock_alerts(current_user: dict = Depends(get_current_user)):
 @api_router.get("/analytics/historical-profit")
 async def get_historical_profit(
     year: Optional[str] = None,
-    view: str = "yearly"
+    view: str = "yearly",
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Profit analysis from historical_transactions using MongoDB aggregation.
@@ -4825,7 +4855,8 @@ async def get_historical_profit(
 async def get_visualization_data(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    trend_granularity: Optional[str] = "auto"
+    trend_granularity: Optional[str] = "auto",
+    current_user: dict = Depends(get_current_user)
 ):
     """Get aggregated data for charts and visualizations"""
     query = {}
@@ -4961,6 +4992,8 @@ async def get_visualization_data(
 @api_router.post("/analytics/smart-insights")
 async def get_smart_insights(request: SmartInsightsRequest, current_user: dict = Depends(get_current_user)):
     """Generate AI-powered analytics insights using Claude"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
     
     llm_key = os.environ.get('EMERGENT_LLM_KEY')
     if not llm_key:
@@ -5150,7 +5183,7 @@ async def upload_historical_data(
 
 
 @api_router.get("/historical/summary")
-async def get_historical_summary():
+async def get_historical_summary(current_user: dict = Depends(get_current_user)):
     """Get summary of uploaded historical data"""
     try:
         pipeline = [
@@ -5214,7 +5247,7 @@ async def delete_historical_year(year: str, current_user: dict = Depends(get_cur
 
 
 @api_router.get("/historical/debug")
-async def debug_historical():
+async def debug_historical(current_user: dict = Depends(get_current_user)):
     """Diagnostic endpoint — shows raw DB state for historical data"""
     total = await db.historical_transactions.count_documents({})
     with_year = await db.historical_transactions.count_documents({"historical_year": {"$exists": True, "$ne": None}})
