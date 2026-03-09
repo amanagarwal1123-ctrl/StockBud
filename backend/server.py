@@ -2161,9 +2161,16 @@ async def get_today_polythene_entries(username: str, current_user: dict = Depend
 
 @api_router.delete("/polythene/{entry_id}")
 async def delete_polythene_entry(entry_id: str, current_user: dict = Depends(get_current_user)):
-    """Delete a polythene entry (admin only)"""
-    if current_user['role'] != 'admin':
-        raise HTTPException(status_code=403, detail="Only admins can delete polythene entries")
+    """Delete a polythene entry (admin or own entry for polythene_executive)"""
+    entry = await db.polythene_adjustments.find_one({'id': entry_id}, {"_id": 0})
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    if current_user['role'] == 'admin':
+        pass  # admin can delete any entry
+    elif current_user['role'] == 'polythene_executive' and entry.get('adjusted_by') == current_user['username']:
+        pass  # polythene_executive can delete own entries
+    else:
+        raise HTTPException(status_code=403, detail="You can only delete your own polythene entries")
     result = await db.polythene_adjustments.delete_one({'id': entry_id})
     
     if result.deleted_count == 0:
