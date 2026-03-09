@@ -147,8 +147,8 @@ async def auto_normalize_stamps():
 
     total_updated = 0
     collections_to_update = [
-        'master_items', 'transactions', 'opening_stock', 'stock_entries',
-        'stamp_approvals', 'stamp_verifications', 'physical_inventory'
+        'master_items', 'transactions', 'opening_stock', 'physical_stock',
+        'stock_entries', 'stamp_approvals', 'stamp_verifications', 'physical_inventory'
     ]
     for old_stamp, new_stamp in stamp_mapping.items():
         for coll_name in collections_to_update:

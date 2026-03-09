@@ -590,7 +590,7 @@ def parse_excel_streaming(file_path: str, file_type: str) -> List[Dict]:
 # ==================== UPLOAD ENDPOINTS ====================
 
 @api_router.post("/opening-stock/upload")
-async def upload_opening_stock(file: UploadFile = File(...)):
+async def upload_opening_stock(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     """Upload opening stock - Parse and MERGE items by name (sum weights regardless of stamp)"""
     content = await file.read()
     
@@ -897,7 +897,7 @@ async def _load_upload_meta(upload_id: str) -> dict:
 
 
 @api_router.post("/upload/init")
-async def init_chunked_upload(request: Dict):
+async def init_chunked_upload(request: Dict, current_user: dict = Depends(get_current_user)):
     """Initialize a chunked file upload"""
     file_type = request.get('file_type')
     if file_type not in ['purchase', 'sale', 'branch_transfer', 'opening_stock', 'physical_stock', 'master_stock', 'historical_sale', 'historical_purchase']:
@@ -921,7 +921,7 @@ async def init_chunked_upload(request: Dict):
 
 
 @api_router.post("/upload/chunk/{upload_id}")
-async def upload_chunk(upload_id: str, chunk_index: int, file: UploadFile = File(...)):
+async def upload_chunk(upload_id: str, chunk_index: int, file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     """Receive a single chunk of a large file — stored in MongoDB for cross-pod access"""
     meta = await _load_upload_meta(upload_id)
     if not meta:
@@ -1139,7 +1139,7 @@ async def _process_upload(upload_id: str, meta: dict):
 
 
 @api_router.post("/upload/finalize/{upload_id}")
-async def finalize_chunked_upload(upload_id: str, background_tasks: BackgroundTasks):
+async def finalize_chunked_upload(upload_id: str, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
     """Reassemble chunks and process the complete file in background"""
     meta = await _load_upload_meta(upload_id)
     if not meta:
@@ -1391,7 +1391,8 @@ async def upload_transaction_file(
     file_type: str, 
     file: UploadFile = File(...),
     start_date: Optional[str] = None,
-    end_date: Optional[str] = None
+    end_date: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
 ):
     """Upload purchase, sale, or branch_transfer Excel file"""
     if file_type not in ['purchase', 'sale', 'branch_transfer']:
@@ -1570,7 +1571,7 @@ async def save_executive_stock_entry(
     
     stamp = request.get('stamp')
     entries = request.get('entries', [])
-    entered_by = request.get('entered_by')
+    entered_by = current_user['username']  # Always use authenticated user, never trust client
     verification_date = request.get('verification_date')  # Date for which stock is being entered
     today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
     if not verification_date:
@@ -1839,17 +1840,19 @@ async def approve_stamp(
         )
         
         # Also write to stamp_verifications so dashboard sees this as verified
+        # Use the entry's verification_date (the date stock was counted FOR), not today
+        entry_verification_date = entry.get('verification_date', entry_day)
         diff_kg = total_difference / 1000 if total_difference else 0
         is_match = abs(total_difference) <= 50
         await db.stamp_verifications.update_one(
-            {'stamp': stamp, 'verification_date': now_iso[:10]},
+            {'stamp': stamp, 'verification_date': entry_verification_date},
             {'$set': {
                 'stamp': stamp,
                 'physical_gross_wt': 0,
                 'book_gross_wt': 0,
                 'difference': diff_kg,
                 'is_match': is_match,
-                'verification_date': now_iso[:10],
+                'verification_date': entry_verification_date,
                 'verified_at': now_iso,
                 'approved_by': current_user['username']
             }},
@@ -1986,17 +1989,22 @@ async def get_stamp_verification_history():
 
 @api_router.get("/notifications/my")
 async def get_my_notifications(current_user: dict = Depends(get_current_user)):
-    """Get notifications for current user's role"""
+    """Get notifications for current user — matches by target_user or role"""
     
     notifications = await db.notifications.find(
-        {'for_role': {'$in': [current_user['role'], 'all']}},
+        {'$or': [
+            {'target_user': current_user['username']},
+            {'target_user': current_user['role']},
+            {'target_user': 'all'},
+            {'for_role': {'$in': [current_user['role'], 'all']}}
+        ]},
         {"_id": 0}
-    ).sort('created_at', -1).limit(50).to_list(50)
+    ).sort('timestamp', -1).limit(50).to_list(50)
     
     return notifications
 
 @api_router.post("/notifications/{notification_id}/read")
-async def mark_notification_read(notification_id: str):
+async def mark_notification_read(notification_id: str, current_user: dict = Depends(get_current_user)):
     """Mark notification as read"""
     await db.notifications.update_one(
         {'id': notification_id},
@@ -2011,7 +2019,7 @@ async def adjust_polythene(
     item_name: str,
     poly_weight: float,
     operation: str,
-    adjusted_by: str,
+    adjusted_by: str = None,
     current_user: dict = Depends(get_current_user)
 ):
     """Adjust polythene weight for an item (gross weight changes, net stays same)"""
@@ -2019,13 +2027,15 @@ async def adjust_polythene(
     if current_user['role'] not in ['polythene_executive', 'admin']:
         raise HTTPException(status_code=403, detail="Access denied")
     
+    actual_user = current_user['username']  # Always use authenticated user
+    
     # Save polythene adjustment
     adjustment = {
         'id': str(uuid.uuid4()),
         'item_name': item_name,
         'poly_weight': poly_weight,
         'operation': operation,
-        'adjusted_by': adjusted_by,
+        'adjusted_by': actual_user,
         'created_at': datetime.now(timezone.utc).isoformat(),
         'date': datetime.now(timezone.utc).date().isoformat()
     }
@@ -2036,7 +2046,7 @@ async def adjust_polythene(
         'id': str(uuid.uuid4()),
         'category': 'polythene',
         'type': 'polythene_adjustment',
-        'message': f'{adjusted_by} {operation}ed {poly_weight} kg polythene for {item_name}',
+        'message': f'{actual_user} {operation}ed {poly_weight} kg polythene for {item_name}',
         'severity': 'info',
         'target_user': 'admin',
         'item_name': item_name,
@@ -2045,7 +2055,7 @@ async def adjust_polythene(
     })
 
     await db.activity_log.insert_one({
-        'user': adjusted_by,
+        'user': actual_user,
         'user_role': current_user['role'],
         'action_type': 'polythene_adjustment',
         'description': f'{operation.upper()} {poly_weight} kg polythene for {item_name}',
@@ -2066,7 +2076,7 @@ async def adjust_polythene_batch(
         raise HTTPException(status_code=403, detail="Access denied")
     
     entries = request.get('entries', [])
-    adjusted_by = request.get('adjusted_by')
+    actual_user = current_user['username']  # Always use authenticated user
     
     saved_entries = []
     
@@ -2077,7 +2087,7 @@ async def adjust_polythene_batch(
             'stamp': entry.get('stamp', ''),
             'poly_weight': entry['poly_weight'],
             'operation': entry['operation'],
-            'adjusted_by': adjusted_by,
+            'adjusted_by': actual_user,
             'created_at': datetime.now(timezone.utc).isoformat(),
             'date': datetime.now(timezone.utc).date().isoformat()
         }
@@ -2086,7 +2096,7 @@ async def adjust_polythene_batch(
         
         # Log activity
         await db.activity_log.insert_one({
-            'user': adjusted_by,
+            'user': actual_user,
             'user_role': current_user['role'],
             'action_type': 'polythene_adjustment',
             'description': f'{entry["operation"].upper()} {entry["poly_weight"]} kg polythene for {entry["item_name"]}',
@@ -2101,7 +2111,7 @@ async def adjust_polythene_batch(
             'id': str(uuid.uuid4()),
             'category': 'polythene',
             'type': 'polythene_batch',
-            'message': f'{request.get("adjusted_by", "Unknown")} adjusted polythene for {len(saved_entries)} items',
+            'message': f'{actual_user} adjusted polythene for {len(saved_entries)} items',
             'severity': 'info',
             'target_user': 'admin',
             'timestamp': datetime.now(timezone.utc).isoformat(),
@@ -2124,7 +2134,9 @@ async def get_today_polythene_entries(username: str):
 
 @api_router.delete("/polythene/{entry_id}")
 async def delete_polythene_entry(entry_id: str, current_user: dict = Depends(get_current_user)):
-    """Delete a polythene entry"""
+    """Delete a polythene entry (admin only)"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Only admins can delete polythene entries")
     result = await db.polythene_adjustments.delete_one({'id': entry_id})
     
     if result.deleted_count == 0:
@@ -2494,7 +2506,7 @@ async def undo_upload(batch_id: str):
 
 
 @api_router.post("/master-stock/upload")
-async def upload_master_stock(file: UploadFile = File(...)):
+async def upload_master_stock(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     """Upload STOCK 2026 as master reference - FINAL item names and stamps"""
     content = await file.read()
     
@@ -3377,8 +3389,10 @@ async def undo_last_action():
     }
 
 @api_router.post("/system/reset")
-async def reset_system(request: ResetRequest):
-    """Selective system reset with password protection"""
+async def reset_system(request: ResetRequest, current_user: dict = Depends(get_current_user)):
+    """Selective system reset with password protection (admin only)"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
     if request.password != "CLOSE":
         raise HTTPException(status_code=403, detail="Invalid password")
     
@@ -3409,9 +3423,10 @@ async def reset_system(request: ResetRequest):
         results['mappings'] = r.deleted_count
     
     if 'physical_stock' in request.categories:
-        r1 = await db.physical_inventory.delete_many({})
-        r2 = await db.stock_entries.delete_many({})
-        results['physical_stock'] = r1.deleted_count + r2.deleted_count
+        r1 = await db.physical_stock.delete_many({})
+        r2 = await db.physical_inventory.delete_many({})
+        r3 = await db.stock_entries.delete_many({})
+        results['physical_stock'] = r1.deleted_count + r2.deleted_count + r3.deleted_count
     
     if 'purchase_ledger' in request.categories:
         r = await db.purchase_ledger.delete_many({})
@@ -3435,7 +3450,7 @@ async def reset_system(request: ResetRequest):
     if 'all_data' in request.categories:
         # Nuclear option: clear everything except users, keep master items structure intact
         for coll in ['transactions', 'polythene_adjustments', 'item_mappings',
-                      'physical_inventory', 'stock_entries', 'purchase_ledger',
+                      'physical_inventory', 'physical_stock', 'stock_entries', 'purchase_ledger',
                       'notifications', 'activity_log', 'action_history',
                       'stamp_approvals', 'inventory_snapshots']:
             await db[coll].delete_many({})
@@ -3674,8 +3689,10 @@ async def get_transaction_summary():
     }
 
 @api_router.delete("/transactions/all")
-async def clear_all_transactions():
+async def clear_all_transactions(current_user: dict = Depends(get_current_user)):
     """Clear all transactions only (preserves opening stock and master data)"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
     result = await db.transactions.delete_many({})
     return {"success": True, "deleted_count": result.deleted_count}
 
@@ -3695,18 +3712,26 @@ async def get_item_detail(item_name: str):
         {"_id": 0}
     )
     
-    # Calculate statistics
+    # Calculate statistics — separate lists for display, but use ALL types for math
     purchases = [t for t in transactions if t['type'] in ['purchase', 'purchase_return']]
     sales = [t for t in transactions if t['type'] in ['sale', 'sale_return']]
+    issues = [t for t in transactions if t['type'] == 'issue']
+    receives = [t for t in transactions if t['type'] == 'receive']
     
-    total_purchase_wt = sum(t.get('net_wt', 0) for t in purchases if t['type'] == 'purchase')
-    total_sale_wt = sum(t.get('net_wt', 0) for t in sales if t['type'] == 'sale')
+    # Weight totals include returns (purchase_return has negative wt, sale_return has negative wt)
+    total_purchase_wt = sum(t.get('net_wt', 0) for t in purchases)
+    total_sale_wt = sum(t.get('net_wt', 0) for t in sales)
+    total_issue_wt = sum(t.get('net_wt', 0) for t in issues)
+    total_receive_wt = sum(t.get('net_wt', 0) for t in receives)
     
-    avg_purchase_tunch = (sum(float(t.get('tunch', 0) or 0) * t.get('net_wt', 0) for t in purchases) / total_purchase_wt) if total_purchase_wt > 0 else 0
-    avg_sale_tunch = (sum(float(t.get('tunch', 0) or 0) * t.get('net_wt', 0) for t in sales) / total_sale_wt) if total_sale_wt > 0 else 0
+    # Weighted average tunch — use absolute weights to handle negative returns correctly
+    abs_purchase_wt = sum(abs(t.get('net_wt', 0)) for t in purchases)
+    abs_sale_wt = sum(abs(t.get('net_wt', 0)) for t in sales)
+    avg_purchase_tunch = (sum(float(t.get('tunch', 0) or 0) * abs(t.get('net_wt', 0)) for t in purchases) / abs_purchase_wt) if abs_purchase_wt > 0 else 0
+    avg_sale_tunch = (sum(float(t.get('tunch', 0) or 0) * abs(t.get('net_wt', 0)) for t in sales) / abs_sale_wt) if abs_sale_wt > 0 else 0
     
-    # Calculate current stock
-    current_stock = (opening.get('net_wt', 0) if opening else 0) + total_purchase_wt - total_sale_wt
+    # Current stock: opening + purchases (incl returns) - sales (incl returns) - issues + receives
+    current_stock = (opening.get('net_wt', 0) if opening else 0) + total_purchase_wt - total_sale_wt - total_issue_wt + total_receive_wt
     
     # Get current stamp (latest from transactions or opening stock)
     current_stamp = None
