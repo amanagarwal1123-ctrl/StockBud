@@ -54,6 +54,13 @@ Silver stock tracking application for managing inventory, sales, purchases, bran
 16. **AI seasonal-analysis timeout** - Switched from claude-sonnet-4-5 to gemini-3-flash-preview + added 30s asyncio.wait_for timeout with fallback
 17. **season_boost field restored** - Added season_boost (seasonal/overall velocity ratio) back to item-buffers/categorize endpoint
 18. **Session mixing across tabs** - Switched all auth token storage from localStorage to sessionStorage (12 files), enabling independent per-tab sessions
+19. **Security Hardening Batch 2** - Added auth to 15+ unauthenticated write endpoints (upload/client-batch, mappings/create-new-item, physical-stock/upload, purchase-ledger/upload, mappings/create, stamp-verification/save, DELETE mappings, history/undo, item/assign-stamp, item-buffers update, analytics/smart-insights)
+20. **Admin-only undo-upload & recent-uploads** - Added admin role check to history/undo-upload and history/recent-uploads
+21. **Horizontal access fix** - executive/my-entries/{username} now restricts to own entries or admin/manager
+22. **Polythene today auth** - polythene/today/{username} now requires authentication
+23. **Notification read scoping** - mark_notification_read now scoped to current user's target_user
+24. **KeyError fix** - executive entries stamp dedup uses e.get('stamp', '') instead of e['stamp']
+25. **Duplicate item check** - create-new-item now checks for existing item before inserting
 
 ## Upcoming Tasks
 - P1: Refactor server.py into proper FastAPI structure (routers, services, models)
