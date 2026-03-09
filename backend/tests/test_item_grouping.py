@@ -13,7 +13,7 @@ import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://mixed-date-upload.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://api-fortified.preview.emergentagent.com').rstrip('/')
 
 # Known item groups from the problem statement
 EXPECTED_GROUPS = {
