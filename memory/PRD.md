@@ -61,6 +61,13 @@ Silver stock tracking application for managing inventory, sales, purchases, bran
 23. **Notification read scoping** - mark_notification_read now scoped to current user's target_user
 24. **KeyError fix** - executive entries stamp dedup uses e.get('stamp', '') instead of e['stamp']
 25. **Duplicate item check** - create-new-item now checks for existing item before inserting
+26. **Role checks on write endpoints** - Admin-only restriction on 10 sensitive write endpoints (upload/client-batch, mappings/create-new-item, purchase-ledger/upload, mappings/create, DELETE mappings, history/undo, item/assign-stamp, item-buffers update, analytics/smart-insights). Physical-stock/upload allows admin+manager.
+27. **IDOR fix polythene/today** - Ownership check added: only own entries or admin/manager
+28. **Auth on 31 GET routes** - All read endpoints now require authentication (transactions, inventory, analytics, orders, mappings, etc.)
+29. **JWT secret hardening** - Removed insecure fallback; generates random secret if env var missing; explicit key in .env
+30. **initialize-admin no password in response** - Removed default credentials from API response
+31. **Notification mark-read mismatch** - Expanded update filter to match fetch scope ($or with target_user, role, and for_role)
+32. **history/undo ObjectId fix** - Added _id:0 projection to prevent serialization error
 
 ## Upcoming Tasks
 - P1: Refactor server.py into proper FastAPI structure (routers, services, models)
