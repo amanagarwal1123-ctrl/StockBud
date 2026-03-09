@@ -45,7 +45,7 @@ export default function Notifications() {
 
   const fetchNotifications = useCallback(async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       const res = await axios.get(`${API}/notifications/categorized`, {
         headers: { Authorization: `Bearer ${token}` }
       });

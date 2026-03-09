@@ -3957,6 +3957,9 @@ async def categorize_items(current_user: dict = Depends(get_current_user)):
         else:
             status = 'green'
 
+        # season_boost = ratio of seasonal velocity to overall velocity (>1 means seasonal demand is higher)
+        season_boost = round(v['season_velocity_kg'] / v['overall_velocity_kg'], 2) if v['overall_velocity_kg'] > 0 else 1.0
+
         buffer_docs.append({
             'item_name': v['item_name'],
             'stamp': v['stamp'],
@@ -3964,6 +3967,7 @@ async def categorize_items(current_user: dict = Depends(get_current_user)):
             'monthly_velocity_kg': round(vel, 3),
             'season_velocity_kg': round(v['season_velocity_kg'], 3),
             'overall_velocity_kg': round(v['overall_velocity_kg'], 3),
+            'season_boost': season_boost,
             'total_sold_kg': round(v['total_sold_kg'], 3),
             'minimum_stock_kg': minimum_stock,
             'reorder_buffer_kg': reorder_buffer,
@@ -5412,9 +5416,14 @@ Be specific with numbers. Format as actionable bullet points."""
             api_key=llm_key,
             session_id=f"seasonal-{datetime.now().strftime('%Y%m%d%H%M')}",
             system_message="You are an expert silver jewelry wholesale inventory analyst specializing in the Indian market. You understand Hindu calendar festivals and their impact on jewelry demand. Provide data-driven, actionable insights with specific numbers."
-        ).with_model("anthropic", "claude-sonnet-4-5")
+        ).with_model("gemini", "gemini-3-flash-preview")
         
-        ai_response = await chat.send_message(UserMessage(text=ai_prompt))
+        ai_response = await asyncio.wait_for(
+            chat.send_message(UserMessage(text=ai_prompt)),
+            timeout=30
+        )
+    except asyncio.TimeoutError:
+        ai_response = "AI analysis timed out after 30s. See data-driven recommendations below."
     except Exception as e:
         ai_response = f"AI analysis unavailable: {str(e)}. See data-driven recommendations below."
     

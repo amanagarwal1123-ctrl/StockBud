@@ -26,7 +26,7 @@ export default function StampDetail() {
 
   const fetchData = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       const [dRes, uRes] = await Promise.all([
         axios.get(`${API}/stamps/${encodeURIComponent(stampName)}/detail`),
         axios.get(`${API}/users/list`, { headers: { Authorization: `Bearer ${token}` } })
@@ -41,7 +41,7 @@ export default function StampDetail() {
   const handleAssign = async () => {
     if (!selectedUser) { toast.error('Select an executive'); return; }
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       await axios.post(`${API}/stamp-assignments`, {
         stamp: stampName, assigned_user: selectedUser
       }, { headers: { Authorization: `Bearer ${token}` } });

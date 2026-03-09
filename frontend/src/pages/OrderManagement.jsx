@@ -41,7 +41,7 @@ export default function OrderManagement() {
 
   const fetchStockAlerts = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       const res = await axios.get(`${API}/notifications/categorized`, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -51,7 +51,7 @@ export default function OrderManagement() {
 
   const checkOverdue = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       await axios.get(`${API}/orders/overdue`, { headers: { Authorization: `Bearer ${token}` } });
     } catch (e) { /* ignore */ }
   };
@@ -62,7 +62,7 @@ export default function OrderManagement() {
       return;
     }
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       await axios.post(`${API}/orders/create`, {
         item_name: form.item_name,
         quantity_kg: parseFloat(form.quantity_kg),
@@ -90,7 +90,7 @@ export default function OrderManagement() {
 
   const handleMarkReceived = async (orderId) => {
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       await axios.put(`${API}/orders/${orderId}/received`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -102,7 +102,7 @@ export default function OrderManagement() {
   const handleCancel = async (orderId) => {
     if (!window.confirm('Cancel this order?')) return;
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       await axios.delete(`${API}/orders/${orderId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });

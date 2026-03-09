@@ -37,7 +37,7 @@ const showBrowserNotification = (title, body, tag) => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [token, setToken] = useState(localStorage.getItem('token'));
+  const [token, setToken] = useState(sessionStorage.getItem('token'));
   const lastNotifCountRef = useRef(0);
 
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -131,7 +131,7 @@ export const AuthProvider = ({ children }) => {
 
       const { access_token, user: userData } = response.data;
       
-      localStorage.setItem('token', access_token);
+      sessionStorage.setItem('token', access_token);
       setToken(access_token);
       setUser(userData);
       axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
@@ -149,7 +149,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
+    sessionStorage.removeItem('token');
     setToken(null);
     setUser(null);
     delete axios.defaults.headers.common['Authorization'];

@@ -143,7 +143,7 @@ export default function HistoricalUpload() {
   const handleDelete = async (yr) => {
     if (!window.confirm(`Delete all historical data for ${yr}?`)) return;
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       await axios.delete(`${API}/historical/${yr}`, { headers: { Authorization: `Bearer ${token}` } });
       toast.success(`Historical data for ${yr} deleted`);
       fetchSummary();

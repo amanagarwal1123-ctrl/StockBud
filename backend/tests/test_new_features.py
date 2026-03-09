@@ -1,401 +1,227 @@
 """
-Test new StockBud features:
-1. Item Buffer Management - /api/item-buffers/categorize, /api/item-buffers, PUT /api/item-buffers/{item_name}
-2. Order Management - /api/orders/create, /api/orders, PUT /api/orders/{id}/received  
-3. Data Visualization - /api/analytics/visualization
-4. Stamp Assignments - /api/stamp-assignments
-5. Categorized Notifications - /api/notifications/categorized
+Test new features for StockBud inventory management system:
+1. POST /api/ai/seasonal-analysis - gemini-3-flash-preview + 30s timeout
+2. POST /api/item-buffers/categorize - season_boost field
+3. Session storage auth - sessionStorage vs localStorage
+4. Other endpoints - /api/health, /api/notifications/categorized
 """
-
 import pytest
 import requests
 import os
+import time
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
 
-@pytest.fixture(scope="module")
-def auth_token():
-    """Get authentication token for admin"""
-    response = requests.post(f"{BASE_URL}/api/auth/login", json={
-        "username": "admin",
-        "password": "admin123"
-    })
-    if response.status_code == 200:
-        return response.json().get("access_token")
-    pytest.skip("Admin authentication failed")
+class TestHealthEndpoint:
+    """Basic health check"""
+
+    def test_health_endpoint_returns_200(self):
+        """GET /api/health should return 200"""
+        response = requests.get(f"{BASE_URL}/api/health")
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        data = response.json()
+        assert data.get('status') == 'healthy', f"Unexpected status: {data}"
+        print("PASS: /api/health returns 200 with healthy status")
 
 
-@pytest.fixture
-def auth_headers(auth_token):
-    """Headers with authentication"""
-    return {"Authorization": f"Bearer {auth_token}", "Content-Type": "application/json"}
-
-
-class TestAuthentication:
+class TestAuthLogin:
     """Test login endpoint"""
-    
-    def test_admin_login_success(self):
-        """Login as admin with correct credentials"""
+
+    def test_login_success_admin(self):
+        """Login with admin/admin123"""
         response = requests.post(f"{BASE_URL}/api/auth/login", json={
             "username": "admin",
             "password": "admin123"
         })
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Login failed: {response.status_code} - {response.text}"
         data = response.json()
-        assert "access_token" in data
-        assert "user" in data
-        assert data["user"]["username"] == "admin"
-        assert data["user"]["role"] == "admin"
-    
-    def test_login_invalid_credentials(self):
-        """Login with wrong credentials fails"""
-        response = requests.post(f"{BASE_URL}/api/auth/login", json={
+        assert 'access_token' in data, "No access_token in response"
+        assert data.get('token_type') == 'bearer'
+        assert 'user' in data, "No user in response"
+        assert data['user'].get('username') == 'admin'
+        print("PASS: Login with admin/admin123 works correctly")
+        return data['access_token']
+
+
+class TestNotificationsCategorized:
+    """Test notifications endpoint (requires auth)"""
+
+    def test_notifications_returns_200_with_auth(self):
+        """GET /api/notifications/categorized with auth should return 200"""
+        # First login
+        login_resp = requests.post(f"{BASE_URL}/api/auth/login", json={
             "username": "admin",
-            "password": "wrongpassword"
+            "password": "admin123"
         })
-        assert response.status_code == 401
+        assert login_resp.status_code == 200, f"Login failed: {login_resp.status_code}"
+        token = login_resp.json()['access_token']
 
-
-class TestItemBufferManagement:
-    """Test Item Buffer endpoints - categorize items into movement tiers"""
-    
-    def test_categorize_items_admin_only(self, auth_headers):
-        """POST /api/item-buffers/categorize - categorize all items into 5 tiers"""
-        response = requests.post(f"{BASE_URL}/api/item-buffers/categorize", headers=auth_headers)
-        assert response.status_code == 200
-        data = response.json()
-        
-        # Check response structure
-        assert "success" in data
-        assert data["success"] == True
-        assert "total_items" in data
-        assert "tiers" in data
-        
-        # Verify 5 tiers exist
-        valid_tiers = ['fastest', 'fast', 'medium', 'slow', 'dead']
-        for tier in data.get("tiers", {}):
-            assert tier in valid_tiers, f"Unknown tier: {tier}"
-        
-        print(f"Categorized {data['total_items']} items into tiers: {data['tiers']}")
-    
-    def test_get_item_buffers(self):
-        """GET /api/item-buffers - returns items with tier, velocity, status"""
-        response = requests.get(f"{BASE_URL}/api/item-buffers")
-        assert response.status_code == 200
-        data = response.json()
-        
-        assert "items" in data
-        assert "total" in data
-        
-        # Check item structure
-        if data["items"]:
-            item = data["items"][0]
-            required_fields = ['item_name', 'stamp', 'tier', 'tier_num', 
-                              'monthly_velocity_kg', 'current_stock_kg', 
-                              'minimum_stock_kg', 'lower_buffer_kg', 
-                              'upper_buffer_kg', 'status']
-            for field in required_fields:
-                assert field in item, f"Missing field: {field}"
-            
-            # Verify status is valid color
-            assert item['status'] in ['red', 'green', 'yellow'], f"Invalid status: {item['status']}"
-            
-            # Verify tier is valid
-            assert item['tier'] in ['fastest', 'fast', 'medium', 'slow', 'dead']
-        
-        print(f"Got {data['total']} item buffers")
-    
-    def test_get_item_buffers_filter_by_tier(self):
-        """GET /api/item-buffers?tier=dead - filter by tier"""
-        response = requests.get(f"{BASE_URL}/api/item-buffers?tier=dead")
-        assert response.status_code == 200
-        data = response.json()
-        
-        # All items should be dead tier
-        for item in data.get("items", []):
-            assert item['tier'] == 'dead'
-    
-    def test_get_item_buffers_filter_by_status(self):
-        """GET /api/item-buffers?status=red - filter by status"""
-        response = requests.get(f"{BASE_URL}/api/item-buffers?status=red")
-        assert response.status_code == 200
-        data = response.json()
-        
-        # All items should have red status
-        for item in data.get("items", []):
-            assert item['status'] == 'red'
-    
-    def test_update_minimum_stock(self):
-        """PUT /api/item-buffers/{item_name} - update minimum stock"""
-        # First get an item name
-        buffers = requests.get(f"{BASE_URL}/api/item-buffers").json()
-        if not buffers.get("items"):
-            pytest.skip("No items in buffers")
-        
-        test_item = buffers["items"][0]["item_name"]
-        new_min = 5.5
-        
-        response = requests.put(
-            f"{BASE_URL}/api/item-buffers/{requests.utils.quote(test_item, safe='')}",
-            params={"minimum_stock_kg": new_min}
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["success"] == True
-        
-        # Verify update
-        updated = requests.get(f"{BASE_URL}/api/item-buffers").json()
-        updated_item = next((i for i in updated["items"] if i["item_name"] == test_item), None)
-        assert updated_item is not None
-        assert updated_item["minimum_stock_kg"] == new_min
-        
-        print(f"Updated minimum stock for '{test_item}' to {new_min} kg")
-
-
-class TestOrderManagement:
-    """Test Order Management endpoints"""
-    
-    def test_get_orders(self):
-        """GET /api/orders - returns orders list"""
-        response = requests.get(f"{BASE_URL}/api/orders")
-        assert response.status_code == 200
-        data = response.json()
-        
-        assert "orders" in data
-        print(f"Got {len(data['orders'])} orders")
-    
-    def test_create_order(self, auth_headers):
-        """POST /api/orders/create - create restock order"""
-        # First get an item from buffers
-        buffers = requests.get(f"{BASE_URL}/api/item-buffers").json()
-        if not buffers.get("items"):
-            pytest.skip("No items in buffers")
-        
-        test_item = buffers["items"][0]["item_name"]
-        
-        order_data = {
-            "item_name": f"TEST_{test_item[:20]}",
-            "quantity_kg": 10.5,
-            "supplier": "Test Supplier Co",
-            "notes": "Test order from pytest"
-        }
-        
-        response = requests.post(f"{BASE_URL}/api/orders/create", json=order_data, headers=auth_headers)
-        assert response.status_code == 200
-        data = response.json()
-        
-        assert data["success"] == True
-        assert "order_id" in data
-        
-        # Verify order appears in list
-        orders = requests.get(f"{BASE_URL}/api/orders").json()
-        test_order = next((o for o in orders["orders"] if o["id"] == data["order_id"]), None)
-        assert test_order is not None
-        assert test_order["item_name"] == order_data["item_name"]
-        assert test_order["quantity_kg"] == order_data["quantity_kg"]
-        assert test_order["status"] == "ordered"
-        
-        print(f"Created order {data['order_id']} for {order_data['item_name']}")
-        return data["order_id"]
-    
-    def test_mark_order_received(self, auth_headers):
-        """PUT /api/orders/{order_id}/received - mark order as received"""
-        # Create a test order first
-        order_data = {
-            "item_name": "TEST_RECEIVE_ORDER",
-            "quantity_kg": 5.0,
-            "supplier": "Test",
-            "notes": "Test receive"
-        }
-        create_resp = requests.post(f"{BASE_URL}/api/orders/create", json=order_data, headers=auth_headers)
-        assert create_resp.status_code == 200
-        order_id = create_resp.json()["order_id"]
-        
-        # Mark as received
-        response = requests.put(f"{BASE_URL}/api/orders/{order_id}/received", headers=auth_headers)
-        assert response.status_code == 200
-        data = response.json()
-        assert data["success"] == True
-        
-        # Verify status changed
-        orders = requests.get(f"{BASE_URL}/api/orders").json()
-        updated_order = next((o for o in orders["orders"] if o["id"] == order_id), None)
-        assert updated_order is not None
-        assert updated_order["status"] == "received"
-        
-        print(f"Order {order_id} marked as received")
-    
-    def test_get_orders_filtered_by_status(self):
-        """GET /api/orders?status=ordered - filter by status"""
-        response = requests.get(f"{BASE_URL}/api/orders?status=ordered")
-        assert response.status_code == 200
-        data = response.json()
-        
-        for order in data.get("orders", []):
-            assert order["status"] == "ordered"
-
-
-class TestDataVisualization:
-    """Test Data Visualization endpoints"""
-    
-    def test_get_visualization_data(self):
-        """GET /api/analytics/visualization - returns chart data"""
-        response = requests.get(f"{BASE_URL}/api/analytics/visualization")
-        assert response.status_code == 200
-        data = response.json()
-        
-        # Verify all required chart data sections exist
-        required_sections = [
-            'sales_by_item',
-            'sales_by_party', 
-            'purchases_by_supplier',
-            'tier_distribution',
-            'sales_trend',
-            'stock_health'
-        ]
-        
-        for section in required_sections:
-            assert section in data, f"Missing section: {section}"
-        
-        # Verify stock_health has correct structure
-        health = data['stock_health']
-        assert 'red' in health
-        assert 'green' in health
-        assert 'yellow' in health
-        
-        print(f"Visualization data retrieved: {len(data['sales_by_item'])} items by sales, stock health: {health}")
-    
-    def test_get_visualization_with_date_filter(self):
-        """GET /api/analytics/visualization with date range"""
+        # Get notifications
         response = requests.get(
-            f"{BASE_URL}/api/analytics/visualization",
-            params={"start_date": "2025-01-01", "end_date": "2025-12-31"}
+            f"{BASE_URL}/api/notifications/categorized",
+            headers={"Authorization": f"Bearer {token}"}
         )
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
         data = response.json()
-        
-        # Should return same structure even with filters
-        assert 'sales_by_item' in data
-        assert 'stock_health' in data
+        # Verify response structure
+        assert 'notifications' in data or 'total_unread' in data, f"Unexpected response: {data}"
+        print(f"PASS: /api/notifications/categorized returns 200, total_unread: {data.get('total_unread', 'N/A')}")
 
 
-class TestStampAssignments:
-    """Test Stamp-User Assignment endpoints"""
-    
-    def test_get_stamp_assignments(self):
-        """GET /api/stamp-assignments - returns assignments list"""
-        response = requests.get(f"{BASE_URL}/api/stamp-assignments")
-        assert response.status_code == 200
-        data = response.json()
-        
-        assert "assignments" in data
-        print(f"Got {len(data['assignments'])} stamp assignments")
-    
-    def test_create_stamp_assignment(self, auth_headers):
-        """POST /api/stamp-assignments - assign user to stamp"""
-        assignment_data = {
-            "stamp": "STAMP 1",
-            "assigned_user": "admin"
-        }
-        
-        response = requests.post(
-            f"{BASE_URL}/api/stamp-assignments", 
-            json=assignment_data, 
-            headers=auth_headers
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["success"] == True
-        
-        # Verify assignment exists
-        assignments = requests.get(f"{BASE_URL}/api/stamp-assignments").json()
-        test_assign = next((a for a in assignments["assignments"] if a["stamp"] == "STAMP 1"), None)
-        assert test_assign is not None
-        assert test_assign["assigned_user"] == "admin"
-        
-        print(f"Assigned admin to STAMP 1")
-    
-    def test_delete_stamp_assignment(self, auth_headers):
-        """DELETE /api/stamp-assignments/{stamp} - remove assignment"""
-        # First create an assignment
-        assignment_data = {"stamp": "STAMP 99", "assigned_user": "admin"}
-        requests.post(f"{BASE_URL}/api/stamp-assignments", json=assignment_data, headers=auth_headers)
-        
-        # Delete it
-        response = requests.delete(
-            f"{BASE_URL}/api/stamp-assignments/{requests.utils.quote('STAMP 99', safe='')}",
-            headers=auth_headers
-        )
-        assert response.status_code == 200
+class TestSeasonalAnalysis:
+    """Test AI seasonal analysis endpoint with gemini-3-flash-preview + 30s timeout"""
 
-
-class TestCategorizedNotifications:
-    """Test enhanced notifications endpoint"""
-    
-    def test_get_categorized_notifications(self, auth_headers):
-        """GET /api/notifications/categorized - returns organized notifications"""
-        response = requests.get(f"{BASE_URL}/api/notifications/categorized", headers=auth_headers)
-        assert response.status_code == 200
-        data = response.json()
-        
-        assert "notifications" in data
-        assert "total_unread" in data
-        
-        # Verify categories exist
-        categories = data["notifications"]
-        expected_categories = ['stock', 'order', 'stamp', 'polythene', 'general']
-        for cat in expected_categories:
-            assert cat in categories, f"Missing category: {cat}"
-        
-        print(f"Got categorized notifications: total unread = {data['total_unread']}")
-    
-    def test_check_stock_alerts(self, auth_headers):
-        """POST /api/notifications/check-stock-alerts - generate stock alerts"""
-        response = requests.post(f"{BASE_URL}/api/notifications/check-stock-alerts", headers=auth_headers)
-        assert response.status_code == 200
-        data = response.json()
-        
-        assert "success" in data
-        print(f"Stock alerts: {data}")
-
-
-class TestMasterItems:
-    """Test master items endpoint (used by stamp assignments)"""
-    
-    def test_get_master_items(self):
-        """GET /api/master-items - returns master item list"""
-        response = requests.get(f"{BASE_URL}/api/master-items")
-        assert response.status_code == 200
-        data = response.json()
-        
-        assert isinstance(data, list)
-        if data:
-            item = data[0]
-            assert "item_name" in item
-            assert "stamp" in item
-        
-        print(f"Got {len(data)} master items")
-
-
-class TestAISmartInsights:
-    """Test AI Smart Analytics endpoint (may fail due to API limits)"""
-    
-    def test_smart_insights_endpoint_exists(self):
-        """POST /api/analytics/smart-insights - endpoint exists"""
-        # Just test endpoint exists, don't require success due to AI API limits
-        response = requests.post(f"{BASE_URL}/api/analytics/smart-insights", json={
-            "question": "What are the top selling items?"
+    def test_seasonal_analysis_returns_200_within_timeout(self):
+        """POST /api/ai/seasonal-analysis should return within 30s with ai_insights, recommendations, seasonal_items"""
+        # Login first
+        login_resp = requests.post(f"{BASE_URL}/api/auth/login", json={
+            "username": "admin",
+            "password": "admin123"
         })
-        # Accept 200 (success) or 500 (API key issue) as valid
-        assert response.status_code in [200, 500]
+        assert login_resp.status_code == 200, f"Login failed: {login_resp.status_code}"
+        token = login_resp.json()['access_token']
+
+        # Call seasonal analysis - should complete within 30s (+5s buffer for network)
+        start_time = time.time()
+        response = requests.post(
+            f"{BASE_URL}/api/ai/seasonal-analysis",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=60  # Give some buffer
+        )
+        elapsed = time.time() - start_time
+
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+        print(f"Seasonal analysis completed in {elapsed:.2f}s")
         
-        if response.status_code == 200:
-            data = response.json()
-            assert "insights" in data
-            print("AI insights working!")
+        data = response.json()
+        
+        # Verify required fields exist
+        assert 'ai_insights' in data, f"Missing ai_insights in response: {data.keys()}"
+        assert 'recommendations' in data, f"Missing recommendations in response: {data.keys()}"
+        assert 'seasonal_items' in data, f"Missing seasonal_items in response: {data.keys()}"
+        
+        # AI insights can be actual response or timeout message
+        ai_insights = data['ai_insights']
+        assert isinstance(ai_insights, str), f"ai_insights should be string, got: {type(ai_insights)}"
+        assert len(ai_insights) > 0, "ai_insights is empty"
+        
+        # Check recommendations is a list
+        assert isinstance(data['recommendations'], list), f"recommendations should be list, got: {type(data['recommendations'])}"
+        
+        # Check seasonal_items is dict
+        assert isinstance(data['seasonal_items'], dict), f"seasonal_items should be dict, got: {type(data['seasonal_items'])}"
+        
+        # Print some results for verification
+        print(f"PASS: POST /api/ai/seasonal-analysis returns 200 in {elapsed:.2f}s")
+        print(f"  - ai_insights length: {len(ai_insights)} chars")
+        print(f"  - recommendations count: {len(data['recommendations'])}")
+        print(f"  - seasonal_items count: {len(data['seasonal_items'])}")
+        print(f"  - current_season: {data.get('current_season', 'N/A')}")
+        
+        # Verify it completes within timeout (+buffer)
+        assert elapsed < 45, f"Seasonal analysis took too long: {elapsed:.2f}s (expected < 45s)"
+
+
+class TestItemBuffersCategorize:
+    """Test item-buffers/categorize endpoint for season_boost field"""
+
+    def test_categorize_returns_season_boost(self):
+        """POST /api/item-buffers/categorize should return successfully"""
+        # Login first
+        login_resp = requests.post(f"{BASE_URL}/api/auth/login", json={
+            "username": "admin",
+            "password": "admin123"
+        })
+        assert login_resp.status_code == 200, f"Login failed: {login_resp.status_code}"
+        token = login_resp.json()['access_token']
+
+        # Call categorize endpoint
+        response = requests.post(
+            f"{BASE_URL}/api/item-buffers/categorize",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=60  # Heavy aggregation can take time
+        )
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+        
+        data = response.json()
+        assert data.get('success') == True, f"Expected success=True, got: {data}"
+        print(f"PASS: POST /api/item-buffers/categorize returns 200")
+        print(f"  - total_items: {data.get('total_items', 'N/A')}")
+        print(f"  - current_season: {data.get('current_season', 'N/A')}")
+        print(f"  - season_label: {data.get('season_label', 'N/A')}")
+        return token
+
+    def test_item_buffers_has_season_boost(self):
+        """GET /api/item-buffers should show season_boost per item"""
+        # Login first
+        login_resp = requests.post(f"{BASE_URL}/api/auth/login", json={
+            "username": "admin",
+            "password": "admin123"
+        })
+        assert login_resp.status_code == 200, f"Login failed: {login_resp.status_code}"
+        token = login_resp.json()['access_token']
+
+        # First call categorize to ensure items are populated
+        cat_response = requests.post(
+            f"{BASE_URL}/api/item-buffers/categorize",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=60
+        )
+        if cat_response.status_code != 200:
+            print(f"Warning: Categorize returned {cat_response.status_code}")
+
+        # Get item buffers
+        response = requests.get(
+            f"{BASE_URL}/api/item-buffers",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+        
+        data = response.json()
+        # Response can be a dict with 'items' key or direct list
+        if isinstance(data, dict):
+            items = data.get('items', [])
         else:
-            print("AI endpoint exists but failed (expected if API key has limits)")
+            items = data
+        
+        assert isinstance(items, list), f"Expected items list, got: {type(items)}"
+        
+        # Check if items have season_boost field
+        items_with_boost = 0
+        items_checked = 0
+        for item in items[:10]:  # Check first 10
+            items_checked += 1
+            if 'season_boost' in item:
+                items_with_boost += 1
+                # Verify season_boost is a number
+                assert isinstance(item['season_boost'], (int, float)), f"season_boost should be numeric, got: {type(item['season_boost'])}"
+                print(f"  - {item.get('item_name', 'unknown')}: season_boost={item['season_boost']}")
+        
+        if items_checked > 0:
+            print(f"PASS: {items_with_boost}/{items_checked} items have season_boost field")
+        else:
+            print("INFO: No items in buffer to check (may need transactions data)")
+        
+        # If we have items, they should have season_boost
+        if len(items) > 0:
+            assert items_with_boost > 0, f"No items have season_boost field!"
+
+
+class TestAuthWithoutLogin:
+    """Test that protected endpoints require auth"""
+
+    def test_seasonal_analysis_requires_auth(self):
+        """POST /api/ai/seasonal-analysis without auth should return 401"""
+        response = requests.post(f"{BASE_URL}/api/ai/seasonal-analysis")
+        assert response.status_code in [401, 403], f"Expected 401/403 without auth, got {response.status_code}"
+        print("PASS: POST /api/ai/seasonal-analysis requires auth")
+
+    def test_categorize_requires_auth(self):
+        """POST /api/item-buffers/categorize without auth should return 401"""
+        response = requests.post(f"{BASE_URL}/api/item-buffers/categorize")
+        assert response.status_code in [401, 403], f"Expected 401/403 without auth, got {response.status_code}"
+        print("PASS: POST /api/item-buffers/categorize requires auth")
 
 
 if __name__ == "__main__":

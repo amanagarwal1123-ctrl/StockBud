@@ -81,7 +81,7 @@ export default function ManagerApprovals() {
 
   const updateVerificationDate = async (stamp, newDate) => {
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       await axios.put(`${API}/manager/update-verification-date/${stamp}`, 
         { verification_date: newDate },
         { headers: { Authorization: `Bearer ${token}` } }

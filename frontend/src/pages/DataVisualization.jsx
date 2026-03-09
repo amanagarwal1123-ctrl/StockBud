@@ -89,7 +89,7 @@ export default function DataVisualization() {
     if (!file) return;
     setHistUploading(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       const fd = new FormData();
       fd.append('file', file);
       const res = await axios.post(
@@ -110,7 +110,7 @@ export default function DataVisualization() {
   const handleDeleteHistorical = async (year) => {
     if (!window.confirm(`Delete all historical data for ${year}?`)) return;
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       await axios.delete(`${API}/historical/${year}`, { headers: { Authorization: `Bearer ${token}` } });
       toast.success(`Historical data for ${year} deleted`);
       fetchHistorical();
@@ -120,7 +120,7 @@ export default function DataVisualization() {
   const handleSeasonalAnalysis = async () => {
     setSeasonalLoading(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       const res = await axios.post(`${API}/ai/seasonal-analysis`, {}, {
         headers: { Authorization: `Bearer ${token}` },
         timeout: 0

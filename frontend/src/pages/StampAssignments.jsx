@@ -29,7 +29,7 @@ export default function StampAssignments() {
 
   const fetchData = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       const headers = { Authorization: `Bearer ${token}` };
       const [aRes, uRes, mRes] = await Promise.all([
         axios.get(`${API}/stamp-assignments`),
@@ -58,7 +58,7 @@ export default function StampAssignments() {
       return;
     }
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       await axios.post(`${API}/stamp-assignments`, { stamp: editStamp, assigned_user: editUser }, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -73,7 +73,7 @@ export default function StampAssignments() {
 
   const handleDelete = async (stamp) => {
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       await axios.delete(`${API}/stamp-assignments/${encodeURIComponent(stamp)}`, {
         headers: { Authorization: `Bearer ${token}` }
       });

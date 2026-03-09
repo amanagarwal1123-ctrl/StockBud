@@ -136,7 +136,7 @@ export default function PhysicalStockComparison() {
   const deleteVerification = async (stamp, date) => {
     if (!window.confirm(`Cancel verification for ${stamp} on ${date}?`)) return;
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       await axios.delete(`${API}/stamp-verification/${encodeURIComponent(stamp)}/${date}`, {
         headers: { Authorization: `Bearer ${token}` }
       });

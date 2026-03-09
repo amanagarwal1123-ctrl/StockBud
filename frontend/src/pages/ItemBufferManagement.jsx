@@ -68,7 +68,7 @@ export default function ItemBufferManagement() {
   const handleCategorize = async () => {
     setCategorizing(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       const res = await axios.post(`${API}/item-buffers/categorize`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });

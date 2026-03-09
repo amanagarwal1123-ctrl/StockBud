@@ -48,7 +48,7 @@ export default function ItemGroupManagement() {
       return;
     }
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       // If editing and leader changed, delete old group first
       if (editingGroup && editingGroup !== leaderItem) {
         await axios.delete(`${API}/item-groups/${encodeURIComponent(editingGroup)}`, {
@@ -80,7 +80,7 @@ export default function ItemGroupManagement() {
   const handleDelete = async (name) => {
     if (!window.confirm(`Delete group "${name}"?`)) return;
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       await axios.delete(`${API}/item-groups/${encodeURIComponent(name)}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -153,7 +153,7 @@ export default function ItemGroupManagement() {
                   <Button size="sm" variant="outline" className="border-amber-300 text-amber-700"
                     onClick={async () => {
                       try {
-                        const token = localStorage.getItem('token');
+                        const token = sessionStorage.getItem('token');
                         await axios.post(`${API}/item-groups`, { group_name: s.leader, members: s.members },
                           { headers: { Authorization: `Bearer ${token}` } });
                         toast.success(`Group "${s.leader}" created from mappings`);

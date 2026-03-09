@@ -29,7 +29,7 @@ export default function ExecutiveStockEntry() {
 
   const fetchStockAlerts = useCallback(async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       const res = await axios.get(`${API}/stock-alerts/auto`, {
         headers: { Authorization: `Bearer ${token}` }
       });
