@@ -1,0 +1,115 @@
+{
+  "summary": "Security hardening batch tested: All 26 tests passed. 15+ endpoints verified to return 403 without auth. Admin-only restrictions on undo-upload and recent-uploads verified. Horizontal access control on executive entries verified. Duplicate check on create-new-item verified. Login flow and sessionStorage auth working correctly.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_security_hardening.py",
+    "/app/test_reports/pytest/security_hardening_v18.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "✓ 15 endpoints verified to require authentication (return 401/403 without token)",
+    "✓ POST /api/upload/client-batch - requires auth",
+    "✓ POST /api/mappings/create-new-item - requires auth + duplicate check implemented",
+    "✓ POST /api/physical-stock/upload - requires auth",
+    "✓ POST /api/purchase-ledger/upload - requires auth",
+    "✓ POST /api/mappings/create - requires auth",
+    "✓ POST /api/stamp-verification/save - requires auth",
+    "✓ DELETE /api/mappings/{name} - requires auth",
+    "✓ POST /api/history/undo - requires auth",
+    "✓ POST /api/item/{name}/assign-stamp - requires auth",
+    "✓ PUT /api/item-buffers/{name} - requires auth",
+    "✓ POST /api/analytics/smart-insights - requires auth",
+    "✓ POST /api/history/undo-upload - requires auth + admin role check",
+    "✓ GET /api/history/recent-uploads - requires auth + admin role check",
+    "✓ GET /api/executive/my-entries/{username} - horizontal access control (ownership/role check)",
+    "✓ GET /api/polythene/today/{username} - requires auth",
+    "✓ POST /api/notifications/{id}/read - scoped to current user (target_user filter)"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_security_hardening.py"
+  ],
+  "success_rate": {
+    "backend": "100% (26/26 tests passed)",
+    "frontend": "100% (login + sessionStorage + dashboard verified)"
+  },
+  "test_credentials": {
+    "admin": {"username": "admin", "password": "admin123"}
+  },
+  "seed_data_creation": "Test items created with UUID prefix (TEST_ITEM_) for duplicate check test",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Security hardening batch complete. 15+ endpoints now require Depends(get_current_user). Admin-only endpoints (undo-upload, recent-uploads) check for admin role. Executive entries have horizontal access control (line 1474). Notification read is scoped to target_user (line 2014). create-new-item has duplicate check (line 2175). All changes verified working correctly.",
+  "api_tests_summary": {
+    "total_tests": 26,
+    "passed": 26,
+    "failed": 0,
+    "skipped": 0,
+    "test_classes": [
+      "TestHealthEndpoint (1 test) - GET /api/health returns 200",
+      "TestAuthLogin (1 test) - Login with admin/admin123",
+      "TestUnauthenticatedEndpoints403 (16 tests) - All protected endpoints return 401/403 without auth",
+      "TestAuthenticatedEndpoints (3 tests) - Endpoints work with valid auth token",
+      "TestHorizontalAccessControl (1 test) - Executive entries ownership check",
+      "TestDuplicateCheck (1 test) - create-new-item returns success=false on duplicate",
+      "TestAdminOnlyEndpoints (2 tests) - undo-upload and recent-uploads admin restriction",
+      "TestNotificationScoping (1 test) - notification read works with auth"
+    ]
+  },
+  "features_verified": {
+    "auth_on_16_endpoints": {
+      "status": "VERIFIED",
+      "endpoints": [
+        "POST /api/upload/client-batch",
+        "POST /api/mappings/create-new-item",
+        "POST /api/physical-stock/upload",
+        "POST /api/purchase-ledger/upload",
+        "POST /api/mappings/create",
+        "POST /api/stamp-verification/save",
+        "DELETE /api/mappings/{name}",
+        "POST /api/history/undo",
+        "POST /api/item/{name}/assign-stamp",
+        "PUT /api/item-buffers/{name}",
+        "POST /api/analytics/smart-insights",
+        "POST /api/history/undo-upload",
+        "GET /api/history/recent-uploads",
+        "GET /api/executive/my-entries/{username}",
+        "GET /api/polythene/today/{username}",
+        "POST /api/notifications/{id}/read"
+      ]
+    },
+    "admin_role_check": {
+      "status": "VERIFIED",
+      "endpoints": ["POST /api/history/undo-upload", "GET /api/history/recent-uploads"],
+      "check_line": "current_user['role'] != 'admin'"
+    },
+    "horizontal_access_control": {
+      "status": "VERIFIED",
+      "endpoint": "GET /api/executive/my-entries/{username}",
+      "check": "Only owner or admin/manager can view entries (line 1474)"
+    },
+    "notification_scoping": {
+      "status": "VERIFIED",
+      "endpoint": "POST /api/notifications/{id}/read",
+      "check": "Update filter includes target_user: current_user['username'] (line 2014)"
+    },
+    "duplicate_check": {
+      "status": "VERIFIED",
+      "endpoint": "POST /api/mappings/create-new-item",
+      "check": "Returns success=false if item already exists (line 2175-2177)"
+    }
+  },
+  "playwright_test_results": {
+    "login_flow": "PASS - Login with admin/admin123 works",
+    "sessionStorage_token": "PASS - Token stored in sessionStorage (length: 144 chars)",
+    "localStorage_token": "PASS - Token NOT in localStorage",
+    "dashboard_loads": "PASS - Dashboard loads correctly after login"
+  }
+}

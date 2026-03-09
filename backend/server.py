@@ -1313,7 +1313,7 @@ def _parse_raw_rows(raw_rows: List[Dict], cols: set, file_type: str) -> List[Dic
 
 
 @api_router.post("/upload/client-batch")
-async def client_batch_upload(request: Dict):
+async def client_batch_upload(request: Dict, current_user: dict = Depends(get_current_user)):
     """Accept a batch of pre-parsed rows from client-side Excel reading.
     No file upload, no Excel parsing on server — completely OOM-safe."""
     file_type = request.get('file_type')
@@ -1470,6 +1470,9 @@ async def upload_transaction_file(
 @api_router.get("/executive/my-entries/{username}")
 async def get_executive_entries(username: str, current_user: dict = Depends(get_current_user)):
     """Get stock entries by an executive — latest per stamp shown first"""
+    # Only allow viewing own entries, or admin/manager can view any
+    if current_user['username'] != username and current_user['role'] not in ['admin', 'manager']:
+        raise HTTPException(status_code=403, detail="Can only view your own entries")
     entries = await db.stock_entries.find(
         {'entered_by': username},
         {"_id": 0}
@@ -1479,8 +1482,9 @@ async def get_executive_entries(username: str, current_user: dict = Depends(get_
     seen_stamps = set()
     latest_entries = []
     for e in entries:
-        if e['stamp'] not in seen_stamps:
-            seen_stamps.add(e['stamp'])
+        stamp = e.get('stamp', '')
+        if stamp not in seen_stamps:
+            seen_stamps.add(stamp)
             latest_entries.append(e)
     return latest_entries
 
@@ -2005,9 +2009,9 @@ async def get_my_notifications(current_user: dict = Depends(get_current_user)):
 
 @api_router.post("/notifications/{notification_id}/read")
 async def mark_notification_read(notification_id: str, current_user: dict = Depends(get_current_user)):
-    """Mark notification as read"""
+    """Mark notification as read (scoped to current user)"""
     await db.notifications.update_one(
-        {'id': notification_id},
+        {'id': notification_id, 'target_user': current_user['username']},
         {'$set': {'read': True}}
     )
 
@@ -2121,7 +2125,7 @@ async def adjust_polythene_batch(
     return {'success': True, 'message': f'{len(saved_entries)} polythene adjustments saved', 'count': len(saved_entries)}
 
 @api_router.get("/polythene/today/{username}")
-async def get_today_polythene_entries(username: str):
+async def get_today_polythene_entries(username: str, current_user: dict = Depends(get_current_user)):
     """Get ALL polythene entries by user for today (no limit)"""
     today = datetime.now(timezone.utc).date().isoformat()
     
@@ -2162,9 +2166,15 @@ async def get_activity_log(current_user: dict = Depends(get_current_user)):
 @api_router.post("/mappings/create-new-item")
 async def create_new_item_from_unmapped(
     transaction_name: str,
-    stamp: str = "Unassigned"
+    stamp: str = "Unassigned",
+    current_user: dict = Depends(get_current_user)
 ):
     """Create a completely new item from unmapped transaction name"""
+    
+    # Check for duplicates
+    existing = await db.master_items.find_one({"item_name": transaction_name})
+    if existing:
+        return {'success': False, 'message': f'Item "{transaction_name}" already exists in master items'}
     
     # Add to master_items as new item
     new_item = {
@@ -2214,7 +2224,8 @@ async def get_current_inventory_endpoint():
 @api_router.post("/physical-stock/upload")
 async def upload_physical_stock(
     file: UploadFile = File(...),
-    verification_date: Optional[str] = None
+    verification_date: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
 ):
     """Upload physical stock file with verification date"""
     content = await file.read()
@@ -2374,8 +2385,10 @@ async def compare_physical_with_book():
     }
 
 @api_router.get("/history/recent-uploads")
-async def get_recent_uploads():
-    """Get ALL file uploads for undo selection"""
+async def get_recent_uploads(current_user: dict = Depends(get_current_user)):
+    """Get ALL file uploads for undo selection (admin only)"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
     actions = await db.action_history.find(
         {"action_type": {"$in": [
             "upload_purchase", "upload_sale", "upload_branch_transfer",
@@ -2468,8 +2481,10 @@ async def normalize_all_stamps(current_user: dict = Depends(get_current_user)):
     }
 
 @api_router.post("/history/undo-upload")
-async def undo_upload(batch_id: str):
+async def undo_upload(batch_id: str, current_user: dict = Depends(get_current_user)):
     """Undo a specific file upload by batch_id — restores previously replaced data"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
     
     # Find the action
     action = await db.action_history.find_one({"data_snapshot.batch_id": batch_id})
@@ -2577,7 +2592,7 @@ async def upload_master_stock(file: UploadFile = File(...), current_user: dict =
         raise HTTPException(status_code=400, detail=f"Error: {str(e)}")
 
 @api_router.post("/purchase-ledger/upload")
-async def upload_purchase_ledger(file: UploadFile = File(...)):
+async def upload_purchase_ledger(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     """Upload PURCHASE_CUMUL file to create/update purchase rate ledger"""
     content = await file.read()
     
@@ -2897,7 +2912,7 @@ async def get_unmapped_items():
     }
 
 @api_router.post("/mappings/create")
-async def create_mapping(transaction_name: str, master_name: str):
+async def create_mapping(transaction_name: str, master_name: str, current_user: dict = Depends(get_current_user)):
     """Create a mapping from transaction name to master name"""
     # Verify master name exists
     master = await db.master_items.find_one({"item_name": master_name}, {"_id": 0})
@@ -2923,7 +2938,7 @@ async def create_mapping(transaction_name: str, master_name: str):
     return {"success": True, "message": f"Mapped '{transaction_name}' → '{master_name}'"}
 
 @api_router.post("/stamp-verification/save")
-async def save_stamp_verification(request: Dict):
+async def save_stamp_verification(request: Dict, current_user: dict = Depends(get_current_user)):
     """Save stamp verification record"""
     stamp = request.get('stamp', '')
     # Normalize stamp format to match master items
@@ -3046,7 +3061,7 @@ async def get_all_mappings():
     return mappings
 
 @api_router.delete("/mappings/{transaction_name}")
-async def delete_mapping(transaction_name: str):
+async def delete_mapping(transaction_name: str, current_user: dict = Depends(get_current_user)):
     """Delete a mapping"""
     result = await db.item_mappings.delete_one({"transaction_name": transaction_name})
     if result.deleted_count == 0:
@@ -3369,7 +3384,7 @@ async def get_action_history(limit: int = 20):
     return actions
 
 @api_router.post("/history/undo")
-async def undo_last_action():
+async def undo_last_action(current_user: dict = Depends(get_current_user)):
     """Undo last action"""
     last_action = await db.action_history.find_one({"can_undo": True}, sort=[("timestamp", -1)])
     
@@ -3756,7 +3771,7 @@ async def get_item_detail(item_name: str):
     }
 
 @api_router.post("/item/{item_name}/assign-stamp")
-async def assign_stamp_to_item(item_name: str, stamp: str = Query(...)):
+async def assign_stamp_to_item(item_name: str, stamp: str = Query(...), current_user: dict = Depends(get_current_user)):
     """Assign stamp to all instances of an item"""
     
     # Normalize stamp to consistent format "STAMP X" (ALL CAPS)
@@ -4054,7 +4069,7 @@ async def get_item_buffers(
     return {"items": items, "total": len(items)}
 
 @api_router.put("/item-buffers/{item_name}")
-async def update_item_buffer(item_name: str, minimum_stock_kg: float = Query(...)):
+async def update_item_buffer(item_name: str, minimum_stock_kg: float = Query(...), current_user: dict = Depends(get_current_user)):
     """Update minimum stock for an item"""
     result = await db.item_buffers.update_one(
         {'item_name': item_name},
@@ -4944,7 +4959,7 @@ async def get_visualization_data(
 # ==================== AI SMART ANALYTICS ====================
 
 @api_router.post("/analytics/smart-insights")
-async def get_smart_insights(request: SmartInsightsRequest):
+async def get_smart_insights(request: SmartInsightsRequest, current_user: dict = Depends(get_current_user)):
     """Generate AI-powered analytics insights using Claude"""
     
     llm_key = os.environ.get('EMERGENT_LLM_KEY')
