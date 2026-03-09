@@ -50,6 +50,11 @@ Silver stock tracking application for managing inventory, sales, purchases, bran
 - User needs to re-upload sale data for Feb 26-27 if preview data was affected
 - Profit discrepancy between deployed/preview explained by data differences + new data
 
+## Key Fixes (Mar 2026 - Session 2)
+16. **AI seasonal-analysis timeout** - Switched from claude-sonnet-4-5 to gemini-3-flash-preview + added 30s asyncio.wait_for timeout with fallback
+17. **season_boost field restored** - Added season_boost (seasonal/overall velocity ratio) back to item-buffers/categorize endpoint
+18. **Session mixing across tabs** - Switched all auth token storage from localStorage to sessionStorage (12 files), enabling independent per-tab sessions
+
 ## Upcoming Tasks
 - P1: Refactor server.py into proper FastAPI structure (routers, services, models)
 - Ongoing: Data parity between deployed and preview environments
