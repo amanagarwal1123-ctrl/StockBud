@@ -18,7 +18,7 @@ export default function UploadManager() {
     physical_stock: { date: '' }
   });
 
-  const isUploading = uploads.some(u => u.status === 'uploading');
+  const uploadingTypes = new Set(uploads.filter(u => u.status === 'uploading').map(u => u.fileType));
 
   const applyMasterDates = () => {
     if (!masterDateRange.start || !masterDateRange.end) {
@@ -68,7 +68,9 @@ export default function UploadManager() {
       confirmMessage += `This will ${fileType === 'opening_stock' || fileType === 'master_stock' ? 'replace all existing data' : 'add new transactions'}.`;
     }
 
-    if (!window.confirm(confirmMessage)) return;
+    // Small delay prevents browser from suppressing confirm() right after file picker closes
+    const confirmed = await new Promise(r => setTimeout(() => r(window.confirm(confirmMessage)), 150));
+    if (!confirmed) return;
 
     try {
       await startUpload(fileType, file, dateRanges);
@@ -79,6 +81,7 @@ export default function UploadManager() {
   };
 
   const FileUploadCard = ({ type, title, description }) => {
+    const isTypeUploading = uploadingTypes.has(type);
     const needsDateRange = type === 'purchase' || type === 'sale' || type === 'branch_transfer';
     const needsDate = type === 'physical_stock';
 
@@ -110,7 +113,7 @@ export default function UploadManager() {
               <Input type="date" value={dateRanges.physical_stock?.date || ''} onChange={(e) => setDateRanges(prev => ({ ...prev, physical_stock: { date: e.target.value } }))} className="text-sm h-9" required />
             </div>
           )}
-          <label htmlFor={isUploading ? undefined : `${type}-upload`} className={`upload-zone flex flex-col items-center justify-center gap-3 border-2 border-dashed rounded-xl p-8 transition-all ${isUploading ? 'border-muted-foreground/10 bg-muted/20 cursor-not-allowed opacity-50' : 'border-muted-foreground/25 cursor-pointer hover:border-primary/50 bg-muted/5'}`} data-testid={`upload-zone-${type}`}>
+          <label htmlFor={isTypeUploading ? undefined : `${type}-upload`} className={`upload-zone flex flex-col items-center justify-center gap-3 border-2 border-dashed rounded-xl p-8 transition-all ${isTypeUploading ? 'border-muted-foreground/10 bg-muted/20 cursor-not-allowed opacity-50' : 'border-muted-foreground/25 cursor-pointer hover:border-primary/50 bg-muted/5'}`} data-testid={`upload-zone-${type}`}>
             {uploadedFiles[type] ? (
               <>
                 <CheckCircle2 className="h-10 w-10 text-emerald-600" />
@@ -128,7 +131,7 @@ export default function UploadManager() {
                 </div>
               </>
             )}
-            <input id={`${type}-upload`} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => { if (e.target.files[0]) handleFileUpload(type, e.target.files[0]); e.target.value = ''; }} disabled={isUploading} />
+            <input id={`${type}-upload`} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => { if (e.target.files[0]) handleFileUpload(type, e.target.files[0]); e.target.value = ''; }} disabled={isTypeUploading} />
           </label>
         </CardContent>
       </Card>
