@@ -49,8 +49,9 @@ export default function PolytheneEntry() {
       const cacheBuster = `?_t=${Date.now()}`;
       const response = await axios.get(`${API}/inventory/current${cacheBuster}`);
       
-      // Combine both positive and negative items so users can adjust polythene for all items
-      const allInventoryItems = [...response.data.inventory, ...response.data.negative_items];
+      // Use stamp_items (ungrouped, per-item) so group members appear separately
+      // This is critical for stamp-wise stock tallying — each item has its own stock
+      const allInventoryItems = response.data.stamp_items || [...response.data.inventory, ...response.data.negative_items];
       setAllItems(allInventoryItems);
     } catch (error) {
       toast.error('Failed to load items');
