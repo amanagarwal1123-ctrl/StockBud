@@ -78,6 +78,20 @@ Silver stock tracking application for managing inventory, sales, purchases, bran
 38. **Unused param cleanup** - Removed unused `adjusted_by` parameter from /polythene/adjust endpoint
 39. **Stray docstring cleanup** - Removed duplicate docstring inside save_stamp_verification
 
+## Key Feature (Mar 2026 - Session 4: Physical Stock Staged Partial Update)
+40. **Physical stock parser** - New `physical_stock` parser type in both `parse_excel_file` and `parse_excel_streaming` with flexible header support:
+    - 2-col: Item Name + Gross Weight (updates gross only, preserves net)
+    - 3-col: + Net Weight (updates both)
+    - 4-col: + Stamp (backward-compatible)
+    - Headers accepted: Gr.Wt. / Gr Wt / Gross Wt / Gross Weight | Net.Wt. / Net Wt / Net Weight / Gold Std.
+41. **Preview endpoint** - `POST /api/physical-stock/upload-preview` parses file and diffs against current db.physical_stock without mutation
+42. **Apply endpoint** - `POST /api/physical-stock/apply-updates` persists only approved items with verification_date, logs via audit pattern
+43. **Preview modal** - New `PhysicalStockPreview.jsx` component: shows per-row diff (old/new gross & net, deltas), status badges, per-row Approve, global Approve All, CSV export
+44. **Upload queue** - Rewrote `UploadContext.jsx` with real serialized queue (queued→uploading→processing→done→error), one-at-a-time execution, no more global lock
+45. **Deterministic upload flow** - Removed fragile `window.confirm()` inside file input onChange; physical stock goes directly to preview modal; other types use explicit confirmation card dialog
+46. **Polythene delete fix** - polythene_executive can now delete own entries (admin can delete any)
+47. **Upload per-type lock** - Changed from global isUploading to per-type uploadingTypes set
+
 ## Upcoming Tasks
 - P1: Refactor server.py into proper FastAPI structure (routers, services, models)
 - Ongoing: Data parity between deployed and preview environments
