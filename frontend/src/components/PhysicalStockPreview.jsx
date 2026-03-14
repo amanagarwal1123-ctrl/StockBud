@@ -36,10 +36,12 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
 
   const verificationDate = previewData?.verification_date || '';
   const updateMode = previewData?.update_mode || 'gross_only';
+  const ambiguityError = previewData?.ambiguity_error || null;
 
   const pendingRows = rows.filter(r => r.status === 'pending');
   const approvedRows = rows.filter(r => r.status === 'approved');
   const unmatchedRows = rows.filter(r => r.status === 'unmatched');
+  const ambiguousRows = rows.filter(r => r.status === 'ambiguous');
 
   const summaryGrDelta = pendingRows.reduce((s, r) => s + (r.gr_delta || 0), 0);
   const summaryNetDelta = pendingRows.reduce((s, r) => s + (r.net_delta || 0), 0);
@@ -136,11 +138,22 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
           </div>
         )}
 
+        {/* Ambiguity warning */}
+        {ambiguityError && (
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 text-orange-800 dark:text-orange-200 text-sm" data-testid="ambiguity-warning">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            {ambiguityError}
+          </div>
+        )}
+
         {/* Summary bar */}
         <div className="flex flex-wrap gap-3 text-sm border rounded-lg p-3 bg-muted/30" data-testid="preview-summary">
           <div>Pending: <strong>{pendingRows.length}</strong></div>
           <div>Approved: <strong className="text-emerald-600">{approvedRows.length}</strong></div>
           <div>Unmatched: <strong className="text-red-600">{unmatchedRows.length}</strong></div>
+          {ambiguousRows.length > 0 && (
+            <div>Ambiguous: <strong className="text-orange-600">{ambiguousRows.length}</strong></div>
+          )}
           <div className="ml-auto flex gap-3">
             <span>Gross delta: <DeltaBadge value={summaryGrDelta / 1000} /></span>
             {updateMode === 'gross_and_net' && (
@@ -189,7 +202,7 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
             </TableHeader>
             <TableBody>
               {rows.map((row, idx) => (
-                <TableRow key={idx} className={row.status === 'unmatched' ? 'bg-red-50 dark:bg-red-950/20' : row.status === 'approved' ? 'bg-emerald-50 dark:bg-emerald-950/20' : ''}>
+                <TableRow key={idx} className={row.status === 'unmatched' ? 'bg-red-50 dark:bg-red-950/20' : row.status === 'approved' ? 'bg-emerald-50 dark:bg-emerald-950/20' : row.status === 'ambiguous' ? 'bg-orange-50 dark:bg-orange-950/20' : ''}>
                   <TableCell className="font-medium text-sm">{row.item_name}</TableCell>
                   <TableCell><Badge variant="outline" className="text-xs">{row.stamp || '—'}</Badge></TableCell>
                   <TableCell className="text-right font-mono text-sm">{gToKg(row.old_gr_wt)}</TableCell>
@@ -210,6 +223,11 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
                         <AlertTriangle className="h-3 w-3 mr-1" />Unmatched
                       </Badge>
                     )}
+                    {row.status === 'ambiguous' && (
+                      <Badge className="bg-orange-500 text-xs">
+                        <AlertTriangle className="h-3 w-3 mr-1" />Ambiguous
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell className="text-right">
                     {row.status === 'pending' && (
@@ -224,7 +242,7 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
                       </Button>
                     )}
                     {row.status === 'approved' && <Check className="h-4 w-4 text-emerald-600" />}
-                    {row.status === 'unmatched' && <Minus className="h-4 w-4 text-muted-foreground" />}
+                    {(row.status === 'unmatched' || row.status === 'ambiguous') && <Minus className="h-4 w-4 text-muted-foreground" />}
                   </TableCell>
                 </TableRow>
               ))}

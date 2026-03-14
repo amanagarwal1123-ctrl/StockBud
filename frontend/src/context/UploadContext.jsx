@@ -82,7 +82,7 @@ export function UploadProvider({ children }) {
 
     try {
       let response;
-      const useChunked = file.size > CHUNK_SIZE && fileType !== 'master_stock';
+      const useChunked = file.size > CHUNK_SIZE && fileType !== 'master_stock' && fileType !== 'physical_stock';
 
       if (useChunked) {
         const range = dateRanges[fileType] || {};

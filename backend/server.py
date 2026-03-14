@@ -1153,28 +1153,11 @@ async def _process_upload(upload_id: str, meta: dict):
                               "message": f"Opening stock uploaded: {len(stock_items)} items, {total_net_wt/1000:.3f} kg"}
 
         elif file_type == 'physical_stock':
-            verification_date = meta.get('verification_date')
-            merged_items = {}
-            for record in records:
-                key = record['item_name'].strip().lower()
-                if key not in merged_items:
-                    merged_items[key] = {'item_name': record['item_name'], 'stamp': record.get('stamp', ''),
-                        'pc': 0, 'gr_wt': 0.0, 'net_wt': 0.0, 'fine': 0.0,
-                        'verification_date': verification_date or datetime.now(timezone.utc).isoformat()}
-                merged_items[key]['gr_wt'] += record.get('gr_wt', 0)
-                merged_items[key]['net_wt'] += record.get('net_wt', 0)
-                merged_items[key]['fine'] += record.get('fine', 0)
-                merged_items[key]['pc'] += record.get('pc', 0)
-                if record.get('stamp') and not merged_items[key]['stamp']:
-                    merged_items[key]['stamp'] = record['stamp']
-            await db.physical_stock.delete_many({})
-            stock_items = [PhysicalStock(**item).model_dump() for item in merged_items.values()]
-            await db.physical_stock.insert_many(stock_items)
-            total_net_wt = sum(i['net_wt'] for i in stock_items)
-            await auto_normalize_stamps()
+            verification_date = meta.get('verification_date') or datetime.now(timezone.utc).isoformat()[:10]
+            count, message = await _replace_physical_stock_for_date(records, verification_date)
             meta['status'] = 'complete'
-            meta['result'] = {"success": True, "count": len(stock_items),
-                              "message": f"Physical stock uploaded: {len(stock_items)} items, {total_net_wt/1000:.3f} kg"}
+            meta['result'] = {"success": True, "count": count,
+                              "verification_date": verification_date, "message": message}
 
         elif file_type in ('historical_sale', 'historical_purchase'):
             year = meta.get('year', '2025')
@@ -2322,15 +2305,58 @@ async def get_current_inventory_endpoint(current_user: dict = Depends(get_curren
     """Calculate current inventory: Opening Stock + Purchases - Sales"""
     return await get_current_inventory()
 
+
+async def _replace_physical_stock_for_date(records: list, verification_date: str):
+    """Shared helper: merge parsed records by (item name + stamp), delete only the selected date's rows,
+    insert the new merged rows. Returns (count, message)."""
+    merged_items = {}
+    for record in records:
+        name_key = record['item_name'].strip().lower()
+        stamp_val = record.get('stamp', '') or ''
+        # Merge by (name + stamp) to preserve separate stamp entries
+        if stamp_val and stamp_val != 'Unassigned':
+            merge_key = f"{name_key}||{stamp_val.strip().lower()}"
+        else:
+            merge_key = name_key
+        if merge_key not in merged_items:
+            merged_items[merge_key] = {
+                'item_name': record['item_name'],
+                'stamp': stamp_val,
+                'pc': 0, 'gr_wt': 0.0, 'net_wt': 0.0, 'fine': 0.0,
+                'verification_date': verification_date,
+            }
+        merged_items[merge_key]['gr_wt'] += record.get('gr_wt', 0)
+        merged_items[merge_key]['net_wt'] += record.get('net_wt', 0)
+        merged_items[merge_key]['fine'] += record.get('fine', 0)
+        merged_items[merge_key]['pc'] += record.get('pc', 0)
+        if stamp_val and not merged_items[merge_key]['stamp']:
+            merged_items[merge_key]['stamp'] = stamp_val
+
+    # Delete ONLY rows for the selected date — other dates untouched
+    await db.physical_stock.delete_many({'verification_date': verification_date})
+
+    stock_items = [PhysicalStock(**item).model_dump() for item in merged_items.values()]
+    if stock_items:
+        await db.physical_stock.insert_many(stock_items)
+    await auto_normalize_stamps()
+
+    total_net_wt = sum(i['net_wt'] for i in stock_items)
+    message = f"Physical stock snapshot for {verification_date}: {len(stock_items)} items, {total_net_wt/1000:.3f} kg"
+    return len(stock_items), message
+
+
 @api_router.post("/physical-stock/upload")
 async def upload_physical_stock(
     file: UploadFile = File(...),
     verification_date: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
-    """Upload physical stock file (full replacement) with verification date"""
+    """Upload physical stock file — replaces snapshot for the selected verification_date ONLY.
+    Rows for other dates are preserved."""
     if current_user['role'] not in ['admin', 'manager']:
         raise HTTPException(status_code=403, detail="Admin or manager only")
+    if not verification_date:
+        raise HTTPException(status_code=400, detail="verification_date is required")
     content = await file.read()
     
     try:
@@ -2340,47 +2366,16 @@ async def upload_physical_stock(
         if not records:
             raise HTTPException(status_code=400, detail="No valid records found in file")
         
-        # MERGE items by name
-        merged_items = {}
-        for record in records:
-            key = record['item_name'].strip().lower()
-            if key not in merged_items:
-                merged_items[key] = {
-                    'item_name': record['item_name'],
-                    'stamp': record.get('stamp', ''),
-                    'pc': 0,
-                    'gr_wt': 0.0,
-                    'net_wt': 0.0,
-                    'fine': 0.0,
-                    'verification_date': verification_date or datetime.now(timezone.utc).isoformat()
-                }
-            
-            merged_items[key]['gr_wt'] += record.get('gr_wt', 0)
-            merged_items[key]['net_wt'] += record.get('net_wt', 0)
-            merged_items[key]['fine'] += record.get('fine', 0)
-            merged_items[key]['pc'] += record.get('pc', 0)
-            
-            if record.get('stamp') and not merged_items[key]['stamp']:
-                merged_items[key]['stamp'] = record['stamp']
-        
-        await db.physical_stock.delete_many({})
-        stock_items = [PhysicalStock(**item).model_dump() for item in merged_items.values()]
-        await db.physical_stock.insert_many(stock_items)
-        await auto_normalize_stamps()
-        
-        total_net_wt = sum(item['net_wt'] for item in stock_items)
-        total_gr_wt = sum(item['gr_wt'] for item in stock_items)
+        count, message = await _replace_physical_stock_for_date(records, verification_date)
         
         return {
             "success": True,
-            "count": len(stock_items),
-            "original_rows": len(records),
-            "merged_items": len(stock_items),
-            "total_net_wt_kg": round(total_net_wt/1000, 3),
-            "total_gr_wt_kg": round(total_gr_wt/1000, 3),
+            "count": count,
             "verification_date": verification_date,
-            "message": f"Physical stock uploaded: {len(stock_items)} items, {total_net_wt/1000:.3f} kg" + (f" (verified on {verification_date})" if verification_date else "")
+            "message": message,
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error processing file: {str(e)}")
 
@@ -2419,26 +2414,65 @@ async def upload_physical_stock_preview(
     has_net = any(r.get('has_net', False) for r in records)
     update_mode = 'gross_and_net' if has_net else 'gross_only'
 
-    # Merge uploaded rows by normalized item name (sum weights for duplicate rows)
+    # Determine if upload file contains stamp data
+    has_stamp = any(r.get('stamp', '') not in ('', 'Unassigned') for r in records)
+
+    # Merge uploaded rows by (normalized item name + stamp if available)
     uploaded = {}
     for rec in records:
-        key = rec['item_name'].strip().lower()
-        if key not in uploaded:
-            uploaded[key] = {'item_name': rec['item_name'], 'gr_wt': 0.0, 'net_wt': 0.0}
-        uploaded[key]['gr_wt'] += rec.get('gr_wt', 0)
-        uploaded[key]['net_wt'] += rec.get('net_wt', 0)
+        item_key = rec['item_name'].strip().lower()
+        stamp_val = rec.get('stamp', '') or ''
+        if has_stamp and stamp_val and stamp_val != 'Unassigned':
+            merge_key = f"{item_key}||{stamp_val.strip().lower()}"
+        else:
+            merge_key = item_key
+        if merge_key not in uploaded:
+            uploaded[merge_key] = {'item_name': rec['item_name'], 'stamp': stamp_val, 'gr_wt': 0.0, 'net_wt': 0.0}
+        uploaded[merge_key]['gr_wt'] += rec.get('gr_wt', 0)
+        uploaded[merge_key]['net_wt'] += rec.get('net_wt', 0)
 
     # Load ONLY physical stock rows for the selected verification_date
     existing_docs = await db.physical_stock.find(date_filter, {"_id": 0}).to_list(None)
-    existing_map = {}
+
+    # Build lookup structures
+    # name_only_map: normalized_name -> list of docs (for ambiguity check)
+    # stamp_map: (normalized_name, normalized_stamp) -> doc
+    from collections import defaultdict as _ddict
+    name_only_map = _ddict(list)
+    stamp_map = {}
     for doc in existing_docs:
         k = doc['item_name'].strip().lower()
-        existing_map[k] = doc
+        name_only_map[k].append(doc)
+        s = (doc.get('stamp', '') or '').strip().lower()
+        stamp_map[(k, s)] = doc
 
     # Build diff rows
     preview_rows = []
-    for key, upl in uploaded.items():
-        existing = existing_map.get(key)
+    ambiguity_errors = []
+    for merge_key, upl in uploaded.items():
+        item_key = upl['item_name'].strip().lower()
+        upl_stamp = (upl.get('stamp', '') or '').strip().lower()
+
+        # Resolve match
+        existing = None
+        if has_stamp and upl_stamp and upl_stamp != 'unassigned':
+            existing = stamp_map.get((item_key, upl_stamp))
+        else:
+            candidates = name_only_map.get(item_key, [])
+            if len(candidates) == 1:
+                existing = candidates[0]
+            elif len(candidates) > 1:
+                ambiguity_errors.append(upl['item_name'])
+                preview_rows.append({
+                    'item_name': upl['item_name'],
+                    'update_mode': update_mode,
+                    'old_gr_wt': 0, 'new_gr_wt': round(upl['gr_wt'], 3), 'gr_delta': round(upl['gr_wt'], 3),
+                    'old_net_wt': 0, 'new_net_wt': round(upl['net_wt'], 3) if has_net else 0,
+                    'net_delta': round(upl['net_wt'], 3) if has_net else 0,
+                    'status': 'ambiguous',
+                })
+                continue
+
         if not existing:
             preview_rows.append({
                 'item_name': upl['item_name'],
@@ -2468,8 +2502,9 @@ async def upload_physical_stock_preview(
 
     matched_count = sum(1 for r in preview_rows if r['status'] == 'pending')
     unmatched_count = sum(1 for r in preview_rows if r['status'] == 'unmatched')
+    ambiguous_count = sum(1 for r in preview_rows if r['status'] == 'ambiguous')
 
-    return {
+    result = {
         "success": True,
         "update_mode": update_mode,
         "verification_date": verification_date,
@@ -2478,9 +2513,19 @@ async def upload_physical_stock_preview(
             "total_uploaded": len(preview_rows),
             "matched": matched_count,
             "unmatched": unmatched_count,
+            "ambiguous": ambiguous_count,
             "unchanged_in_db": existing_count - matched_count,
         }
     }
+
+    if ambiguity_errors:
+        result["ambiguity_error"] = (
+            f"Ambiguous item names found: {', '.join(ambiguity_errors)}. "
+            f"These items exist more than once for {verification_date}. "
+            f"Include a Stamp column to resolve."
+        )
+
+    return result
 
 
 @api_router.post("/physical-stock/apply-updates")

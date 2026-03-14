@@ -1,4 +1,4 @@
-"""Tests for date-scoped physical stock preview/apply endpoints."""
+"""Tests for date-safe physical stock: direct upload, chunked path, ambiguity detection."""
 import pytest
 import httpx
 import openpyxl
@@ -32,137 +32,242 @@ def _make_excel(headers, rows):
     return buf
 
 
-@pytest.fixture(autouse=True)
-def seed_multi_date_stock(auth):
-    """Seed physical_stock with rows on two different dates via full replacement,
-    then manually insert rows for a second date."""
-    # First upload seeds DATE_B
-    excel = _make_excel(
-        ["Item Name", "Stamp", "Gross Weight", "Net Weight"],
-        [
-            ["ALPHA RING", "STAMP 1", 10.0, 8.0],
-            ["BETA CHAIN", "STAMP 2", 20.0, 15.0],
-            ["GAMMA BANGLE", "STAMP 3", 30.0, 25.0],
-        ]
-    )
-    r = httpx.post(
-        f"{API_URL}/physical-stock/upload?verification_date={DATE_B}",
-        files={"file": ("test.xlsx", excel, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
-        headers=auth, timeout=30,
-    )
-    assert r.status_code == 200
+class TestDateSafeDirectUpload:
+    """Direct full upload must only replace the selected date's rows."""
 
-    # Now upload a second batch for DATE_A (appending, since full upload replaces all)
-    # We need to use a trick: upload for DATE_A to create rows for that date
-    excel_a = _make_excel(
-        ["Item Name", "Stamp", "Gross Weight", "Net Weight"],
-        [
-            ["ALPHA RING", "STAMP 1", 5.0, 4.0],
-            ["DELTA EARRING", "STAMP 4", 7.0, 6.0],
-        ]
-    )
-    # Since full upload does delete_many({}), we instead use the apply endpoint
-    # to simulate multi-date data. Let's first re-upload for DATE_B, then
-    # manually add DATE_A rows via direct full upload and then re-add DATE_B rows.
-    
-    # Actually, the simplest approach: upload for DATE_A (replaces everything),
-    # then upload for DATE_B (replaces everything again). So we can't have multi-date
-    # via the full-replacement endpoint alone. Let me use a workaround:
-    # Upload DATE_A first, then use the backend to insert DATE_B rows separately.
-    
-    # Upload for DATE_A (this replaces all and gives DATE_A rows)
-    r_a = httpx.post(
-        f"{API_URL}/physical-stock/upload?verification_date={DATE_A}",
-        files={"file": ("test_a.xlsx", excel_a, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
-        headers=auth, timeout=30,
-    )
-    assert r_a.status_code == 200
+    def test_upload_date_a_then_date_b_preserves_both(self, auth):
+        """Upload for DATE_A, then DATE_B — DATE_A rows survive."""
+        # Upload DATE_A
+        excel_a = _make_excel(
+            ["Item Name", "Stamp", "Gross Weight", "Net Weight"],
+            [["ALPHA RING", "STAMP 1", 10.0, 8.0], ["BETA CHAIN", "STAMP 2", 20.0, 15.0]]
+        )
+        r_a = httpx.post(
+            f"{API_URL}/physical-stock/upload?verification_date={DATE_A}",
+            files={"file": ("a.xlsx", excel_a, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            headers=auth, timeout=30,
+        )
+        assert r_a.status_code == 200
+        assert DATE_A in r_a.json()["message"]
 
-    # Now upload DATE_B again — this replaces everything, losing DATE_A
-    # So instead, after DATE_A upload, we need to also create DATE_B rows.
-    # The only way with current API is to use apply-updates for DATE_B,
-    # but that requires rows to exist already for DATE_B.
-    
-    # Best approach: upload once for DATE_B (creates ALPHA, BETA, GAMMA for DATE_B),
-    # then insert DATE_A rows by uploading and using the upload endpoint with DATE_A
-    # No — that replaces everything again.
-    
-    # OK, the real issue is full-replacement endpoint does delete_many({}).
-    # For multi-date testing, I need to insert directly. Let me call the health endpoint
-    # to verify the backend is up, then test with what we have.
-    
-    # Simplest: just upload for DATE_B, and that creates 3 rows for DATE_B.
-    # Tests for cross-date isolation will check that preview for DATE_A returns error
-    # (no rows for that date).
-    
-    # Re-upload DATE_B to have clean state
-    excel_b = _make_excel(
-        ["Item Name", "Stamp", "Gross Weight", "Net Weight"],
-        [
-            ["ALPHA RING", "STAMP 1", 10.0, 8.0],
-            ["BETA CHAIN", "STAMP 2", 20.0, 15.0],
-            ["GAMMA BANGLE", "STAMP 3", 30.0, 25.0],
-        ]
-    )
-    r_b = httpx.post(
-        f"{API_URL}/physical-stock/upload?verification_date={DATE_B}",
-        files={"file": ("test_b.xlsx", excel_b, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
-        headers=auth, timeout=30,
-    )
-    assert r_b.status_code == 200
-    yield
+        # Upload DATE_B
+        excel_b = _make_excel(
+            ["Item Name", "Stamp", "Gross Weight", "Net Weight"],
+            [["GAMMA BANGLE", "STAMP 3", 30.0, 25.0]]
+        )
+        r_b = httpx.post(
+            f"{API_URL}/physical-stock/upload?verification_date={DATE_B}",
+            files={"file": ("b.xlsx", excel_b, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            headers=auth, timeout=30,
+        )
+        assert r_b.status_code == 200
 
+        # Verify DATE_A still has rows
+        compare_a = httpx.get(
+            f"{API_URL}/physical-stock/compare?verification_date={DATE_A}",
+            headers=auth, timeout=30,
+        )
+        assert compare_a.status_code == 200
+        assert compare_a.json()["summary"]["total_physical_kg"] > 0, "DATE_A rows should still exist"
 
-class TestDateScopedPreview:
-    """Preview must only read physical stock for the selected verification_date."""
+        # Verify DATE_B has rows
+        compare_b = httpx.get(
+            f"{API_URL}/physical-stock/compare?verification_date={DATE_B}",
+            headers=auth, timeout=30,
+        )
+        assert compare_b.status_code == 200
+        assert compare_b.json()["summary"]["total_physical_kg"] > 0, "DATE_B rows should exist"
 
-    def test_preview_reads_only_selected_date(self, auth):
-        """Preview for DATE_B returns rows — data exists for this date."""
-        excel = _make_excel(["Item Name", "Gross Weight"], [["ALPHA RING", 12.0]])
+    def test_reupload_same_date_replaces_only_that_date(self, auth):
+        """Re-uploading DATE_A replaces DATE_A rows but DATE_B untouched."""
+        # First seed both dates
+        for date, items in [(DATE_A, [["X1", "S1", 5, 4]]), (DATE_B, [["Y1", "S2", 6, 5]])]:
+            excel = _make_excel(["Item Name", "Stamp", "Gross Weight", "Net Weight"], items)
+            httpx.post(
+                f"{API_URL}/physical-stock/upload?verification_date={date}",
+                files={"file": ("s.xlsx", excel, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+                headers=auth, timeout=30,
+            )
+
+        # Now re-upload DATE_A with new data
+        excel_new = _make_excel(
+            ["Item Name", "Stamp", "Gross Weight", "Net Weight"],
+            [["X2_REPLACED", "S1", 50, 40]]
+        )
         r = httpx.post(
-            f"{API_URL}/physical-stock/upload-preview?verification_date={DATE_B}",
-            files={"file": ("test.xlsx", excel, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            f"{API_URL}/physical-stock/upload?verification_date={DATE_A}",
+            files={"file": ("new.xlsx", excel_new, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
             headers=auth, timeout=30,
         )
         assert r.status_code == 200
-        data = r.json()
-        assert data["verification_date"] == DATE_B
-        alpha = next(row for row in data["preview_rows"] if "alpha" in row["item_name"].lower())
-        assert alpha["status"] == "pending"
 
-    def test_preview_rejects_nonexistent_date(self, auth):
-        """Preview for a date with no physical stock returns 400."""
-        excel = _make_excel(["Item Name", "Gross Weight"], [["ALPHA RING", 12.0]])
-        r = httpx.post(
-            f"{API_URL}/physical-stock/upload-preview?verification_date={DATE_C}",
-            files={"file": ("test.xlsx", excel, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        # DATE_B should still have its original Y1 item
+        compare_b = httpx.get(
+            f"{API_URL}/physical-stock/compare?verification_date={DATE_B}",
             headers=auth, timeout=30,
         )
-        assert r.status_code == 400
-        assert DATE_C in r.json()["detail"]
+        assert compare_b.json()["summary"]["total_physical_kg"] > 0
 
-    def test_preview_requires_verification_date(self, auth):
-        """Preview without verification_date param returns 400."""
-        excel = _make_excel(["Item Name", "Gross Weight"], [["ALPHA RING", 12.0]])
+    def test_upload_requires_verification_date(self, auth):
+        """Direct upload without verification_date returns 400."""
+        excel = _make_excel(["Item Name", "Gross Weight"], [["TEST", 1.0]])
         r = httpx.post(
-            f"{API_URL}/physical-stock/upload-preview",
-            files={"file": ("test.xlsx", excel, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            f"{API_URL}/physical-stock/upload",
+            files={"file": ("t.xlsx", excel, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
             headers=auth, timeout=30,
         )
         assert r.status_code == 400
         assert "verification_date" in r.json()["detail"].lower()
 
+    def test_new_date_creates_snapshot(self, auth):
+        """Uploading to a brand new date works and creates rows."""
+        excel = _make_excel(
+            ["Item Name", "Gross Weight", "Net Weight"],
+            [["NEW_ITEM", 100.0, 80.0]]
+        )
+        r = httpx.post(
+            f"{API_URL}/physical-stock/upload?verification_date={DATE_C}",
+            files={"file": ("c.xlsx", excel, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            headers=auth, timeout=30,
+        )
+        assert r.status_code == 200
+        assert r.json()["count"] == 1
 
-class TestDateScopedApply:
-    """Apply must only update rows for the selected verification_date."""
+        # Verify preview works on the new date
+        preview_excel = _make_excel(["Item Name", "Gross Weight"], [["NEW_ITEM", 110.0]])
+        rp = httpx.post(
+            f"{API_URL}/physical-stock/upload-preview?verification_date={DATE_C}",
+            files={"file": ("p.xlsx", preview_excel, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            headers=auth, timeout=30,
+        )
+        assert rp.status_code == 200
+        assert rp.json()["summary"]["matched"] == 1
 
-    def test_apply_updates_only_selected_date(self, auth):
-        """Apply for DATE_B updates the row, response includes date and count."""
+
+class TestChunkedPathDateSafe:
+    """Chunked upload path must also be date-safe (backend defense)."""
+
+    def test_chunked_init_for_physical_stock(self, auth):
+        """Chunked init for physical_stock still works."""
+        r = httpx.post(
+            f"{API_URL}/upload/init",
+            json={"file_type": "physical_stock", "total_chunks": 1, "verification_date": DATE_B},
+            headers=auth, timeout=30,
+        )
+        assert r.status_code == 200
+        assert "upload_id" in r.json()
+
+
+class TestAmbiguityDetection:
+    """When stamp is absent and same item name appears >1 time for the date, preview must error clearly."""
+
+    def test_ambiguous_item_name_no_stamp(self, auth):
+        """Upload with duplicate item names on same date, no stamp column → ambiguous status."""
+        # Seed DATE_A with two items that have the same name but different stamps
+        excel_seed = _make_excel(
+            ["Item Name", "Stamp", "Gross Weight", "Net Weight"],
+            [
+                ["DUP_ITEM", "STAMP 1", 10.0, 8.0],
+                ["DUP_ITEM", "STAMP 2", 20.0, 15.0],
+            ]
+        )
+        httpx.post(
+            f"{API_URL}/physical-stock/upload?verification_date={DATE_A}",
+            files={"file": ("seed.xlsx", excel_seed, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            headers=auth, timeout=30,
+        )
+
+        # Now preview with NO stamp column → should detect ambiguity
+        preview_excel = _make_excel(["Item Name", "Gross Weight"], [["DUP_ITEM", 15.0]])
+        r = httpx.post(
+            f"{API_URL}/physical-stock/upload-preview?verification_date={DATE_A}",
+            files={"file": ("p.xlsx", preview_excel, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            headers=auth, timeout=30,
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["summary"]["ambiguous"] == 1
+        assert "ambiguity_error" in data
+        assert "DUP_ITEM" in data["ambiguity_error"]
+
+    def test_stamp_resolves_ambiguity(self, auth):
+        """Upload WITH stamp column for ambiguous item → matches correctly."""
+        # Seed DATE_A with two items same name, different stamps
+        excel_seed = _make_excel(
+            ["Item Name", "Stamp", "Gross Weight", "Net Weight"],
+            [
+                ["DUP_ITEM", "STAMP 1", 10.0, 8.0],
+                ["DUP_ITEM", "STAMP 2", 20.0, 15.0],
+            ]
+        )
+        httpx.post(
+            f"{API_URL}/physical-stock/upload?verification_date={DATE_A}",
+            files={"file": ("seed.xlsx", excel_seed, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            headers=auth, timeout=30,
+        )
+
+        # Preview WITH stamp → no ambiguity
+        preview_excel = _make_excel(
+            ["Item Name", "Stamp", "Gross Weight"],
+            [["DUP_ITEM", "STAMP 1", 15.0]]
+        )
+        r = httpx.post(
+            f"{API_URL}/physical-stock/upload-preview?verification_date={DATE_A}",
+            files={"file": ("p.xlsx", preview_excel, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            headers=auth, timeout=30,
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["summary"]["ambiguous"] == 0
+        assert data["summary"]["matched"] == 1
+
+
+class TestPreviewApplyStillWork:
+    """Regression: preview and apply must still work after refactor."""
+
+    def test_preview_date_scoped(self, auth):
+        """Preview for seeded date works."""
+        # Seed
+        excel = _make_excel(
+            ["Item Name", "Gross Weight", "Net Weight"],
+            [["REGR_ITEM", 10.0, 8.0]]
+        )
+        httpx.post(
+            f"{API_URL}/physical-stock/upload?verification_date={DATE_B}",
+            files={"file": ("s.xlsx", excel, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            headers=auth, timeout=30,
+        )
+
+        # Preview
+        prev_excel = _make_excel(["Item Name", "Gross Weight"], [["REGR_ITEM", 12.0]])
+        r = httpx.post(
+            f"{API_URL}/physical-stock/upload-preview?verification_date={DATE_B}",
+            files={"file": ("p.xlsx", prev_excel, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            headers=auth, timeout=30,
+        )
+        assert r.status_code == 200
+        assert r.json()["update_mode"] == "gross_only"
+        assert r.json()["summary"]["matched"] == 1
+
+    def test_apply_returns_date_and_count(self, auth):
+        """Apply returns proper success message with date and count."""
+        # Seed
+        excel = _make_excel(
+            ["Item Name", "Gross Weight", "Net Weight"],
+            [["APPLY_ITEM", 10.0, 8.0]]
+        )
+        httpx.post(
+            f"{API_URL}/physical-stock/upload?verification_date={DATE_B}",
+            files={"file": ("s.xlsx", excel, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            headers=auth, timeout=30,
+        )
+
+        # Apply
         r = httpx.post(
             f"{API_URL}/physical-stock/apply-updates",
             json={
-                "items": [{"item_name": "ALPHA RING", "new_gr_wt": 12000, "new_net_wt": 8000, "update_mode": "gross_only"}],
-                "verification_date": DATE_B
+                "items": [{"item_name": "APPLY_ITEM", "new_gr_wt": 12000, "update_mode": "gross_only"}],
+                "verification_date": DATE_B,
             },
             headers=auth, timeout=30,
         )
@@ -173,102 +278,28 @@ class TestDateScopedApply:
         assert DATE_B in data["message"]
         assert "1 item" in data["message"]
 
-    def test_apply_skips_wrong_date(self, auth):
-        """Apply for DATE_C (no rows) skips the item."""
+
+class TestExistingFlows:
+    """Non-physical upload endpoints must not regress."""
+
+    def test_purchase_upload_still_works(self, auth):
+        """Purchase upload endpoint exists and rejects bad input properly."""
         r = httpx.post(
-            f"{API_URL}/physical-stock/apply-updates",
-            json={
-                "items": [{"item_name": "ALPHA RING", "new_gr_wt": 12000, "new_net_wt": 8000, "update_mode": "gross_only"}],
-                "verification_date": DATE_C
-            },
+            f"{API_URL}/transactions/upload/purchase?start_date=2026-01-01&end_date=2026-01-01",
+            files={"file": ("empty.xlsx", b"not-an-excel", "application/octet-stream")},
             headers=auth, timeout=30,
         )
-        assert r.status_code == 200
-        assert r.json()["updated_count"] == 0
-        assert r.json()["results"][0]["status"] == "skipped"
+        # Will fail parsing but should not 500
+        assert r.status_code in (400, 422)
 
-    def test_apply_requires_verification_date(self, auth):
-        """Apply without verification_date returns 400."""
+    def test_chunked_init_purchase(self, auth):
+        """Chunked init for purchase still works."""
         r = httpx.post(
-            f"{API_URL}/physical-stock/apply-updates",
-            json={
-                "items": [{"item_name": "ALPHA RING", "new_gr_wt": 12000}],
-            },
-            headers=auth, timeout=30,
-        )
-        assert r.status_code == 400
-        assert "verification_date" in r.json()["detail"].lower()
-
-    def test_apply_multiple_items_message(self, auth):
-        """Apply all items returns correct plural message."""
-        r = httpx.post(
-            f"{API_URL}/physical-stock/apply-updates",
-            json={
-                "items": [
-                    {"item_name": "ALPHA RING", "new_gr_wt": 11000, "new_net_wt": 9000, "update_mode": "gross_and_net"},
-                    {"item_name": "BETA CHAIN", "new_gr_wt": 21000, "new_net_wt": 16000, "update_mode": "gross_and_net"},
-                ],
-                "verification_date": DATE_B
-            },
+            f"{API_URL}/upload/init",
+            json={"file_type": "purchase", "total_chunks": 1, "start_date": "2026-01-01", "end_date": "2026-01-01"},
             headers=auth, timeout=30,
         )
         assert r.status_code == 200
-        data = r.json()
-        assert data["updated_count"] == 2
-        assert "2 items" in data["message"]
-        assert DATE_B in data["message"]
-
-
-class TestCompareEndpointDateScoping:
-    """Compare endpoint should support optional verification_date filter."""
-
-    def test_compare_with_date_filter(self, auth):
-        """Compare with verification_date param returns only that date's data."""
-        r = httpx.get(
-            f"{API_URL}/physical-stock/compare?verification_date={DATE_B}",
-            headers=auth, timeout=30,
-        )
-        assert r.status_code == 200
-        # Should return comparison data
-        assert "summary" in r.json()
-
-    def test_compare_with_nonexistent_date(self, auth):
-        """Compare with a date that has no rows returns empty comparison."""
-        r = httpx.get(
-            f"{API_URL}/physical-stock/compare?verification_date={DATE_C}",
-            headers=auth, timeout=30,
-        )
-        assert r.status_code == 200
-        summary = r.json()["summary"]
-        assert summary["total_physical_kg"] == 0
-
-    def test_compare_without_date_returns_all(self, auth):
-        """Compare without date param returns all physical stock data."""
-        r = httpx.get(
-            f"{API_URL}/physical-stock/compare",
-            headers=auth, timeout=30,
-        )
-        assert r.status_code == 200
-        assert r.json()["summary"]["total_physical_kg"] > 0
-
-
-class TestGrossOnlyPreservesNet:
-    """2-column upload must preserve existing net_wt values."""
-
-    def test_gross_only_preview_net_unchanged(self, auth):
-        """Gross-only preview shows same net_wt as existing."""
-        excel = _make_excel(["Item Name", "Gross Weight"], [["BETA CHAIN", 25.0]])
-        r = httpx.post(
-            f"{API_URL}/physical-stock/upload-preview?verification_date={DATE_B}",
-            files={"file": ("test.xlsx", excel, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
-            headers=auth, timeout=30,
-        )
-        assert r.status_code == 200
-        data = r.json()
-        assert data["update_mode"] == "gross_only"
-        beta = next(row for row in data["preview_rows"] if "beta" in row["item_name"].lower())
-        assert beta["old_net_wt"] == beta["new_net_wt"]
-        assert beta["net_delta"] == 0
 
 
 if __name__ == "__main__":

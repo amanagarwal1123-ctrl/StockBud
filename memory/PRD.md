@@ -84,13 +84,16 @@ Silver stock tracking application for managing inventory, sales, purchases, bran
     - 3-col: + Net Weight (updates both)
     - 4-col: + Stamp (backward-compatible)
     - Headers accepted: Gr.Wt. / Gr Wt / Gross Wt / Gross Weight | Net.Wt. / Net Wt / Net Weight / Gold Std.
-41. **Preview endpoint** - `POST /api/physical-stock/upload-preview` parses file and diffs against db.physical_stock scoped to selected verification_date only
+41. **Preview endpoint** - `POST /api/physical-stock/upload-preview` parses file and diffs against db.physical_stock scoped to selected verification_date only. Stamp-aware matching with ambiguity detection.
 42. **Apply endpoint** - `POST /api/physical-stock/apply-updates` persists only approved items for the specific verification_date, logs via audit pattern
-43. **Preview modal** - New `PhysicalStockPreview.jsx` component: per-row diff, per-row Approve, Approve All, CSV export, success banner with date+count
-44. **Upload queue** - Rewrote `UploadContext.jsx` with real serialized queue (queued→uploading→processing→done→error), one-at-a-time execution
+43. **Preview modal** - New `PhysicalStockPreview.jsx` component: per-row diff, per-row Approve, Approve All, CSV export, success banner with date+count, ambiguity warning
+44. **Upload queue** - Rewrote `UploadContext.jsx` with real serialized queue (queued→uploading→processing→done→error), one-at-a-time execution. Physical stock never uses chunked path.
 45. **Deterministic upload flow** - Removed fragile `window.confirm()` in onChange; physical stock → preview modal; other types → confirmation card
-46. **Date-scoped operations** - verification_date is required for preview/apply; compare endpoint supports optional date filter; no cross-date mutation
+46. **Date-scoped operations** - verification_date is required for upload/preview/apply; compare supports optional date filter; no cross-date mutation
 47. **Compare page date filter** - Added verification_date selector to PhysicalStockComparison.jsx to scope comparison to a specific date
+48. **Date-safe full upload** - `POST /api/physical-stock/upload` now requires verification_date and deletes only that date's rows (no global wipe). Shared helper `_replace_physical_stock_for_date` used by both direct and chunked paths.
+49. **Stamp-aware merge** - Full upload merges by (item_name + stamp), preserving separate rows for same item with different stamps
+50. **Ambiguity detection** - Preview returns 'ambiguous' status when same item name exists multiple times for the date and no Stamp column is provided
 
 ## Upcoming Tasks
 - P1: Refactor server.py into proper FastAPI structure (routers, services, models)
