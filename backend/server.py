@@ -372,6 +372,38 @@ def parse_excel_file(file_content, file_type: str) -> List[Dict]:
                     'total': _safe_float(r.get(total_col) if total_col else None),
                 })
             return records
+
+        elif file_type == 'physical_stock':
+            item_col = _resolve_col(cols, ['Item Name', 'Particular', 'item name', 'Stock'])
+            stamp_col = _resolve_col(cols, ['Stamp', 'stamp'])
+            gr_col = _resolve_col(cols, ['Gr.Wt.', 'Gr Wt', 'Gross Wt', 'Gross Weight'])
+            net_col = _resolve_col(cols, ['Net.Wt.', 'Net Wt', 'Net Weight', 'Gold Std.'])
+            pc_col = _resolve_col(cols, ['Pc', 'pc', 'Pieces', 'Pcs'])
+            fine_col = _resolve_col(cols, ['Sil.Fine', 'Fine', 'fine'])
+
+            has_net = net_col is not None
+            records = []
+            for r in raw_rows:
+                item_name = _safe_str(r.get(item_col) if item_col else None)
+                if len(item_name) < 2:
+                    continue
+                if 'total' in item_name.lower():
+                    continue
+                rec = {
+                    'item_name': item_name,
+                    'stamp': normalize_stamp(r.get(stamp_col) if stamp_col else ''),
+                    'gr_wt': _safe_float(r.get(gr_col) if gr_col else None) * KG_TO_GRAMS,
+                    'has_net': has_net,
+                    'pc': _safe_int(r.get(pc_col) if pc_col else None),
+                    'fine': _safe_float(r.get(fine_col) if fine_col else None) * KG_TO_GRAMS,
+                }
+                if has_net:
+                    rec['net_wt'] = _safe_float(r.get(net_col) if net_col else None) * KG_TO_GRAMS
+                else:
+                    rec['net_wt'] = 0.0
+                records.append(rec)
+            return records
+
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error parsing Excel file: {str(e)}")
 
@@ -579,6 +611,45 @@ def parse_excel_streaming(file_path: str, file_type: str) -> List[Dict]:
                     'rate': _safe_float(_get(rate_col)),
                     'total': _safe_float(_get(total_col)),
                 })
+
+        elif file_type == 'physical_stock':
+            item_col = _resolve_col(cols_set, ['Item Name', 'Particular', 'item name', 'Stock'])
+            stamp_col = _resolve_col(cols_set, ['Stamp', 'stamp'])
+            gr_col = _resolve_col(cols_set, ['Gr.Wt.', 'Gr Wt', 'Gross Wt', 'Gross Weight'])
+            net_col = _resolve_col(cols_set, ['Net.Wt.', 'Net Wt', 'Net Weight', 'Gold Std.'])
+            pc_col = _resolve_col(cols_set, ['Pc', 'pc', 'Pieces', 'Pcs'])
+            fine_col = _resolve_col(cols_set, ['Sil.Fine', 'Fine', 'fine'])
+
+            has_net = net_col is not None
+            col_map = {name: idx for idx, name in enumerate(header_names)}
+
+            for row_num, row in enumerate(ws.iter_rows(values_only=True)):
+                if row_num <= header_row_idx:
+                    continue
+                def _get(col_name):
+                    if not col_name or col_name not in col_map:
+                        return None
+                    idx = col_map[col_name]
+                    return str(row[idx]).strip() if idx < len(row) and row[idx] is not None else None
+
+                item_name = _safe_str(_get(item_col))
+                if len(item_name) < 2:
+                    continue
+                if 'total' in item_name.lower():
+                    continue
+                rec = {
+                    'item_name': item_name,
+                    'stamp': normalize_stamp(_get(stamp_col) or ''),
+                    'gr_wt': _safe_float(_get(gr_col)) * KG_TO_GRAMS,
+                    'has_net': has_net,
+                    'pc': _safe_int(_get(pc_col)),
+                    'fine': _safe_float(_get(fine_col)) * KG_TO_GRAMS,
+                }
+                if has_net:
+                    rec['net_wt'] = _safe_float(_get(net_col)) * KG_TO_GRAMS
+                else:
+                    rec['net_wt'] = 0.0
+                records.append(rec)
 
         wb.close()
         logger.info(f"[Streaming parser] Parsed {len(records)} {file_type} records from {file_path}")
@@ -988,7 +1059,7 @@ async def _process_upload(upload_id: str, meta: dict):
         file_type = meta['file_type']
 
         parse_type = file_type
-        if file_type in ('opening_stock', 'physical_stock', 'master_stock'):
+        if file_type in ('opening_stock', 'master_stock'):
             parse_type = 'opening_stock'
         elif file_type == 'historical_sale':
             parse_type = 'sale'
@@ -2257,15 +2328,14 @@ async def upload_physical_stock(
     verification_date: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
-    """Upload physical stock file with verification date"""
+    """Upload physical stock file (full replacement) with verification date"""
     if current_user['role'] not in ['admin', 'manager']:
         raise HTTPException(status_code=403, detail="Admin or manager only")
     content = await file.read()
     
     try:
-        # Parse using opening_stock parser (same format)
         loop = asyncio.get_event_loop()
-        records = await loop.run_in_executor(_parse_executor, parse_excel_file, content, 'opening_stock')
+        records = await loop.run_in_executor(_parse_executor, parse_excel_file, content, 'physical_stock')
         
         if not records:
             raise HTTPException(status_code=400, detail="No valid records found in file")
@@ -2285,27 +2355,19 @@ async def upload_physical_stock(
                     'verification_date': verification_date or datetime.now(timezone.utc).isoformat()
                 }
             
-            # Sum weights
             merged_items[key]['gr_wt'] += record.get('gr_wt', 0)
             merged_items[key]['net_wt'] += record.get('net_wt', 0)
             merged_items[key]['fine'] += record.get('fine', 0)
             merged_items[key]['pc'] += record.get('pc', 0)
             
-            # Keep stamp if this entry has one
             if record.get('stamp') and not merged_items[key]['stamp']:
                 merged_items[key]['stamp'] = record['stamp']
         
-        # Clear existing physical stock
         await db.physical_stock.delete_many({})
-        
-        # Insert merged items
         stock_items = [PhysicalStock(**item).model_dump() for item in merged_items.values()]
         await db.physical_stock.insert_many(stock_items)
-        
-        # Auto-normalize stamps after upload
         await auto_normalize_stamps()
         
-        # Calculate totals
         total_net_wt = sum(item['net_wt'] for item in stock_items)
         total_gr_wt = sum(item['gr_wt'] for item in stock_items)
         
@@ -2321,6 +2383,163 @@ async def upload_physical_stock(
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error processing file: {str(e)}")
+
+
+@api_router.post("/physical-stock/upload-preview")
+async def upload_physical_stock_preview(
+    file: UploadFile = File(...),
+    verification_date: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Parse physical stock file and return a preview diff against current db.physical_stock.
+    Does NOT mutate the database."""
+    if current_user['role'] not in ['admin', 'manager']:
+        raise HTTPException(status_code=403, detail="Admin or manager only")
+
+    # Check base snapshot exists
+    existing_count = await db.physical_stock.count_documents({})
+    if existing_count == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="No base physical stock snapshot exists. Please upload a full physical stock file first before using partial updates."
+        )
+
+    content = await file.read()
+    loop = asyncio.get_event_loop()
+    records = await loop.run_in_executor(_parse_executor, parse_excel_file, content, 'physical_stock')
+
+    if not records:
+        raise HTTPException(status_code=400, detail="No valid records found in file")
+
+    # Determine update mode from the parsed records
+    has_net = any(r.get('has_net', False) for r in records)
+    update_mode = 'gross_and_net' if has_net else 'gross_only'
+
+    # Merge uploaded rows by normalized item name (sum weights for duplicate rows)
+    uploaded = {}
+    for rec in records:
+        key = rec['item_name'].strip().lower()
+        if key not in uploaded:
+            uploaded[key] = {'item_name': rec['item_name'], 'gr_wt': 0.0, 'net_wt': 0.0}
+        uploaded[key]['gr_wt'] += rec.get('gr_wt', 0)
+        uploaded[key]['net_wt'] += rec.get('net_wt', 0)
+
+    # Load current physical stock indexed by normalized name
+    existing_docs = await db.physical_stock.find({}, {"_id": 0}).to_list(None)
+    existing_map = {}
+    for doc in existing_docs:
+        k = doc['item_name'].strip().lower()
+        existing_map[k] = doc
+
+    # Build diff rows
+    preview_rows = []
+    for key, upl in uploaded.items():
+        existing = existing_map.get(key)
+        if not existing:
+            preview_rows.append({
+                'item_name': upl['item_name'],
+                'update_mode': update_mode,
+                'old_gr_wt': 0, 'new_gr_wt': round(upl['gr_wt'], 3), 'gr_delta': round(upl['gr_wt'], 3),
+                'old_net_wt': 0, 'new_net_wt': round(upl['net_wt'], 3) if has_net else 0,
+                'net_delta': round(upl['net_wt'], 3) if has_net else 0,
+                'status': 'unmatched',
+            })
+            continue
+
+        old_gr = existing.get('gr_wt', 0)
+        old_net = existing.get('net_wt', 0)
+        new_gr = round(upl['gr_wt'], 3)
+        new_net = round(upl['net_wt'], 3) if has_net else old_net
+
+        preview_rows.append({
+            'item_name': existing['item_name'],
+            'stamp': existing.get('stamp', ''),
+            'update_mode': update_mode,
+            'old_gr_wt': round(old_gr, 3), 'new_gr_wt': new_gr,
+            'gr_delta': round(new_gr - old_gr, 3),
+            'old_net_wt': round(old_net, 3), 'new_net_wt': round(new_net, 3),
+            'net_delta': round(new_net - old_net, 3) if has_net else 0,
+            'status': 'pending',
+        })
+
+    matched_count = sum(1 for r in preview_rows if r['status'] == 'pending')
+    unmatched_count = sum(1 for r in preview_rows if r['status'] == 'unmatched')
+
+    return {
+        "success": True,
+        "update_mode": update_mode,
+        "verification_date": verification_date or datetime.now(timezone.utc).isoformat()[:10],
+        "preview_rows": preview_rows,
+        "summary": {
+            "total_uploaded": len(preview_rows),
+            "matched": matched_count,
+            "unmatched": unmatched_count,
+            "unchanged_in_db": existing_count - matched_count,
+        }
+    }
+
+
+@api_router.post("/physical-stock/apply-updates")
+async def apply_physical_stock_updates(
+    request: Dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Apply approved partial updates to db.physical_stock.
+    Expects: { items: [{item_name, new_gr_wt, new_net_wt, update_mode}], verification_date }"""
+    if current_user['role'] not in ['admin', 'manager']:
+        raise HTTPException(status_code=403, detail="Admin or manager only")
+
+    items = request.get('items', [])
+    verification_date = request.get('verification_date', datetime.now(timezone.utc).isoformat()[:10])
+
+    if not items:
+        raise HTTPException(status_code=400, detail="No items to apply")
+
+    # Revalidate against current DB state
+    updated_count = 0
+    results = []
+    for item in items:
+        item_name = item.get('item_name', '')
+        key = item_name.strip().lower()
+        update_mode = item.get('update_mode', 'gross_only')
+        new_gr = item.get('new_gr_wt', 0)
+        new_net = item.get('new_net_wt', 0)
+
+        existing = await db.physical_stock.find_one(
+            {'item_name': {'$regex': f'^{re.escape(key)}$', '$options': 'i'}},
+            {"_id": 0}
+        )
+        if not existing:
+            results.append({'item_name': item_name, 'status': 'skipped', 'reason': 'not_found'})
+            continue
+
+        update_fields = {
+            'gr_wt': new_gr,
+            'verification_date': verification_date,
+        }
+        if update_mode == 'gross_and_net':
+            update_fields['net_wt'] = new_net
+
+        await db.physical_stock.update_one(
+            {'item_name': existing['item_name']},
+            {'$set': update_fields}
+        )
+        updated_count += 1
+        results.append({'item_name': existing['item_name'], 'status': 'applied'})
+
+    # Log through existing audit pattern
+    await save_action(
+        'physical_stock_partial_update',
+        f"Partial physical stock update: {updated_count} items updated (verification date: {verification_date})",
+        {'updated_count': updated_count, 'verification_date': verification_date, 'by': current_user['username']}
+    )
+
+    return {
+        "success": True,
+        "updated_count": updated_count,
+        "results": results,
+        "message": f"Applied updates to {updated_count} items"
+    }
 
 @api_router.get("/physical-stock/compare")
 async def compare_physical_with_book(current_user: dict = Depends(get_current_user)):

@@ -1,14 +1,19 @@
-import { useState } from 'react';
-import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle, Calendar } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle, Calendar, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useUpload } from '../context/UploadContext';
+import PhysicalStockPreview from '../components/PhysicalStockPreview';
+import axios from 'axios';
+
+const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 export default function UploadManager() {
-  const { uploads, startUpload } = useUpload();
+  const { uploads, enqueueUpload } = useUpload();
   const [uploadedFiles, setUploadedFiles] = useState({});
   const [masterDateRange, setMasterDateRange] = useState({ start: '', end: '' });
   const [dateRanges, setDateRanges] = useState({
@@ -18,7 +23,17 @@ export default function UploadManager() {
     physical_stock: { date: '' }
   });
 
-  const uploadingTypes = new Set(uploads.filter(u => u.status === 'uploading').map(u => u.fileType));
+  // Physical stock preview state
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewData, setPreviewData] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  // Pending file for confirmation (non-physical types)
+  const [pendingFile, setPendingFile] = useState(null); // { fileType, file }
+
+  const uploadingTypes = new Set(
+    uploads.filter(u => u.status === 'uploading' || u.status === 'queued' || u.status === 'processing').map(u => u.fileType)
+  );
 
   const applyMasterDates = () => {
     if (!masterDateRange.start || !masterDateRange.end) {
@@ -34,9 +49,11 @@ export default function UploadManager() {
     toast.success(`Date range applied: ${masterDateRange.start} to ${masterDateRange.end}`);
   };
 
-  const handleFileUpload = async (fileType, file) => {
+  // Called when a file is selected — deterministic, no confirm-in-onChange
+  const handleFileSelected = (fileType, file) => {
     if (!file) return;
 
+    // Validate dates
     if (fileType === 'purchase' || fileType === 'sale' || fileType === 'branch_transfer') {
       const range = dateRanges[fileType];
       if (!range.start || !range.end) {
@@ -49,41 +66,70 @@ export default function UploadManager() {
       return;
     }
 
-    const fileTypeNames = {
-      'opening_stock': 'Opening Stock (PREV_STOCK)',
-      'purchase': 'Purchase Transactions',
-      'sale': 'Sale Transactions',
-      'physical_stock': 'Physical Stock (CURRENT_STOCK)',
-      'master_stock': 'Master Stock (STOCK 2026) - This will replace your opening stock!',
-      'branch_transfer': 'Branch Issue/Receive (MMI Jewelly)'
-    };
-
-    let confirmMessage = `Are you sure you want to upload ${fileTypeNames[fileType]}?\n\nFile: ${file.name}\n\n`;
-    if (fileType === 'purchase' || fileType === 'sale' || fileType === 'branch_transfer') {
-      const range = dateRanges[fileType];
-      confirmMessage += `Date Range: ${range.start} to ${range.end}\n\nOnly dates present in the file will be replaced. Other dates are untouched.`;
-    } else if (fileType === 'physical_stock') {
-      confirmMessage += `Verification Date: ${dateRanges.physical_stock.date}`;
+    if (fileType === 'physical_stock') {
+      // Physical stock goes through preview flow
+      handlePhysicalStockPreview(file);
     } else {
-      confirmMessage += `This will ${fileType === 'opening_stock' || fileType === 'master_stock' ? 'replace all existing data' : 'add new transactions'}.`;
+      // Other types: set pending for confirmation
+      setPendingFile({ fileType, file });
     }
+  };
 
-    // Small delay prevents browser from suppressing confirm() right after file picker closes
-    const confirmed = await new Promise(r => setTimeout(() => r(window.confirm(confirmMessage)), 150));
-    if (!confirmed) return;
-
+  // Physical stock: upload for preview (no DB mutation)
+  const handlePhysicalStockPreview = async (file) => {
+    setPreviewLoading(true);
     try {
-      await startUpload(fileType, file, dateRanges);
-      setUploadedFiles(prev => ({ ...prev, [fileType]: file.name }));
-    } catch {
-      // Error already handled in context
+      const formData = new FormData();
+      formData.append('file', file);
+      const vDate = dateRanges.physical_stock?.date || '';
+      const res = await axios.post(`${API}/physical-stock/upload-preview?verification_date=${vDate}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120000,
+      });
+      setPreviewData(res.data);
+      setPreviewOpen(true);
+      setUploadedFiles(prev => ({ ...prev, physical_stock: file.name }));
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Preview failed');
+    } finally {
+      setPreviewLoading(false);
     }
+  };
+
+  // Confirm and enqueue a non-physical upload
+  const confirmUpload = () => {
+    if (!pendingFile) return;
+    const { fileType, file } = pendingFile;
+    enqueueUpload(fileType, file, dateRanges);
+    setUploadedFiles(prev => ({ ...prev, [fileType]: file.name }));
+    setPendingFile(null);
+  };
+
+  const cancelUpload = () => {
+    setPendingFile(null);
+  };
+
+  const fileTypeNames = {
+    'opening_stock': 'Opening Stock (PREV_STOCK)',
+    'purchase': 'Purchase Transactions',
+    'sale': 'Sale Transactions',
+    'physical_stock': 'Physical Stock (CURRENT_STOCK)',
+    'master_stock': 'Master Stock (STOCK 2026)',
+    'branch_transfer': 'Branch Issue/Receive (MMI Jewelly)'
   };
 
   const FileUploadCard = ({ type, title, description }) => {
     const isTypeUploading = uploadingTypes.has(type);
     const needsDateRange = type === 'purchase' || type === 'sale' || type === 'branch_transfer';
     const needsDate = type === 'physical_stock';
+    const isPhysicalLoading = type === 'physical_stock' && previewLoading;
+    const fileRef = useRef(null);
+
+    const onFileChange = (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (file) handleFileSelected(type, file);
+    };
 
     return (
       <Card className="border-border/40 shadow-sm">
@@ -113,8 +159,17 @@ export default function UploadManager() {
               <Input type="date" value={dateRanges.physical_stock?.date || ''} onChange={(e) => setDateRanges(prev => ({ ...prev, physical_stock: { date: e.target.value } }))} className="text-sm h-9" required />
             </div>
           )}
-          <label htmlFor={isTypeUploading ? undefined : `${type}-upload`} className={`upload-zone flex flex-col items-center justify-center gap-3 border-2 border-dashed rounded-xl p-8 transition-all ${isTypeUploading ? 'border-muted-foreground/10 bg-muted/20 cursor-not-allowed opacity-50' : 'border-muted-foreground/25 cursor-pointer hover:border-primary/50 bg-muted/5'}`} data-testid={`upload-zone-${type}`}>
-            {uploadedFiles[type] ? (
+          <div
+            onClick={() => { if (!isTypeUploading && !isPhysicalLoading) fileRef.current?.click(); }}
+            className={`upload-zone flex flex-col items-center justify-center gap-3 border-2 border-dashed rounded-xl p-8 transition-all ${(isTypeUploading || isPhysicalLoading) ? 'border-muted-foreground/10 bg-muted/20 cursor-not-allowed opacity-50' : 'border-muted-foreground/25 cursor-pointer hover:border-primary/50 bg-muted/5'}`}
+            data-testid={`upload-zone-${type}`}
+          >
+            {isPhysicalLoading ? (
+              <>
+                <Loader2 className="h-10 w-10 text-primary animate-spin" />
+                <p className="font-medium text-sm">Generating preview...</p>
+              </>
+            ) : uploadedFiles[type] ? (
               <>
                 <CheckCircle2 className="h-10 w-10 text-emerald-600" />
                 <div className="text-center">
@@ -131,8 +186,16 @@ export default function UploadManager() {
                 </div>
               </>
             )}
-            <input id={`${type}-upload`} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => { if (e.target.files[0]) handleFileUpload(type, e.target.files[0]); e.target.value = ''; }} disabled={isTypeUploading} />
-          </label>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={onFileChange}
+              disabled={isTypeUploading || isPhysicalLoading}
+              data-testid={`file-input-${type}`}
+            />
+          </div>
         </CardContent>
       </Card>
     );
@@ -159,7 +222,6 @@ export default function UploadManager() {
           </div>
         </TabsContent>
         <TabsContent value="transactions" className="space-y-6">
-          {/* Master Date Range */}
           <Card className="border-primary/20 bg-primary/5" data-testid="master-date-card">
             <CardContent className="p-4">
               <div className="flex flex-col sm:flex-row items-start sm:items-end gap-3">
@@ -190,7 +252,11 @@ export default function UploadManager() {
         </TabsContent>
         <TabsContent value="physical" className="space-y-6">
           <div className="max-w-2xl">
-            <FileUploadCard type="physical_stock" title="Physical Stock (CURRENT_STOCK)" description="Upload your physical count Excel file to compare with book stock. System will show differences." />
+            <FileUploadCard
+              type="physical_stock"
+              title="Physical Stock (Partial Update)"
+              description="Upload physical stock file to preview and selectively approve changes. Accepts: Item Name + Gross Weight, or Item Name + Gross Weight + Net Weight. Items not in the file stay unchanged."
+            />
           </div>
         </TabsContent>
       </Tabs>
@@ -204,9 +270,56 @@ export default function UploadManager() {
           <div><p className="font-semibold mb-2">Branch Transfer (Issue/Receive):</p><p className="text-muted-foreground">Date, Type (I/R), Lnarr (item name), Gr.Wt., Net.Wt.</p><p className="text-xs text-orange-600 mt-1">Skip OPENING BALANCE and Totals rows</p></div>
           <div><p className="font-semibold mb-2">Purchase File:</p><p className="text-muted-foreground">Date, Type, Party Name, Item Name, Gr.Wt., Net.Wt., Tunch, Total</p></div>
           <div><p className="font-semibold mb-2">Sale File:</p><p className="text-muted-foreground">Date, Type, Party Name, Item Name, Gr.Wt., Gold Std. (Net), Tunch, Total</p></div>
-          <div><p className="font-semibold mb-2">Physical Stock:</p><p className="text-muted-foreground">Item Name, Stamp, Gross Weight, Net Weight</p></div>
+          <div>
+            <p className="font-semibold mb-2">Physical Stock (Partial Update):</p>
+            <p className="text-muted-foreground">Accepted formats (Stamp is always optional):</p>
+            <ul className="text-xs text-muted-foreground list-disc ml-4 mt-1 space-y-0.5">
+              <li><strong>2 columns:</strong> Item Name, Gross Weight — updates gross only, net preserved</li>
+              <li><strong>3 columns:</strong> Item Name, Gross Weight, Net Weight — updates both</li>
+              <li><strong>4 columns:</strong> Item Name, Stamp, Gross Weight, Net Weight</li>
+            </ul>
+            <p className="text-xs text-muted-foreground mt-1">Headers accepted: Gr.Wt. / Gross Wt / Gross Weight | Net.Wt. / Net Wt / Net Weight / Gold Std.</p>
+            <p className="text-xs text-orange-600 mt-1">Items not in the file remain unchanged. Unmatched items are shown but blocked from apply.</p>
+          </div>
         </CardContent>
       </Card>
+
+      {/* Confirmation dialog for non-physical uploads */}
+      {pendingFile && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center" data-testid="upload-confirm-overlay">
+          <Card className="w-full max-w-md mx-4" data-testid="upload-confirm-dialog">
+            <CardHeader>
+              <CardTitle>Confirm Upload</CardTitle>
+              <CardDescription>
+                {fileTypeNames[pendingFile.fileType] || pendingFile.fileType}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm">File: <strong>{pendingFile.file.name}</strong></p>
+              {(pendingFile.fileType === 'purchase' || pendingFile.fileType === 'sale' || pendingFile.fileType === 'branch_transfer') && (
+                <p className="text-sm">
+                  Date Range: {dateRanges[pendingFile.fileType]?.start} to {dateRanges[pendingFile.fileType]?.end}
+                  <br /><span className="text-xs text-muted-foreground">Only dates present in the file will be replaced.</span>
+                </p>
+              )}
+              {(pendingFile.fileType === 'opening_stock' || pendingFile.fileType === 'master_stock') && (
+                <p className="text-sm text-orange-600">This will replace all existing data.</p>
+              )}
+              <div className="flex gap-2 justify-end pt-2">
+                <Button variant="outline" size="sm" onClick={cancelUpload} data-testid="upload-cancel-btn">Cancel</Button>
+                <Button size="sm" onClick={confirmUpload} data-testid="upload-confirm-btn">Upload</Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Physical stock preview modal */}
+      <PhysicalStockPreview
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        previewData={previewData}
+      />
     </div>
   );
 }

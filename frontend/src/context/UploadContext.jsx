@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 
@@ -9,24 +9,26 @@ const CHUNK_SIZE = 200 * 1024;
 const UploadContext = createContext(null);
 
 export function UploadProvider({ children }) {
-  const [uploads, setUploads] = useState([]); // array of active uploads
+  const [uploads, setUploads] = useState([]);
+  const processingRef = useRef(false);
+  const queueRef = useRef([]);
 
-  const updateUpload = (id, updates) => {
+  const updateUpload = useCallback((id, updates) => {
     setUploads(prev => prev.map(u => u.id === id ? { ...u, ...updates } : u));
-  };
+  }, []);
 
-  const removeUpload = (id) => {
+  const removeUpload = useCallback((id) => {
     setUploads(prev => prev.filter(u => u.id !== id));
-  };
+  }, []);
 
-  // Safety: auto-clear uploads stuck in 'uploading' for > 10 minutes
+  // Safety: auto-clear stuck uploads > 10 minutes
   useEffect(() => {
     const interval = setInterval(() => {
       setUploads(prev => {
         const now = Date.now();
         return prev.filter(u => {
           if (u.status === 'uploading' && u._startTime && (now - u._startTime > 600000)) {
-            return false; // Remove stuck uploads
+            return false;
           }
           return true;
         });
@@ -67,27 +69,22 @@ export function UploadProvider({ children }) {
     }
   };
 
-  const startUpload = useCallback(async (fileType, file, dateRanges = {}) => {
-    const trackId = `${fileType}-${Date.now()}`;
+  // Execute a single upload job
+  const executeUpload = async (job) => {
+    const { trackId, fileType, file, dateRanges } = job;
     const fileTypeLabels = {
       purchase: 'Purchase', sale: 'Sale', opening_stock: 'Opening Stock',
       physical_stock: 'Physical Stock', master_stock: 'Master Stock',
       branch_transfer: 'Branch Transfer',
     };
 
-    setUploads(prev => [...prev, {
-      id: trackId, fileType, fileName: file.name,
-      label: fileTypeLabels[fileType] || fileType,
-      percent: 0, message: 'Preparing...', status: 'uploading',
-      _startTime: Date.now()
-    }]);
+    updateUpload(trackId, { status: 'uploading', _startTime: Date.now() });
 
     try {
       let response;
       const useChunked = file.size > CHUNK_SIZE && fileType !== 'master_stock';
 
       if (useChunked) {
-        // Chunked upload
         const range = dateRanges[fileType] || {};
         const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
         updateUpload(trackId, { message: `Initializing (${totalChunks} chunks)...` });
@@ -112,11 +109,10 @@ export function UploadProvider({ children }) {
           await uploadChunkWithRetry(`${API}/upload/chunk/${uploadId}?chunk_index=${i}`, fd, i, totalChunks, trackId);
         }
 
-        updateUpload(trackId, { percent: 100, message: 'Server processing...' });
+        updateUpload(trackId, { percent: 100, message: 'Server processing...', status: 'processing' });
         await axios.post(`${API}/upload/finalize/${uploadId}`, {}, { timeout: 30000 });
         response = await pollUploadStatus(uploadId, trackId);
       } else {
-        // Direct upload
         updateUpload(trackId, { message: 'Uploading...' });
         const formData = new FormData();
         formData.append('file', file);
@@ -150,10 +146,53 @@ export function UploadProvider({ children }) {
       setTimeout(() => removeUpload(trackId), 10000);
       throw error;
     }
+  };
+
+  // Process queue one at a time
+  const processQueue = useCallback(async () => {
+    if (processingRef.current) return;
+    processingRef.current = true;
+
+    while (queueRef.current.length > 0) {
+      const job = queueRef.current.shift();
+      try {
+        await executeUpload(job);
+      } catch {
+        // Error already handled in executeUpload
+      }
+    }
+
+    processingRef.current = false;
   }, []);
 
+  // Enqueue a new upload — deterministic, never blocked
+  const enqueueUpload = useCallback((fileType, file, dateRanges = {}) => {
+    const trackId = `${fileType}-${Date.now()}`;
+    const fileTypeLabels = {
+      purchase: 'Purchase', sale: 'Sale', opening_stock: 'Opening Stock',
+      physical_stock: 'Physical Stock', master_stock: 'Master Stock',
+      branch_transfer: 'Branch Transfer',
+    };
+
+    // Add to UI state immediately as queued
+    setUploads(prev => [...prev, {
+      id: trackId, fileType, fileName: file.name,
+      label: fileTypeLabels[fileType] || fileType,
+      percent: 0, message: 'Queued...', status: 'queued',
+      _startTime: Date.now(),
+    }]);
+
+    // Add to processing queue
+    queueRef.current.push({ trackId, fileType, file, dateRanges });
+
+    // Trigger processing
+    processQueue();
+
+    return trackId;
+  }, [processQueue]);
+
   return (
-    <UploadContext.Provider value={{ uploads, startUpload, removeUpload }}>
+    <UploadContext.Provider value={{ uploads, enqueueUpload, removeUpload }}>
       {children}
     </UploadContext.Provider>
   );

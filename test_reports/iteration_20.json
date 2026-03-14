@@ -1,0 +1,118 @@
+{
+  "summary": "Physical stock preview/apply and upload flows testing complete. 28/28 backend tests passed. All features verified: 2/3/4-col parsers, preview diff, apply updates, chunked upload init, transaction uploads. Frontend UI verified: Physical Stock tab shows partial update description, Approvals page working, Physical vs Book comparison working.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_physical_stock.py",
+    "/app/backend/tests/test_upload_flows.py",
+    "/app/test_reports/pytest/physical_stock_upload_flows.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "✓ Physical stock parser accepts 2-col (Item Name + Gross Weight), 3-col (+ Net Weight), 4-col (+ Stamp) formats",
+    "✓ Header variants supported: Gr.Wt., Gr Wt, Gross Wt, Gross Weight, Net.Wt., Net Wt, Net Weight, Gold Std.",
+    "✓ Rows with 'total' in item name are correctly skipped",
+    "✓ Preview returns update_mode=gross_only for 2-col, gross_and_net for 3/4-col",
+    "✓ Preview shows matched items as 'pending', unmatched items as 'unmatched'",
+    "✓ Items not in uploaded file are NOT included in preview (unchanged_in_db count correct)",
+    "✓ Apply endpoint updates only approved items, skips unmatched",
+    "✓ Full replacement upload /api/physical-stock/upload still works",
+    "✓ Transaction uploads work: purchase, sale, branch_transfer endpoints",
+    "✓ Chunked upload init works for all file types: purchase, sale, branch_transfer, opening_stock, master_stock, physical_stock",
+    "✓ All upload endpoints require authentication (401/403 without token)",
+    "✓ Frontend Physical Stock tab shows 'Partial Update' title and format guidelines",
+    "✓ Frontend Approvals page (ManagerApprovals.jsx) working correctly",
+    "✓ Frontend Physical vs Book comparison working"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_upload_flows.py"
+  ],
+  "success_rate": {
+    "backend": "100% (28/28 tests passed)",
+    "frontend": "100% (Login, Upload page tabs, Physical Stock guidelines, Approvals, Physical vs Book verified)"
+  },
+  "test_credentials": {
+    "admin": {"username": "admin", "password": "admin123"}
+  },
+  "seed_data_creation": "Test data created during pytest runs for physical_stock collection (ALPHA RING, BETA CHAIN, GAMMA BANGLE)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Physical stock staged partial update feature fully tested. Backend: 13 tests in test_physical_stock.py + 15 tests in test_upload_flows.py. All endpoints verified: /physical-stock/upload-preview, /physical-stock/apply-updates, /physical-stock/upload (full replacement). Chunked upload init works for all file types. Frontend: Upload page tabs render correctly, Physical Stock tab shows 2/3/4-col format guidelines and header variants, Approvals page working with pending stamp approvals visible.",
+  "features_verified": {
+    "physical_stock_preview": {
+      "status": "VERIFIED",
+      "endpoint": "POST /api/physical-stock/upload-preview",
+      "tests": [
+        "2-col (Item Name + Gross Weight) -> gross_only mode",
+        "3-col (+ Net Weight) -> gross_and_net mode",
+        "4-col (+ Stamp) -> gross_and_net mode",
+        "Header variants accepted",
+        "Total rows skipped",
+        "Unmatched items blocked",
+        "Omitted items not in preview"
+      ]
+    },
+    "physical_stock_apply": {
+      "status": "VERIFIED",
+      "endpoint": "POST /api/physical-stock/apply-updates",
+      "tests": [
+        "Single row approval",
+        "Bulk approval",
+        "Unmatched items skipped"
+      ]
+    },
+    "physical_stock_full_upload": {
+      "status": "VERIFIED",
+      "endpoint": "POST /api/physical-stock/upload",
+      "description": "Full replacement still works"
+    },
+    "transaction_uploads": {
+      "status": "VERIFIED",
+      "endpoints": [
+        "POST /api/transactions/upload/purchase",
+        "POST /api/transactions/upload/sale"
+      ]
+    },
+    "chunked_upload_init": {
+      "status": "VERIFIED",
+      "endpoint": "POST /api/upload/init",
+      "supported_types": ["purchase", "sale", "branch_transfer", "opening_stock", "master_stock", "physical_stock"]
+    },
+    "upload_auth_required": {
+      "status": "VERIFIED",
+      "description": "All upload endpoints require authentication"
+    },
+    "frontend_upload_page": {
+      "status": "VERIFIED",
+      "tabs": ["Master Stock", "Transactions", "Branch Transfer", "Physical Stock"],
+      "physical_stock_features": [
+        "Partial Update title",
+        "2/3/4 column format guidelines",
+        "Header variant list",
+        "Items not in file note"
+      ]
+    },
+    "frontend_approvals": {
+      "status": "VERIFIED",
+      "description": "Stamp Approvals page working with Pending/Approved/Rejected tabs"
+    },
+    "frontend_physical_vs_book": {
+      "status": "VERIFIED",
+      "description": "Comparison table with Book Stock, Physical Stock, Difference, Accuracy"
+    }
+  },
+  "playwright_test_results": {
+    "login": "PASS",
+    "upload_page_tabs": "PASS - Master Stock, Transactions, Branch Transfer, Physical Stock tabs found",
+    "physical_stock_guidelines": "PASS - 2/3/4 columns, header variants, unchanged items note all found",
+    "approvals_page": "PASS - Shows pending approvals with Approve/Reject buttons",
+    "physical_vs_book": "PASS - Comparison table with stock data"
+  }
+}
