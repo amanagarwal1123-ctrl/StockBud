@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Check, CheckCheck, Download, AlertTriangle, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react';
+import { Check, CheckCheck, Download, AlertTriangle, ArrowUpRight, ArrowDownRight, Minus, CheckCircle2 } from 'lucide-react';
 import axios from 'axios';
 import { exportToCSV } from '../utils/exportCSV';
 
@@ -23,19 +23,14 @@ function DeltaBadge({ value, suffix = 'kg' }) {
 
 export default function PhysicalStockPreview({ open, onClose, previewData }) {
   const [rows, setRows] = useState([]);
-  const [applying, setApplying] = useState(null); // null | 'single' | 'all'
+  const [applying, setApplying] = useState(null);
+  const [lastApplyResult, setLastApplyResult] = useState(null);
 
-  // Sync rows when previewData changes
-  useState(() => {
-    if (previewData?.preview_rows) {
-      setRows(previewData.preview_rows);
-    }
-  }, [previewData]);
-
-  // Recalculate when previewData opens
+  // Sync rows when previewData opens
   useMemo(() => {
     if (open && previewData?.preview_rows) {
       setRows(previewData.preview_rows);
+      setLastApplyResult(null);
     }
   }, [open, previewData]);
 
@@ -50,21 +45,17 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
   const summaryNetDelta = pendingRows.reduce((s, r) => s + (r.net_delta || 0), 0);
 
   const applyItems = async (itemsToApply) => {
-    try {
-      const payload = {
-        items: itemsToApply.map(r => ({
-          item_name: r.item_name,
-          new_gr_wt: r.new_gr_wt,
-          new_net_wt: r.new_net_wt,
-          update_mode: r.update_mode,
-        })),
-        verification_date: verificationDate,
-      };
-      const res = await axios.post(`${API}/physical-stock/apply-updates`, payload);
-      return res.data;
-    } catch (err) {
-      throw new Error(err.response?.data?.detail || 'Apply failed');
-    }
+    const payload = {
+      items: itemsToApply.map(r => ({
+        item_name: r.item_name,
+        new_gr_wt: r.new_gr_wt,
+        new_net_wt: r.new_net_wt,
+        update_mode: r.update_mode,
+      })),
+      verification_date: verificationDate,
+    };
+    const res = await axios.post(`${API}/physical-stock/apply-updates`, payload);
+    return res.data;
   };
 
   const handleApproveSingle = async (itemName) => {
@@ -72,13 +63,15 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
     if (!row) return;
     setApplying('single');
     try {
-      await applyItems([row]);
+      const result = await applyItems([row]);
       setRows(prev => prev.map(r =>
         r.item_name === itemName && r.status === 'pending' ? { ...r, status: 'approved' } : r
       ));
-      toast.success(`Updated ${itemName}`);
+      const msg = `Physical stock updated successfully for ${verificationDate}: 1 item updated`;
+      setLastApplyResult(msg);
+      toast.success(msg);
     } catch (err) {
-      toast.error(err.message);
+      toast.error(err.response?.data?.detail || err.message || 'Apply failed');
     } finally {
       setApplying(null);
     }
@@ -86,15 +79,18 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
 
   const handleApproveAll = async () => {
     if (pendingRows.length === 0) return;
+    const count = pendingRows.length;
     setApplying('all');
     try {
-      await applyItems(pendingRows);
+      const result = await applyItems(pendingRows);
       setRows(prev => prev.map(r =>
         r.status === 'pending' ? { ...r, status: 'approved' } : r
       ));
-      toast.success(`Updated ${pendingRows.length} items`);
+      const msg = `Physical stock updated successfully for ${verificationDate}: ${result.updated_count} item${result.updated_count !== 1 ? 's' : ''} updated`;
+      setLastApplyResult(msg);
+      toast.success(msg);
     } catch (err) {
-      toast.error(err.message);
+      toast.error(err.response?.data?.detail || err.message || 'Apply failed');
     } finally {
       setApplying(null);
     }
@@ -102,6 +98,7 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
 
   const handleExport = () => {
     const exportData = rows.map(r => ({
+      'Verification Date': verificationDate,
       'Item Name': r.item_name,
       'Stamp': r.stamp || '',
       'Mode': r.update_mode,
@@ -127,9 +124,17 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
             <Badge variant="outline" className="ml-2">{updateMode === 'gross_only' ? 'Gross Only' : 'Gross + Net'}</Badge>
           </DialogTitle>
           <DialogDescription>
-            Verification date: {verificationDate} — Review changes before applying
+            Verification date: <strong>{verificationDate}</strong> — Only rows for this date will be updated
           </DialogDescription>
         </DialogHeader>
+
+        {/* Success banner after apply */}
+        {lastApplyResult && (
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-sm" data-testid="apply-success-banner">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            {lastApplyResult}
+          </div>
+        )}
 
         {/* Summary bar */}
         <div className="flex flex-wrap gap-3 text-sm border rounded-lg p-3 bg-muted/30" data-testid="preview-summary">

@@ -25,6 +25,7 @@ export default function PhysicalStockComparison() {
   const [stampGrossWeight, setStampGrossWeight] = useState('');
   const [stampComparison, setStampComparison] = useState(null);
   const [verificationHistory, setVerificationHistory] = useState([]);
+  const [compareDate, setCompareDate] = useState('');
   const { isAdmin, isManager } = useAuth();
 
   useEffect(() => {
@@ -33,15 +34,22 @@ export default function PhysicalStockComparison() {
     fetchVerificationHistory();
   }, []);
 
-  const fetchComparison = async () => {
+  const fetchComparison = async (date) => {
     try {
-      const response = await axios.get(`${API}/physical-stock/compare`);
+      const params = date ? `?verification_date=${date}` : '';
+      const response = await axios.get(`${API}/physical-stock/compare${params}`);
       setComparison(response.data);
     } catch (error) {
       console.error('Error fetching comparison:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDateChange = (date) => {
+    setCompareDate(date);
+    setLoading(true);
+    fetchComparison(date);
   };
 
   const fetchStampWeights = async () => {
@@ -202,6 +210,21 @@ export default function PhysicalStockComparison() {
         <p className="text-xs sm:text-base md:text-lg text-muted-foreground mt-2">
           Compare your physical count with calculated book inventory
         </p>
+        <div className="flex items-center gap-3 mt-3">
+          <label className="text-sm font-medium text-muted-foreground">Verification Date:</label>
+          <Input
+            type="date"
+            value={compareDate}
+            onChange={(e) => handleDateChange(e.target.value)}
+            className="w-48 text-sm h-9"
+            data-testid="compare-date-filter"
+          />
+          {compareDate && (
+            <Button variant="ghost" size="sm" onClick={() => handleDateChange('')} className="text-xs h-8">
+              Clear (show all)
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Quick Stamp Verification - ALWAYS AVAILABLE */}

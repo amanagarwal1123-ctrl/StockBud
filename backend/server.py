@@ -2391,17 +2391,21 @@ async def upload_physical_stock_preview(
     verification_date: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
-    """Parse physical stock file and return a preview diff against current db.physical_stock.
-    Does NOT mutate the database."""
+    """Parse physical stock file and return a preview diff against db.physical_stock
+    for the selected verification_date ONLY. Does NOT mutate the database."""
     if current_user['role'] not in ['admin', 'manager']:
         raise HTTPException(status_code=403, detail="Admin or manager only")
 
-    # Check base snapshot exists
-    existing_count = await db.physical_stock.count_documents({})
+    if not verification_date:
+        raise HTTPException(status_code=400, detail="verification_date is required")
+
+    # Check base snapshot exists for this specific date
+    date_filter = {'verification_date': verification_date}
+    existing_count = await db.physical_stock.count_documents(date_filter)
     if existing_count == 0:
         raise HTTPException(
             status_code=400,
-            detail="No base physical stock snapshot exists. Please upload a full physical stock file first before using partial updates."
+            detail=f"No physical stock snapshot exists for {verification_date}. Please upload a full physical stock file for that date first."
         )
 
     content = await file.read()
@@ -2424,8 +2428,8 @@ async def upload_physical_stock_preview(
         uploaded[key]['gr_wt'] += rec.get('gr_wt', 0)
         uploaded[key]['net_wt'] += rec.get('net_wt', 0)
 
-    # Load current physical stock indexed by normalized name
-    existing_docs = await db.physical_stock.find({}, {"_id": 0}).to_list(None)
+    # Load ONLY physical stock rows for the selected verification_date
+    existing_docs = await db.physical_stock.find(date_filter, {"_id": 0}).to_list(None)
     existing_map = {}
     for doc in existing_docs:
         k = doc['item_name'].strip().lower()
@@ -2468,7 +2472,7 @@ async def upload_physical_stock_preview(
     return {
         "success": True,
         "update_mode": update_mode,
-        "verification_date": verification_date or datetime.now(timezone.utc).isoformat()[:10],
+        "verification_date": verification_date,
         "preview_rows": preview_rows,
         "summary": {
             "total_uploaded": len(preview_rows),
@@ -2484,18 +2488,20 @@ async def apply_physical_stock_updates(
     request: Dict,
     current_user: dict = Depends(get_current_user)
 ):
-    """Apply approved partial updates to db.physical_stock.
+    """Apply approved partial updates to db.physical_stock, scoped to a specific verification_date.
     Expects: { items: [{item_name, new_gr_wt, new_net_wt, update_mode}], verification_date }"""
     if current_user['role'] not in ['admin', 'manager']:
         raise HTTPException(status_code=403, detail="Admin or manager only")
 
     items = request.get('items', [])
-    verification_date = request.get('verification_date', datetime.now(timezone.utc).isoformat()[:10])
+    verification_date = request.get('verification_date')
 
+    if not verification_date:
+        raise HTTPException(status_code=400, detail="verification_date is required")
     if not items:
         raise HTTPException(status_code=400, detail="No items to apply")
 
-    # Revalidate against current DB state
+    # Revalidate: only update rows for THIS verification_date
     updated_count = 0
     results = []
     for item in items:
@@ -2505,23 +2511,26 @@ async def apply_physical_stock_updates(
         new_gr = item.get('new_gr_wt', 0)
         new_net = item.get('new_net_wt', 0)
 
+        # Match by BOTH item name AND verification_date
         existing = await db.physical_stock.find_one(
-            {'item_name': {'$regex': f'^{re.escape(key)}$', '$options': 'i'}},
+            {
+                'item_name': {'$regex': f'^{re.escape(key)}$', '$options': 'i'},
+                'verification_date': verification_date,
+            },
             {"_id": 0}
         )
         if not existing:
-            results.append({'item_name': item_name, 'status': 'skipped', 'reason': 'not_found'})
+            results.append({'item_name': item_name, 'status': 'skipped', 'reason': 'not_found_for_date'})
             continue
 
         update_fields = {
             'gr_wt': new_gr,
-            'verification_date': verification_date,
         }
         if update_mode == 'gross_and_net':
             update_fields['net_wt'] = new_net
 
         await db.physical_stock.update_one(
-            {'item_name': existing['item_name']},
+            {'item_name': existing['item_name'], 'verification_date': verification_date},
             {'$set': update_fields}
         )
         updated_count += 1
@@ -2530,20 +2539,22 @@ async def apply_physical_stock_updates(
     # Log through existing audit pattern
     await save_action(
         'physical_stock_partial_update',
-        f"Partial physical stock update: {updated_count} items updated (verification date: {verification_date})",
+        f"Partial physical stock update for {verification_date}: {updated_count} items updated",
         {'updated_count': updated_count, 'verification_date': verification_date, 'by': current_user['username']}
     )
 
     return {
         "success": True,
         "updated_count": updated_count,
+        "verification_date": verification_date,
         "results": results,
-        "message": f"Applied updates to {updated_count} items"
+        "message": f"Physical stock updated successfully for {verification_date}: {updated_count} item{'s' if updated_count != 1 else ''} updated"
     }
 
 @api_router.get("/physical-stock/compare")
-async def compare_physical_with_book(current_user: dict = Depends(get_current_user)):
-    """Compare physical stock with book stock and show differences"""
+async def compare_physical_with_book(verification_date: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Compare physical stock with book stock and show differences.
+    If verification_date is provided, only compare physical stock rows for that date."""
     
     # Get book stock — use stamp_items (ungrouped, per-stamp) for correct comparison
     book_response = await get_current_inventory()
@@ -2554,8 +2565,9 @@ async def compare_physical_with_book(current_user: dict = Depends(get_current_us
         if key not in book_items:
             book_items[key] = item
     
-    # Get physical stock
-    physical = await db.physical_stock.find({}, {"_id": 0}).to_list(None)
+    # Get physical stock — scoped to verification_date if provided
+    phys_filter = {'verification_date': verification_date} if verification_date else {}
+    physical = await db.physical_stock.find(phys_filter, {"_id": 0}).to_list(None)
     physical_items = {item['item_name'].strip().lower(): item for item in physical}
     
     # Compare

@@ -84,13 +84,13 @@ Silver stock tracking application for managing inventory, sales, purchases, bran
     - 3-col: + Net Weight (updates both)
     - 4-col: + Stamp (backward-compatible)
     - Headers accepted: Gr.Wt. / Gr Wt / Gross Wt / Gross Weight | Net.Wt. / Net Wt / Net Weight / Gold Std.
-41. **Preview endpoint** - `POST /api/physical-stock/upload-preview` parses file and diffs against current db.physical_stock without mutation
-42. **Apply endpoint** - `POST /api/physical-stock/apply-updates` persists only approved items with verification_date, logs via audit pattern
-43. **Preview modal** - New `PhysicalStockPreview.jsx` component: shows per-row diff (old/new gross & net, deltas), status badges, per-row Approve, global Approve All, CSV export
-44. **Upload queue** - Rewrote `UploadContext.jsx` with real serialized queue (queued→uploading→processing→done→error), one-at-a-time execution, no more global lock
-45. **Deterministic upload flow** - Removed fragile `window.confirm()` inside file input onChange; physical stock goes directly to preview modal; other types use explicit confirmation card dialog
-46. **Polythene delete fix** - polythene_executive can now delete own entries (admin can delete any)
-47. **Upload per-type lock** - Changed from global isUploading to per-type uploadingTypes set
+41. **Preview endpoint** - `POST /api/physical-stock/upload-preview` parses file and diffs against db.physical_stock scoped to selected verification_date only
+42. **Apply endpoint** - `POST /api/physical-stock/apply-updates` persists only approved items for the specific verification_date, logs via audit pattern
+43. **Preview modal** - New `PhysicalStockPreview.jsx` component: per-row diff, per-row Approve, Approve All, CSV export, success banner with date+count
+44. **Upload queue** - Rewrote `UploadContext.jsx` with real serialized queue (queued→uploading→processing→done→error), one-at-a-time execution
+45. **Deterministic upload flow** - Removed fragile `window.confirm()` in onChange; physical stock → preview modal; other types → confirmation card
+46. **Date-scoped operations** - verification_date is required for preview/apply; compare endpoint supports optional date filter; no cross-date mutation
+47. **Compare page date filter** - Added verification_date selector to PhysicalStockComparison.jsx to scope comparison to a specific date
 
 ## Upcoming Tasks
 - P1: Refactor server.py into proper FastAPI structure (routers, services, models)
