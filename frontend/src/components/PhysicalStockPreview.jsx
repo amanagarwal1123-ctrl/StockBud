@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -27,7 +27,7 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
   const [lastApplyResult, setLastApplyResult] = useState(null);
 
   // Sync rows when previewData opens
-  useMemo(() => {
+  useEffect(() => {
     if (open && previewData?.preview_rows) {
       setRows(previewData.preview_rows);
       setLastApplyResult(null);
