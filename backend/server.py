@@ -3980,12 +3980,26 @@ async def get_stats(current_user: dict = Depends(get_current_user)):
     all_parties = await db.transactions.distinct("party_name")
     total_parties = len([p for p in all_parties if p])
     
+    # Get transaction date range
+    date_range = {"from_date": None, "to_date": None}
+    if total_transactions > 0:
+        pipeline = [{"$group": {"_id": None, "min_date": {"$min": "$date"}, "max_date": {"$max": "$date"}}}]
+        async for doc in db.transactions.aggregate(pipeline):
+            date_range["from_date"] = doc.get("min_date")
+            date_range["to_date"] = doc.get("max_date")
+    
+    # Get unique items count
+    all_items = await db.transactions.distinct("item_name")
+    total_items = len([i for i in all_items if i])
+    
     return {
         "total_transactions": total_transactions,
         "total_purchases": total_purchases,
         "total_sales": total_sales,
         "total_opening_stock": total_opening_stock,
-        "total_parties": total_parties
+        "total_parties": total_parties,
+        "total_items": total_items,
+        "date_range": date_range
     }
 
 
