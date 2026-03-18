@@ -17,7 +17,7 @@ StockBud is an intelligent inventory management system for jewelry businesses. I
 
 ## What's Been Implemented
 
-### Session 1-N (Previous sessions)
+### Previous Sessions
 - Full application built with all core features
 - Security hardening (Codex recommendations)
 - Bug fixes (role-based deletion, file upload UX, deployment, item grouping)
@@ -25,10 +25,24 @@ StockBud is an intelligent inventory management system for jewelry businesses. I
 - Serialized upload queue
 
 ### Current Session (Mar 18, 2026)
-- **Dashboard Redesign**: Removed "Software Capabilities" section, added transaction date range (DD/MM/YYYY), redesigned with tech-savvy stat cards with color-coded borders
-- **API Enhancement**: `/api/stats` now returns `date_range` (from_date, to_date) and `total_items`
-- **PDF Manuals**: Generated static English and Hindi user manuals with annotated screenshots (arrows pointing to UI elements), ordered from least to most complex features. Stored at `/manuals/StockBud_Manual_EN.pdf` and `/manuals/StockBud_Manual_HI.pdf`
-- **Bug Fix**: Fixed `useMemo` → `useEffect` in `PhysicalStockPreview.jsx` for proper React side-effect handling
+**Dashboard Redesign:**
+- Removed "Software Capabilities" section, added transaction date range (DD/MM/YYYY)
+- Redesigned stat cards with color-coded borders and gradient backgrounds
+- `/api/stats` now returns `date_range` (from_date, to_date) and `total_items`
+
+**PDF Manuals:**
+- Generated bilingual (EN + HI) static user manuals with annotated screenshots
+- Stored at `/manuals/StockBud_Manual_EN.pdf` and `/manuals/StockBud_Manual_HI.pdf`
+
+**Bug Fix:** Fixed `useMemo` → `useEffect` in `PhysicalStockPreview.jsx`
+
+**Codex Patches (6 fixes):**
+1. **Physical stock direct-only**: `/api/upload/init` returns 400 for `physical_stock`. Frontend already excluded it from chunked path. Backend now explicitly blocks it.
+2. **Physical vs Book always date-scoped**: New `GET /api/physical-stock/dates` endpoint. Compare now requires `verification_date` (not optional). Frontend fetches dates on mount, auto-selects latest, uses Select dropdown.
+3. **Fix false success in apply flow**: `handleApproveSingle` and `handleApproveAll` now inspect per-row backend results. Only marks rows approved if backend says `applied`. Shows warning for partial, error for zero-updated.
+4. **Preserved existing behavior**: All date-scoped upload/preview/apply still work.
+5. **Non-physical uploads unaffected**: Purchase, sale, branch transfer, etc. still use chunked path.
+6. **Cleanup**: Apply response now includes `skipped_count`. Result banner is typed (success/warning/error).
 
 ## Architecture
 - Frontend: React + Tailwind + Shadcn/UI
@@ -51,15 +65,26 @@ StockBud is an intelligent inventory management system for jewelry businesses. I
 - Mobile responsiveness improvements
 
 ## Key Files
-- `backend/server.py` - Monolithic backend (needs refactoring)
-- `frontend/src/pages/Dashboard.jsx` - Redesigned dashboard
-- `frontend/src/components/PhysicalStockPreview.jsx` - Stock preview modal
-- `frontend/src/context/UploadContext.jsx` - Serialized upload queue
+- `backend/server.py` - Monolithic backend
+- `frontend/src/pages/Dashboard.jsx` - Dashboard with date range + manual downloads
+- `frontend/src/components/PhysicalStockPreview.jsx` - Stock preview with accurate apply handling
+- `frontend/src/pages/PhysicalStockComparison.jsx` - Date-required comparison page
+- `frontend/src/context/UploadContext.jsx` - Serialized upload queue (physical_stock direct-only)
 - `frontend/public/manuals/` - Static PDF manuals
 - `backend/generate_manuals.py` - PDF generation script
 
 ## Test Reports
-- `/app/test_reports/iteration_21.json` - Latest (all passed)
-- `/app/backend/tests/test_dashboard_features.py`
-- `/app/backend/tests/test_physical_stock.py`
-- `/app/backend/tests/test_upload_flows.py`
+- `/app/test_reports/iteration_22.json` - Latest (all passed, 15 backend + all frontend)
+- `/app/backend/tests/test_codex_fixes.py` - 10 tests for Codex patches
+- `/app/backend/tests/test_codex_physical_stock_v22.py` - Additional testing agent tests
+- `/app/backend/tests/test_physical_stock.py` - Date-scoped physical stock tests
+- `/app/backend/tests/test_upload_flows.py` - Upload flow tests
+- `/app/backend/tests/test_dashboard_features.py` - Dashboard tests
+
+## Key API Endpoints (Physical Stock)
+- `POST /api/upload/init` - Returns 400 for physical_stock (direct-only)
+- `GET /api/physical-stock/dates` - Returns distinct dates sorted descending
+- `GET /api/physical-stock/compare?verification_date=X` - Required param, date-scoped
+- `POST /api/physical-stock/upload` - Direct full upload, date-scoped
+- `POST /api/physical-stock/upload-preview` - Preview with stamp-aware matching
+- `POST /api/physical-stock/apply-updates` - Returns updated_count, skipped_count, per-row results
