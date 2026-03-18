@@ -26,27 +26,50 @@ export default function PhysicalStockComparison() {
   const [stampComparison, setStampComparison] = useState(null);
   const [verificationHistory, setVerificationHistory] = useState([]);
   const [compareDate, setCompareDate] = useState('');
+  const [availableDates, setAvailableDates] = useState([]);
+  const [noDates, setNoDates] = useState(false);
   const { isAdmin, isManager } = useAuth();
 
   useEffect(() => {
-    fetchComparison();
+    // On mount: fetch available dates first, then compare for the latest one
+    const init = async () => {
+      try {
+        const datesRes = await axios.get(`${API}/physical-stock/dates`);
+        const dates = datesRes.data?.dates || [];
+        setAvailableDates(dates);
+        if (dates.length > 0) {
+          const latestDate = dates[0]; // sorted descending
+          setCompareDate(latestDate);
+          fetchComparison(latestDate);
+        } else {
+          setNoDates(true);
+          setLoading(false);
+        }
+      } catch {
+        setNoDates(true);
+        setLoading(false);
+      }
+    };
+    init();
     fetchStampWeights();
     fetchVerificationHistory();
   }, []);
 
   const fetchComparison = async (date) => {
+    if (!date) return; // Never call compare without a date
     try {
-      const params = date ? `?verification_date=${date}` : '';
-      const response = await axios.get(`${API}/physical-stock/compare${params}`);
+      const response = await axios.get(`${API}/physical-stock/compare?verification_date=${date}`);
       setComparison(response.data);
     } catch (error) {
       console.error('Error fetching comparison:', error);
+      setComparison(null);
     } finally {
       setLoading(false);
     }
   };
 
   const handleDateChange = (date) => {
+    if (!date) return; // Don't allow clearing to empty
     setCompareDate(date);
     setLoading(true);
     fetchComparison(date);
@@ -212,17 +235,19 @@ export default function PhysicalStockComparison() {
         </p>
         <div className="flex items-center gap-3 mt-3">
           <label className="text-sm font-medium text-muted-foreground">Verification Date:</label>
-          <Input
-            type="date"
-            value={compareDate}
-            onChange={(e) => handleDateChange(e.target.value)}
-            className="w-48 text-sm h-9"
-            data-testid="compare-date-filter"
-          />
-          {compareDate && (
-            <Button variant="ghost" size="sm" onClick={() => handleDateChange('')} className="text-xs h-8">
-              Clear (show all)
-            </Button>
+          {availableDates.length > 0 ? (
+            <Select value={compareDate} onValueChange={handleDateChange}>
+              <SelectTrigger className="w-48 text-sm h-9" data-testid="compare-date-filter">
+                <SelectValue placeholder="Select date..." />
+              </SelectTrigger>
+              <SelectContent>
+                {availableDates.map(d => (
+                  <SelectItem key={d} value={d}>{d}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <span className="text-sm text-muted-foreground">No physical stock dates available</span>
           )}
         </div>
       </div>
@@ -376,11 +401,20 @@ export default function PhysicalStockComparison() {
       </Card>
 
       {/* Info message if no physical stock data */}
-      {!summary && (
+      {!summary && !noDates && (
         <Alert className="border-blue-500/50 bg-blue-500/10">
           <AlertTriangle className="h-5 w-5 text-blue-600" />
           <AlertDescription className="ml-2">
             <strong>Item-wise Comparison:</strong> Upload a physical stock file (via Upload Files → Physical Stock) to see detailed item-by-item comparison. Or use Quick Stamp Verification above for fast checks.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {noDates && (
+        <Alert className="border-blue-500/50 bg-blue-500/10">
+          <AlertTriangle className="h-5 w-5 text-blue-600" />
+          <AlertDescription className="ml-2">
+            <strong>No Physical Stock Data:</strong> No physical stock has been uploaded yet. Go to Upload Files → Physical Stock to upload your first physical stock file.
           </AlertDescription>
         </Alert>
       )}
@@ -682,12 +716,12 @@ export default function PhysicalStockComparison() {
         </>
       )}
 
-      {/* Info message when no physical stock data */}
-      {!summary && (
+      {/* Info message when no physical stock data for selected date */}
+      {!summary && !noDates && (
         <Alert>
           <AlertTriangle className="h-5 w-5" />
           <AlertDescription>
-            No physical stock comparison data available yet. Upload a physical stock file to see detailed comparisons, or use Quick Stamp Verification above for quick checks.
+            No physical stock comparison data for the selected date. Upload a physical stock file for this date to see comparisons, or use Quick Stamp Verification above.
           </AlertDescription>
         </Alert>
       )}

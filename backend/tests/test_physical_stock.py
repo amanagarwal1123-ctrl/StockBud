@@ -145,17 +145,17 @@ class TestDateSafeDirectUpload:
 
 
 class TestChunkedPathDateSafe:
-    """Chunked upload path must also be date-safe (backend defense)."""
+    """Chunked upload path must reject physical_stock (direct-only)."""
 
     def test_chunked_init_for_physical_stock(self, auth):
-        """Chunked init for physical_stock still works."""
+        """Chunked init for physical_stock should return 400 — physical stock is direct-only."""
         r = httpx.post(
             f"{API_URL}/upload/init",
             json={"file_type": "physical_stock", "total_chunks": 1, "verification_date": DATE_B},
             headers=auth, timeout=30,
         )
-        assert r.status_code == 200
-        assert "upload_id" in r.json()
+        assert r.status_code == 400
+        assert "direct upload flow" in r.json()["detail"]
 
 
 class TestAmbiguityDetection:

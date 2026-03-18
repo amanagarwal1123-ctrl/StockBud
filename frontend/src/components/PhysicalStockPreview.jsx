@@ -66,12 +66,21 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
     setApplying('single');
     try {
       const result = await applyItems([row]);
-      setRows(prev => prev.map(r =>
-        r.item_name === itemName && r.status === 'pending' ? { ...r, status: 'approved' } : r
-      ));
-      const msg = `Physical stock updated successfully for ${verificationDate}: 1 item updated`;
-      setLastApplyResult(msg);
-      toast.success(msg);
+      // Check per-row result from backend
+      const rowResult = result.results?.find(r => r.item_name.toLowerCase() === itemName.toLowerCase());
+      if (rowResult?.status === 'applied') {
+        setRows(prev => prev.map(r =>
+          r.item_name === itemName && r.status === 'pending' ? { ...r, status: 'approved' } : r
+        ));
+        const msg = `Physical stock updated successfully for ${verificationDate}: 1 item updated`;
+        setLastApplyResult({ type: 'success', text: msg });
+        toast.success(msg);
+      } else {
+        const reason = rowResult?.reason || 'unknown';
+        const msg = `Item "${itemName}" was not applied (${reason}). Preview may be stale.`;
+        setLastApplyResult({ type: 'warning', text: msg });
+        toast.warning(msg);
+      }
     } catch (err) {
       toast.error(err.response?.data?.detail || err.message || 'Apply failed');
     } finally {
@@ -81,16 +90,36 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
 
   const handleApproveAll = async () => {
     if (pendingRows.length === 0) return;
-    const count = pendingRows.length;
     setApplying('all');
     try {
       const result = await applyItems(pendingRows);
-      setRows(prev => prev.map(r =>
-        r.status === 'pending' ? { ...r, status: 'approved' } : r
-      ));
-      const msg = `Physical stock updated successfully for ${verificationDate}: ${result.updated_count} item${result.updated_count !== 1 ? 's' : ''} updated`;
-      setLastApplyResult(msg);
-      toast.success(msg);
+      const appliedSet = new Set(
+        (result.results || []).filter(r => r.status === 'applied').map(r => r.item_name.toLowerCase())
+      );
+      const skippedCount = result.skipped_count || 0;
+      const updatedCount = result.updated_count || 0;
+
+      // Only mark actually applied rows as approved
+      setRows(prev => prev.map(r => {
+        if (r.status === 'pending' && appliedSet.has(r.item_name.toLowerCase())) {
+          return { ...r, status: 'approved' };
+        }
+        return r;
+      }));
+
+      if (updatedCount > 0 && skippedCount === 0) {
+        const msg = `Physical stock updated successfully for ${verificationDate}: ${updatedCount} item${updatedCount !== 1 ? 's' : ''} updated`;
+        setLastApplyResult({ type: 'success', text: msg });
+        toast.success(msg);
+      } else if (updatedCount > 0 && skippedCount > 0) {
+        const msg = `Partial update for ${verificationDate}: ${updatedCount} applied, ${skippedCount} skipped (preview may be stale)`;
+        setLastApplyResult({ type: 'warning', text: msg });
+        toast.warning(msg);
+      } else {
+        const msg = `No items were updated for ${verificationDate}. Preview may be stale — re-upload to refresh.`;
+        setLastApplyResult({ type: 'error', text: msg });
+        toast.error(msg);
+      }
     } catch (err) {
       toast.error(err.response?.data?.detail || err.message || 'Apply failed');
     } finally {
@@ -130,11 +159,21 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
           </DialogDescription>
         </DialogHeader>
 
-        {/* Success banner after apply */}
+        {/* Result banner after apply */}
         {lastApplyResult && (
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-sm" data-testid="apply-success-banner">
-            <CheckCircle2 className="h-4 w-4 shrink-0" />
-            {lastApplyResult}
+          <div className={`flex items-center gap-2 p-3 rounded-lg text-sm ${
+            lastApplyResult.type === 'success'
+              ? 'bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+              : lastApplyResult.type === 'warning'
+              ? 'bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200'
+              : 'bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-200'
+          }`} data-testid="apply-result-banner">
+            {lastApplyResult.type === 'success' ? (
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+            ) : (
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+            )}
+            {lastApplyResult.text}
           </div>
         )}
 

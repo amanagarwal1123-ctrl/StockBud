@@ -976,6 +976,10 @@ async def init_chunked_upload(request: Dict, current_user: dict = Depends(get_cu
     if file_type not in ['purchase', 'sale', 'branch_transfer', 'opening_stock', 'physical_stock', 'master_stock', 'historical_sale', 'historical_purchase']:
         raise HTTPException(status_code=400, detail="Invalid file_type")
 
+    # Physical stock must always use the direct upload flow, never chunked
+    if file_type == 'physical_stock':
+        raise HTTPException(status_code=400, detail="physical_stock uploads must use the direct upload flow")
+
     upload_id = str(uuid.uuid4())
 
     meta = {
@@ -2591,15 +2595,27 @@ async def apply_physical_stock_updates(
     return {
         "success": True,
         "updated_count": updated_count,
+        "skipped_count": len(items) - updated_count,
         "verification_date": verification_date,
         "results": results,
         "message": f"Physical stock updated successfully for {verification_date}: {updated_count} item{'s' if updated_count != 1 else ''} updated"
     }
 
+@api_router.get("/physical-stock/dates")
+async def get_physical_stock_dates(current_user: dict = Depends(get_current_user)):
+    """Return distinct physical stock verification_date values sorted descending."""
+    dates = await db.physical_stock.distinct("verification_date")
+    # Filter out None/empty and sort descending
+    dates = sorted([d for d in dates if d], reverse=True)
+    return {"dates": dates}
+
 @api_router.get("/physical-stock/compare")
-async def compare_physical_with_book(verification_date: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+async def compare_physical_with_book(verification_date: str, current_user: dict = Depends(get_current_user)):
     """Compare physical stock with book stock and show differences.
-    If verification_date is provided, only compare physical stock rows for that date."""
+    verification_date is required — always operates on exactly one date."""
+    
+    if not verification_date:
+        raise HTTPException(status_code=400, detail="verification_date is required")
     
     # Get book stock — use stamp_items (ungrouped, per-stamp) for correct comparison
     book_response = await get_current_inventory()
@@ -2610,8 +2626,8 @@ async def compare_physical_with_book(verification_date: Optional[str] = None, cu
         if key not in book_items:
             book_items[key] = item
     
-    # Get physical stock — scoped to verification_date if provided
-    phys_filter = {'verification_date': verification_date} if verification_date else {}
+    # Get physical stock — always scoped to verification_date
+    phys_filter = {'verification_date': verification_date}
     physical = await db.physical_stock.find(phys_filter, {"_id": 0}).to_list(None)
     physical_items = {item['item_name'].strip().lower(): item for item in physical}
     

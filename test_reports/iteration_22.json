@@ -1,0 +1,95 @@
+{
+  "summary": "Codex-recommended physical stock patches testing complete. All 15 backend tests passed (100%). All frontend UI verifications passed. Physical stock now uses direct upload flow (rejected from chunked), /physical-stock/dates endpoint returns sorted dates, /physical-stock/compare requires verification_date, apply-updates returns skipped_count, and frontend correctly handles partial updates.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_codex_physical_stock_v22.py",
+    "/app/backend/tests/test_codex_fixes.py",
+    "/app/test_reports/pytest/codex_physical_stock_v22.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "✓ Backend /api/upload/init returns 400 for physical_stock with 'direct upload flow' message (line 979-981 in server.py)",
+    "✓ Backend /api/physical-stock/dates returns dates sorted descending (line 2604-2610 in server.py)",
+    "✓ Backend /api/physical-stock/compare now requires verification_date (not Optional) - returns 422 without it (line 2612-2613)",
+    "✓ Backend /api/physical-stock/apply-updates returns skipped_count in response (line 2598)",
+    "✓ Frontend UploadContext excludes physical_stock from chunked path (line 85: useChunked condition)",
+    "✓ Frontend PhysicalStockComparison fetches /physical-stock/dates on mount, auto-selects latest date (lines 33-53)",
+    "✓ Frontend PhysicalStockComparison uses Select dropdown for dates, no freeform input or Clear button for date selector (line 239-248)",
+    "✓ Frontend PhysicalStockPreview handleApproveAll checks per-row results and only marks applied rows as approved (lines 91-128)",
+    "✓ Frontend PhysicalStockPreview shows warning when updated_count=0 - no false success (lines 118-121)",
+    "✓ All data-testid attributes present for testing: compare-date-filter, physical-stock-preview-modal, apply-result-banner"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_codex_physical_stock_v22.py"
+  ],
+  "success_rate": {
+    "backend": "100% (15/15 tests passed)",
+    "frontend": "100% (All UI verifications passed)"
+  },
+  "test_credentials": {
+    "admin": {"username": "admin", "password": "admin123"}
+  },
+  "seed_data_creation": "None required - existing data used. Physical stock dates available: 2026-03-19, 2026-03-18, 2026-03-17, etc.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Codex patches fully verified. Key endpoints: /api/upload/init (rejects physical_stock), /api/physical-stock/dates (sorted desc), /api/physical-stock/compare?verification_date=X (required param), /api/physical-stock/apply-updates (returns updated_count, skipped_count, results). Frontend uses direct upload for physical_stock, Select dropdown for date selection, and correctly handles apply results.",
+  "features_verified": {
+    "physical_stock_direct_upload_only": {
+      "status": "VERIFIED",
+      "description": "POST /api/upload/init with file_type=physical_stock returns 400 with 'direct upload flow' message",
+      "backend": "server.py line 979-981 checks file_type and raises HTTPException",
+      "frontend": "UploadContext.jsx line 85 excludes physical_stock from useChunked condition"
+    },
+    "non_physical_uploads_unaffected": {
+      "status": "VERIFIED",
+      "description": "POST /api/upload/init with file_type=purchase/sale returns 200 with upload_id"
+    },
+    "physical_stock_dates_endpoint": {
+      "status": "VERIFIED",
+      "description": "GET /api/physical-stock/dates returns sorted descending list of dates",
+      "sample_dates": ["2026-03-19", "2026-03-18", "2026-03-17", "2026-02-19", "2026-02-18"]
+    },
+    "compare_requires_date": {
+      "status": "VERIFIED",
+      "description": "GET /api/physical-stock/compare without verification_date returns 422 (FastAPI validation error)"
+    },
+    "compare_with_specific_date": {
+      "status": "VERIFIED",
+      "description": "GET /api/physical-stock/compare?verification_date=2026-03-19 returns data for that specific date only"
+    },
+    "physical_vs_book_auto_selects_latest": {
+      "status": "VERIFIED",
+      "description": "Physical vs Book page auto-selects latest date (2026-03-19) on load from /physical-stock/dates"
+    },
+    "date_selector_is_dropdown": {
+      "status": "VERIFIED",
+      "description": "Physical vs Book page uses Select dropdown for dates, no freeform input or Clear button for date selector"
+    },
+    "apply_updates_skipped_count": {
+      "status": "VERIFIED",
+      "description": "Apply-updates with nonexistent item returns skipped status, updated_count=0, skipped_count=1"
+    },
+    "preview_no_false_success": {
+      "status": "VERIFIED",
+      "description": "PhysicalStockPreview approve-all only marks actually applied rows as approved, shows warning when updated_count=0"
+    }
+  },
+  "playwright_test_results": {
+    "login": "PASS",
+    "navigate_physical_vs_book": "PASS",
+    "date_dropdown_visible": "PASS - Shows 2026-03-19 (latest)",
+    "date_dropdown_options": "PASS - Sorted descending: 2026-03-19, 2026-03-18, 2026-03-17...",
+    "no_clear_button_for_date": "PASS - Only 1 Clear button (in Quick Stamp section)",
+    "no_date_input_type": "PASS - 0 input[type=date] for verification date (uses Select)",
+    "summary_cards_visible": "PASS - 4/4 cards visible (Book Stock, Physical Stock, Difference, Accuracy)",
+    "upload_page_physical_tab": "PASS - Physical Stock tab with verification date field"
+  }
+}
