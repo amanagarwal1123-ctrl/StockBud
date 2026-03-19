@@ -48,19 +48,23 @@ Fields: item_key, item_name, baseline_date, gr_wt, net_wt, stamp, updated_at, se
 - `POST /api/physical-stock/finalize-session` — finalize draft
 - `POST /api/physical-stock/update-history/{id}/reverse` — reverse latest, removes baselines
 - `GET /api/physical-stock/update-history` — filtered, reversible flag
+- `GET /api/physical-stock/update-history/{session_id}` — session detail with items
 - `GET /api/inventory/current` — uses baselines for physical-stock-overridden items
 
 ## Files Changed
 - `backend/server.py` — apply-updates creates baselines, reverse removes them
 - `backend/services/stock_service.py` — get_current_inventory AND get_book_closing_stock_as_of_date use baselines
-- `frontend/src/pages/Dashboard.jsx` — Stock Reconciliation History table with filter
+- `frontend/src/pages/Dashboard.jsx` — Stock Reconciliation History with clickable expand, item-wise detail, reverse button
 - `frontend/src/components/PhysicalStockPreview.jsx` — session lifecycle, info banner
 - `frontend/src/pages/PhysicalStockComparison.jsx` — Session section removed, calendar date picker, DD-MM-YYYY format
 
 ## UI Changes (Mar 19, 2026)
-- Physical vs Book page: Removed session history section (moved to Dashboard)
+- Physical vs Book page: Removed session history section (centralized on Dashboard)
 - Physical vs Book page: Replaced discrete date dropdown with continuous calendar date picker
 - Physical vs Book page: All dates now display as DD-MM-YYYY format
+- Dashboard: Reconciliation History rows are now clickable → expand to show item-wise changes
+- Dashboard: Reverse button available on active sessions
+- Dashboard: Chevron indicators for expand/collapse state
 
 ## Tests
 - 13/13 backend tests pass (test_rejected_row_weights.py + test_codex_fixes.py)

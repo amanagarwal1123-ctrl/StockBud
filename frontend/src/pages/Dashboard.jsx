@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Package, TrendingUp, AlertTriangle, CheckCircle2, Clock, FileText, Download, Calendar, Users, BarChart3, ArrowUpRight, RotateCcw, Filter, Scale } from 'lucide-react';
+import { Package, TrendingUp, AlertTriangle, CheckCircle2, Clock, FileText, Download, Calendar, Users, BarChart3, ArrowUpRight, RotateCcw, Filter, Scale, ChevronDown, ChevronRight } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { toast } from 'sonner';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -24,6 +25,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [reconSessions, setReconSessions] = useState([]);
   const [reconFilter, setReconFilter] = useState('all');
+  const [expandedSession, setExpandedSession] = useState(null);
+  const [sessionDetail, setSessionDetail] = useState(null);
 
   useEffect(() => {
     fetchStats();
@@ -57,6 +60,35 @@ export default function Dashboard() {
       setReconSessions(res.data.sessions || []);
     } catch (error) {
       console.error('Error fetching reconciliation sessions:', error);
+    }
+  };
+
+  const toggleSessionDetail = async (sessionId) => {
+    if (expandedSession === sessionId) {
+      setExpandedSession(null);
+      setSessionDetail(null);
+      return;
+    }
+    try {
+      const res = await axios.get(`${API}/physical-stock/update-history/${sessionId}`);
+      setSessionDetail(res.data);
+      setExpandedSession(sessionId);
+    } catch {
+      toast.error('Failed to load session details');
+    }
+  };
+
+  const handleReverseSession = async (sessionId) => {
+    if (!window.confirm('Reverse this physical stock update? This will restore all items to their previous weights.')) return;
+    try {
+      await axios.post(`${API}/physical-stock/update-history/${sessionId}/reverse`);
+      toast.success('Session reversed successfully');
+      setExpandedSession(null);
+      setSessionDetail(null);
+      fetchReconSessions();
+      fetchStats();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Reverse failed');
     }
   };
 
@@ -261,10 +293,11 @@ export default function Dashboard() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto max-h-[28rem]">
+          <div className="overflow-x-auto max-h-[40rem]">
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30">
+                  <TableHead className="font-semibold text-xs w-6"></TableHead>
                   <TableHead className="font-semibold text-xs">Date</TableHead>
                   <TableHead className="font-semibold text-xs">Status</TableHead>
                   <TableHead className="font-semibold text-xs">Items</TableHead>
@@ -272,6 +305,7 @@ export default function Dashboard() {
                   <TableHead className="text-right font-semibold text-xs">Net Change</TableHead>
                   <TableHead className="font-semibold text-xs">By</TableHead>
                   <TableHead className="font-semibold text-xs">When</TableHead>
+                  <TableHead className="font-semibold text-xs text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -283,37 +317,121 @@ export default function Dashboard() {
                   const rejectedCount = s.rejected_count || 0;
                   const createdAt = s.applied_at || s.created_at || '';
                   const dateStr = createdAt ? new Date(createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+                  const isExpanded = expandedSession === s.session_id;
 
                   return (
-                    <TableRow key={s.session_id} className={isReversed ? 'opacity-60' : 'hover:bg-muted/20'} data-testid={`recon-row-${s.session_id.slice(0,8)}`}>
-                      <TableCell className="font-mono text-sm font-semibold">{formatDateDDMMYYYY(s.verification_date)}</TableCell>
-                      <TableCell>
-                        {isReversed ? (
-                          <Badge className="bg-red-500/80 text-xs gap-1"><RotateCcw className="h-3 w-3" />Reversed</Badge>
-                        ) : s.reversible ? (
-                          <Badge className="bg-emerald-600 text-xs gap-1"><CheckCircle2 className="h-3 w-3" />Active</Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-xs">Finalized</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <span className="text-emerald-600 font-semibold">{appliedCount}</span>
-                        {rejectedCount > 0 && <span className="text-muted-foreground ml-1">({rejectedCount} rej)</span>}
-                      </TableCell>
-                      <TableCell className={`text-right font-mono text-xs font-semibold ${grDelta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                        {grDelta >= 0 ? '+' : ''}{(grDelta / 1000).toFixed(3)} kg
-                      </TableCell>
-                      <TableCell className={`text-right font-mono text-xs font-semibold ${netDelta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                        {netDelta >= 0 ? '+' : ''}{(netDelta / 1000).toFixed(3)} kg
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{s.applied_by || '—'}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{dateStr}</TableCell>
-                    </TableRow>
+                    <React.Fragment key={s.session_id}>
+                      <TableRow
+                        className={`cursor-pointer transition-colors ${isReversed ? 'opacity-60 hover:opacity-80' : 'hover:bg-muted/20'} ${isExpanded ? 'bg-muted/20' : ''}`}
+                        onClick={() => toggleSessionDetail(s.session_id)}
+                        data-testid={`recon-row-${s.session_id.slice(0,8)}`}
+                      >
+                        <TableCell className="px-2 w-6">
+                          {isExpanded
+                            ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                            : <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                          }
+                        </TableCell>
+                        <TableCell className="font-mono text-sm font-semibold">{formatDateDDMMYYYY(s.verification_date)}</TableCell>
+                        <TableCell>
+                          {isReversed ? (
+                            <Badge className="bg-red-500/80 text-xs gap-1"><RotateCcw className="h-3 w-3" />Reversed</Badge>
+                          ) : s.reversible ? (
+                            <Badge className="bg-emerald-600 text-xs gap-1"><CheckCircle2 className="h-3 w-3" />Active</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-xs">Finalized</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <span className="text-emerald-600 font-semibold">{appliedCount}</span>
+                          {rejectedCount > 0 && <span className="text-muted-foreground ml-1">({rejectedCount} rej)</span>}
+                        </TableCell>
+                        <TableCell className={`text-right font-mono text-xs font-semibold ${grDelta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                          {grDelta >= 0 ? '+' : ''}{(grDelta / 1000).toFixed(3)} kg
+                        </TableCell>
+                        <TableCell className={`text-right font-mono text-xs font-semibold ${netDelta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                          {netDelta >= 0 ? '+' : ''}{(netDelta / 1000).toFixed(3)} kg
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{s.applied_by || '—'}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{dateStr}</TableCell>
+                        <TableCell className="text-right">
+                          {s.reversible && !isReversed && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs text-destructive border-destructive/30 h-7 px-2"
+                              onClick={(e) => { e.stopPropagation(); handleReverseSession(s.session_id); }}
+                              data-testid={`reverse-btn-${s.session_id.slice(0,8)}`}
+                            >
+                              <RotateCcw className="h-3 w-3 mr-1" />
+                              Reverse
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                      {isExpanded && sessionDetail && (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell colSpan={9} className="p-0 border-b-2 border-primary/20">
+                            <div className="bg-muted/10 px-4 py-3">
+                              <p className="text-xs font-semibold text-muted-foreground mb-2">Item-wise Changes</p>
+                              <div className="rounded border overflow-hidden">
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow className="text-xs bg-muted/40">
+                                      <TableHead className="text-xs py-1.5">Status</TableHead>
+                                      <TableHead className="text-xs py-1.5">Stamp</TableHead>
+                                      <TableHead className="text-xs py-1.5">Item Name</TableHead>
+                                      <TableHead className="text-right text-xs py-1.5">Old Gross</TableHead>
+                                      <TableHead className="text-right text-xs py-1.5">New Gross</TableHead>
+                                      <TableHead className="text-right text-xs py-1.5">Gross Delta</TableHead>
+                                      <TableHead className="text-right text-xs py-1.5">Old Net</TableHead>
+                                      <TableHead className="text-right text-xs py-1.5">New Net</TableHead>
+                                      <TableHead className="text-right text-xs py-1.5">Net Delta</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {(sessionDetail.items || []).map((item, idx) => (
+                                      <TableRow key={idx} className={
+                                        item.status === 'applied' ? 'bg-white' :
+                                        item.status === 'rejected' ? 'bg-amber-50/50' :
+                                        item.status === 'unmatched' ? 'bg-red-50/50' :
+                                        item.status === 'skipped' ? 'bg-gray-50/50' : ''
+                                      }>
+                                        <TableCell className="py-1.5">
+                                          <Badge className={`text-[10px] px-1.5 py-0 ${
+                                            item.status === 'applied' ? 'bg-emerald-600' :
+                                            item.status === 'rejected' ? 'bg-amber-500' :
+                                            item.status === 'unmatched' ? 'bg-red-500' :
+                                            item.status === 'skipped' ? 'bg-gray-500' : 'bg-blue-500'
+                                          }`}>{item.status}</Badge>
+                                        </TableCell>
+                                        <TableCell className="text-xs py-1.5"><Badge variant="outline" className="text-[10px] px-1.5 py-0">{item.stamp || '—'}</Badge></TableCell>
+                                        <TableCell className="text-xs font-medium py-1.5">{item.item_name}</TableCell>
+                                        <TableCell className="text-right font-mono text-xs py-1.5">{((item.old_gr_wt || 0) / 1000).toFixed(3)}</TableCell>
+                                        <TableCell className="text-right font-mono text-xs py-1.5">{((item.final_gr_wt || item.proposed_gr_wt || 0) / 1000).toFixed(3)}</TableCell>
+                                        <TableCell className={`text-right font-mono text-xs font-semibold py-1.5 ${(item.gr_delta || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                          {(item.gr_delta || 0) >= 0 ? '+' : ''}{((item.gr_delta || 0) / 1000).toFixed(3)}
+                                        </TableCell>
+                                        <TableCell className="text-right font-mono text-xs py-1.5">{((item.old_net_wt || 0) / 1000).toFixed(3)}</TableCell>
+                                        <TableCell className="text-right font-mono text-xs py-1.5">{((item.final_net_wt || item.proposed_net_wt || 0) / 1000).toFixed(3)}</TableCell>
+                                        <TableCell className={`text-right font-mono text-xs font-semibold py-1.5 ${(item.net_delta || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                          {(item.net_delta || 0) >= 0 ? '+' : ''}{((item.net_delta || 0) / 1000).toFixed(3)}
+                                        </TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </React.Fragment>
                   );
                 })}
                 {filteredReconSessions.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground text-sm">
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground text-sm">
                       {reconFilter !== 'all' ? 'No sessions match the current filter' : 'No reconciliation sessions yet'}
                     </TableCell>
                   </TableRow>
