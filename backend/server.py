@@ -2456,11 +2456,11 @@ async def upload_physical_stock_preview(
             'status': r['status'], 'update_mode': r.get('update_mode', update_mode),
             'is_negative_grouped': r.get('is_negative_grouped', False),
             'old_gr_wt': r.get('old_gr_wt', 0), 'proposed_gr_wt': r.get('new_gr_wt', 0),
-            'final_gr_wt': r.get('new_gr_wt', 0) if r['status'] == 'pending' else r.get('old_gr_wt', 0),
-            'gr_delta': r.get('gr_delta', 0),
+            'final_gr_wt': r.get('old_gr_wt', 0),
+            'gr_delta': 0,
             'old_net_wt': r.get('old_net_wt', 0), 'proposed_net_wt': r.get('new_net_wt', 0),
-            'final_net_wt': r.get('new_net_wt', 0) if r['status'] == 'pending' else r.get('old_net_wt', 0),
-            'net_delta': r.get('net_delta', 0),
+            'final_net_wt': r.get('old_net_wt', 0),
+            'net_delta': 0,
         })
     draft_items.sort(key=lambda x: ((x.get('stamp', '') or '').lower(), x['item_name'].lower()))
 
@@ -2644,10 +2644,14 @@ async def finalize_physical_stock_session(
         )
         return {"success": True, "message": "Session abandoned (no items applied)"}
 
-    # Mark remaining pending as rejected
+    # Mark remaining pending as rejected — reset final weights to old values
     for i in items:
         if i.get('status') == 'pending':
             i['status'] = 'rejected'
+            i['final_gr_wt'] = i.get('old_gr_wt', 0)
+            i['final_net_wt'] = i.get('old_net_wt', 0)
+            i['gr_delta'] = 0
+            i['net_delta'] = 0
 
     rejected_count = sum(1 for i in items if i.get('status') == 'rejected')
     await db.physical_stock_update_sessions.update_one(

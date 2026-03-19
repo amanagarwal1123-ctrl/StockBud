@@ -51,6 +51,12 @@ totals (old/new/delta for gr/net), items (full row list sorted by stamp+name)
 ## Tests
 - 36/36 existing backend tests pass
 - Live smoke: preview→approve→finalize→history→reverse all working
+- 3/3 rejected-row-weight tests pass (test_rejected_row_weights.py)
+
+## Bug Fix: Rejected Rows Stored Wrong Final Weights (Feb 2026)
+- **Root cause**: Draft init set `final_gr_wt = proposed_gr_wt` for pending rows; finalization only flipped status to `rejected` without resetting weights
+- **Fix 1** (line ~2459): Draft init now sets `final_gr_wt = old_gr_wt`, `gr_delta = 0` for pending rows
+- **Fix 2** (line ~2650): Finalization resets rejected rows: `final_*` → `old_*`, deltas → 0
 
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
