@@ -149,6 +149,8 @@ async def get_effective_physical_base_for_date(verification_date: str):
 
 async def get_current_inventory():
     """Calculate current inventory: Opening Stock + Purchases - Sales.
+    If an item has a physical stock baseline (from approved physical stock upload),
+    that baseline replaces opening stock and only transactions AFTER the baseline date count.
     Merges item group members into their leader for consolidated view.
     Returns per-member breakdowns for expandable UI."""
     EXCLUDED_ITEMS = ["SILVER ORNAMENTS"]
@@ -163,11 +165,31 @@ async def get_current_inventory():
     groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
     ledger_items = await db.purchase_ledger.find({}, {"_id": 0}).to_list(None)
 
+    # Load inventory baselines (physical stock overrides)
+    baselines_raw = await db.inventory_baselines.find({}, {"_id": 0}).to_list(None)
+    baselines = {b['item_key']: b for b in baselines_raw}
+
     mapping_dict, member_to_leader, group_members = build_group_maps(groups, mappings)
     group_ledger = build_group_ledger(ledger_items, groups, mappings)
 
     opening = [item for item in opening if item['item_name'] not in EXCLUDED_ITEMS and not item['item_name'].isdigit()]
     transactions = [t for t in transactions if t['item_name'] not in EXCLUDED_ITEMS and not t['item_name'].isdigit()]
+
+    # Build baseline lookup keyed by resolved display name
+    baseline_by_key = {}
+    for bval in baselines.values():
+        raw = bval['item_name'].strip()
+        master = mapping_dict.get(raw, raw)
+        leader = member_to_leader.get(master, master)
+        display_key = leader.strip().lower()
+        # Keep the latest baseline if multiple resolve to the same display key
+        if display_key not in baseline_by_key or bval['baseline_date'] > baseline_by_key[display_key]['baseline_date']:
+            baseline_by_key[display_key] = bval
+    # Also index by raw item_key for direct match
+    for bval in baselines.values():
+        raw_key = bval['item_key']
+        if raw_key not in baseline_by_key:
+            baseline_by_key[raw_key] = bval
 
     # Track both group-level and per-member data
     inventory_map = {}
@@ -198,6 +220,27 @@ async def get_current_inventory():
         raw_name = item['item_name'].strip()
         master_name, display_name = _resolve(raw_name)
         key = display_name.strip().lower()
+
+        # If this item has a physical stock baseline, skip opening stock
+        if key in baseline_by_key:
+            # Still need to initialize inventory_map entry for stamp/metadata
+            if key not in inventory_map:
+                resolved_stamp = master_stamp_dict.get(
+                    display_name,
+                    master_stamp_dict.get(master_name, item.get('stamp', '') or 'Unassigned')
+                )
+                inventory_map[key] = {
+                    'item_name': display_name,
+                    'stamp': resolved_stamp,
+                    'stamp_locked': display_name in master_stamp_dict or master_name in master_stamp_dict,
+                    'gr_wt': 0.0, 'net_wt': 0.0, 'fine': 0.0,
+                    'total_pc': 0, 'labor': 0.0, 'stamps_seen': set()
+                }
+            if item.get('stamp'):
+                inventory_map[key]['stamps_seen'].add(item['stamp'])
+                if not inventory_map[key].get('stamp_locked', False):
+                    inventory_map[key]['stamp'] = item['stamp']
+            continue  # Skip opening values — baseline will be applied below
 
         if key not in inventory_map:
             resolved_stamp = master_stamp_dict.get(
@@ -231,11 +274,33 @@ async def get_current_inventory():
             if not inventory_map[key].get('stamp_locked', False):
                 inventory_map[key]['stamp'] = item['stamp']
 
+    # --- Inject baseline values as the new starting point for baseline items ---
+    for key, bl in baseline_by_key.items():
+        if key not in inventory_map:
+            bl_stamp = bl.get('stamp') or master_stamp_dict.get(bl['item_name'], 'Unassigned')
+            inventory_map[key] = {
+                'item_name': bl['item_name'],
+                'stamp': bl_stamp,
+                'stamp_locked': bl['item_name'] in master_stamp_dict,
+                'gr_wt': 0.0, 'net_wt': 0.0, 'fine': 0.0,
+                'total_pc': 0, 'labor': 0.0, 'stamps_seen': set()
+            }
+        inventory_map[key]['gr_wt'] += bl['gr_wt']
+        inventory_map[key]['net_wt'] += bl['net_wt']
+        m_key = _member_key(bl['item_name'], bl['item_name'])
+        member_data[key][m_key]['gr_wt'] += bl['gr_wt']
+        member_data[key][m_key]['net_wt'] += bl['net_wt']
+
     # --- Transactions ---
     for trans in transactions:
         trans_name = trans['item_name'].strip()
         master_name, display_name = _resolve(trans_name)
         key = display_name.strip().lower()
+
+        # If this item has a baseline, skip transactions on or before baseline date
+        bl = baseline_by_key.get(key)
+        if bl and trans.get('date', '') <= bl['baseline_date']:
+            continue  # Transaction is before/on baseline — already accounted for
 
         if key not in inventory_map:
             item_stamp = master_stamp_dict.get(
@@ -288,6 +353,12 @@ async def get_current_inventory():
     for adj in polythene_adjustments:
         adj_item_name = adj['item_name']
         master_item_name = mapping_dict.get(adj_item_name, adj_item_name)
+        leader = member_to_leader.get(master_item_name, master_item_name)
+        adj_key = leader.strip().lower()
+        # Skip polythene adjustments on or before baseline date for baseline items
+        bl = baseline_by_key.get(adj_key)
+        if bl and adj.get('date', '') <= bl['baseline_date']:
+            continue
         poly_weight = adj['poly_weight'] * 1000
         if adj['operation'] == 'add':
             poly_map[master_item_name] += poly_weight

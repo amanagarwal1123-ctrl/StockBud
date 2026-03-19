@@ -1,0 +1,83 @@
+{
+  "summary": "Comprehensive testing of Physical Stock Baseline feature and Rejected Row Weights fix. All 10 backend tests passed (100%). Frontend verification passed - Current Stock page loads correctly with inventory data, Upload Files shows Physical Stock tab, Physical vs Book shows comparison, and Approvals page shows pending items.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_physical_stock_baseline.py",
+    "/app/backend/tests/test_rejected_row_weights.py",
+    "/app/test_reports/pytest/physical_stock_baseline.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "✓ inventory_baselines collection stores per-item baselines (item_key, item_name, baseline_date, gr_wt, net_wt, stamp, session_id)",
+    "✓ apply_physical_stock_updates creates/updates baselines when items are approved (server.py ~2570-2585)",
+    "✓ reverse_physical_stock_session deletes baselines for applied items (server.py ~2725)",
+    "✓ get_current_inventory in stock_service.py correctly: (1) Skips opening stock for baseline items, (2) Injects baseline values, (3) Only counts transactions AFTER baseline_date",
+    "✓ Finalize session correctly resets rejected rows: final_gr_wt=old_gr_wt, gr_delta=0 (server.py ~2664-2671)",
+    "✓ Draft sessions start with final_*=old_* and delta=0 for pending items"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_physical_stock_baseline.py"
+  ],
+  "success_rate": {
+    "backend": "100% (10/10 tests passed)",
+    "frontend": "100% (All UI verifications passed)"
+  },
+  "test_credentials": {
+    "admin": {"username": "admin", "password": "admin123"}
+  },
+  "seed_data_creation": "Test file at /tmp/physical_stock_test.xlsx with 2 items: COIN 100 -98T (6.4 kg) and A-60 PAYAL-004 (6.316 kg). Physical stock for date 2026-03-02 has 279 existing records.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Physical Stock Baseline feature fully verified. Key collections: inventory_baselines (stores baselines per item). Key endpoints: POST /api/physical-stock/upload-preview, POST /api/physical-stock/apply-updates (creates baselines), POST /api/physical-stock/finalize-session, POST /api/physical-stock/update-history/{id}/reverse (removes baselines). Test date used: 2026-03-02, 2099-01-15 (isolated test data). Rejected row weight fix also verified - finalized sessions have correct final_gr_wt=old_gr_wt for rejected items.",
+  "features_verified": {
+    "baseline_creation_on_approve": {
+      "status": "VERIFIED",
+      "description": "When items are approved in apply-updates, inventory_baselines collection is updated with item_key, baseline_date, gr_wt, net_wt"
+    },
+    "current_stock_uses_baseline": {
+      "status": "VERIFIED",
+      "description": "get_current_inventory() correctly uses baseline values + post-baseline transactions instead of opening stock for baseline items",
+      "test_result": "COIN 100 -98T: Before=5522g (book), After approve=6400g (baseline), After reverse=5522g (book)"
+    },
+    "transactions_on_baseline_date_excluded": {
+      "status": "VERIFIED",
+      "description": "Transactions on or before baseline_date are not counted for baseline items (server.py line 302-303)"
+    },
+    "non_baseline_items_normal_calculation": {
+      "status": "VERIFIED",
+      "description": "Items without baselines retain normal book calculation (opening stock + all transactions)"
+    },
+    "reverse_removes_baseline": {
+      "status": "VERIFIED",
+      "description": "Reversing a session deletes the inventory_baselines for applied items, causing Current Stock to revert to book calculation"
+    },
+    "rejected_rows_have_old_weights": {
+      "status": "VERIFIED",
+      "description": "Finalized sessions have rejected rows with final_gr_wt=old_gr_wt and gr_delta=0"
+    },
+    "draft_items_start_with_old_weights": {
+      "status": "VERIFIED",
+      "description": "Draft pending items have final_*=old_* and delta=0 (not proposed values)"
+    }
+  },
+  "e2e_test_flow": {
+    "steps": [
+      "1. Get current stock BEFORE - shows book calculation (5522g)",
+      "2. Upload physical stock file with new values (6400g)",
+      "3. Approve item - creates baseline, updated_count=1",
+      "4. Get current stock AFTER - shows baseline value (6400g)",
+      "5. Finalize session - 1 applied, 1 rejected",
+      "6. Reverse session - removes baseline, restored_count=1",
+      "7. Get current stock AFTER reverse - reverts to book (5522g)"
+    ],
+    "result": "ALL STEPS PASSED"
+  }
+}

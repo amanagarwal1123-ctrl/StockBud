@@ -2567,6 +2567,23 @@ async def apply_physical_stock_updates(
         })
         results.append({'item_name': existing['item_name'], 'status': 'applied'})
 
+        # Upsert inventory baseline — physical stock becomes the new starting point
+        baseline_key = existing['item_name'].strip().lower()
+        await db.inventory_baselines.update_one(
+            {'item_key': baseline_key},
+            {'$set': {
+                'item_key': baseline_key,
+                'item_name': existing['item_name'],
+                'baseline_date': verification_date,
+                'gr_wt': round(new_gr, 3),
+                'net_wt': round(update_fields['net_wt'], 3),
+                'stamp': existing.get('stamp', ''),
+                'updated_at': datetime.now(timezone.utc).isoformat(),
+                'session_id': preview_session_id or '',
+            }},
+            upsert=True
+        )
+
     # Update draft session if provided
     if preview_session_id and updated_count > 0:
         session = await db.physical_stock_update_sessions.find_one({'session_id': preview_session_id})
@@ -2704,6 +2721,8 @@ async def reverse_physical_stock_session(
             {'item_name': {'$regex': f'^{re.escape(key)}$', '$options': 'i'}, 'verification_date': v_date},
             {'$set': {'gr_wt': item['old_gr_wt'], 'net_wt': item['old_net_wt']}}
         )
+        # Remove inventory baseline so current stock reverts to book calculation
+        await db.inventory_baselines.delete_one({'item_key': key})
         restored += 1
 
     await db.physical_stock_update_sessions.update_one(
