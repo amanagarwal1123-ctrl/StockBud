@@ -53,6 +53,8 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
         new_gr_wt: r.new_gr_wt,
         new_net_wt: r.new_net_wt,
         update_mode: r.update_mode,
+        is_negative_grouped: r.is_negative_grouped || false,
+        stamp: r.stamp || '',
       })),
       verification_date: verificationDate,
     };

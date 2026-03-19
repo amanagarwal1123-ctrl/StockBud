@@ -3,6 +3,150 @@ from database import db
 from services.group_utils import build_group_maps, build_group_ledger
 
 
+async def get_book_closing_stock_as_of_date(verification_date: str):
+    """Compute the closing/book stock as of a specific date.
+
+    Logic: Opening Stock + Purchases(<=date) - Sales(<=date) +/- branch transfers(<=date)
+    Same mapping/grouping logic as get_current_inventory() but date-filtered.
+
+    Returns a flat dict keyed by normalized item name:
+      { "item_key": { item_name, stamp, gr_wt, net_wt, is_negative_grouped } }
+    """
+    EXCLUDED_ITEMS = ["SILVER ORNAMENTS"]
+
+    opening = await db.opening_stock.find({}, {"_id": 0}).to_list(None)
+    # Filter transactions up to and including the verification_date
+    end_date = verification_date  # YYYY-MM-DD string comparison works
+    transactions = await db.transactions.find(
+        {'date': {'$lte': end_date}}, {"_id": 0}
+    ).to_list(None)
+
+    mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
+    master_items = await db.master_items.find({}, {"_id": 0}).to_list(None)
+    master_stamp_dict = {m['item_name']: m['stamp'] for m in master_items}
+
+    groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+
+    mapping_dict, member_to_leader, group_members_map = build_group_maps(groups, mappings)
+
+    group_names_set = {g['group_name'] for g in groups}
+    all_group_members = set()
+    for g in groups:
+        all_group_members.update(g.get('members', []))
+
+    opening = [i for i in opening if i['item_name'] not in EXCLUDED_ITEMS and not i['item_name'].isdigit()]
+    transactions = [t for t in transactions if t['item_name'] not in EXCLUDED_ITEMS and not t['item_name'].isdigit()]
+
+    def _resolve(raw_name):
+        master_name = mapping_dict.get(raw_name, raw_name)
+        leader = member_to_leader.get(master_name, master_name)
+        return master_name, leader
+
+    inventory_map = {}
+
+    # Opening stock
+    for item in opening:
+        raw_name = item['item_name'].strip()
+        master_name, display_name = _resolve(raw_name)
+        key = display_name.strip().lower()
+        if key not in inventory_map:
+            resolved_stamp = master_stamp_dict.get(
+                display_name,
+                master_stamp_dict.get(master_name, item.get('stamp', '') or 'Unassigned')
+            )
+            inventory_map[key] = {
+                'item_name': display_name, 'stamp': resolved_stamp,
+                'gr_wt': 0.0, 'net_wt': 0.0,
+            }
+        inventory_map[key]['gr_wt'] += item.get('gr_wt', 0)
+        inventory_map[key]['net_wt'] += item.get('net_wt', 0)
+
+    # Transactions
+    for trans in transactions:
+        trans_name = trans['item_name'].strip()
+        master_name, display_name = _resolve(trans_name)
+        key = display_name.strip().lower()
+        if key not in inventory_map:
+            item_stamp = master_stamp_dict.get(
+                display_name,
+                master_stamp_dict.get(master_name, trans.get('stamp', 'Unassigned'))
+            )
+            inventory_map[key] = {
+                'item_name': display_name, 'stamp': item_stamp,
+                'gr_wt': 0.0, 'net_wt': 0.0,
+            }
+        if trans['type'] in ['purchase', 'purchase_return', 'receive']:
+            inventory_map[key]['gr_wt'] += trans.get('gr_wt', 0)
+            inventory_map[key]['net_wt'] += trans.get('net_wt', 0)
+        else:
+            inventory_map[key]['gr_wt'] -= trans.get('gr_wt', 0)
+            inventory_map[key]['net_wt'] -= trans.get('net_wt', 0)
+
+    # Polythene adjustments up to date
+    polythene = await db.polythene_adjustments.find(
+        {'date': {'$lte': end_date}}, {"_id": 0}
+    ).to_list(None)
+    poly_map = defaultdict(float)
+    for adj in polythene:
+        adj_item = adj['item_name']
+        master_item = mapping_dict.get(adj_item, adj_item)
+        leader = member_to_leader.get(master_item, master_item)
+        pw = adj['poly_weight'] * 1000
+        if adj['operation'] == 'add':
+            poly_map[leader] += pw
+        else:
+            poly_map[leader] -= pw
+
+    # Build result — tag negative/grouped items
+    result = {}
+    for key, item in inventory_map.items():
+        item_name = item['item_name']
+        if item_name in poly_map:
+            item['gr_wt'] += poly_map[item_name]
+        item['gr_wt'] = round(item['gr_wt'], 3)
+        item['net_wt'] = round(item['net_wt'], 3)
+        is_neg = item['gr_wt'] < -0.01 or item['net_wt'] < -0.01
+        is_group = item_name in group_names_set
+        result[key] = {
+            'item_name': item_name,
+            'stamp': item.get('stamp', 'Unassigned'),
+            'gr_wt': item['gr_wt'],
+            'net_wt': item['net_wt'],
+            'is_negative_grouped': is_neg or is_group,
+        }
+
+    return result
+
+
+async def get_effective_physical_base_for_date(verification_date: str):
+    """Return the effective base stock for a physical stock update.
+
+    If a physical stock snapshot already exists for the date, use it.
+    Otherwise, compute book closing stock as of that date.
+
+    Returns: dict keyed by normalized item name
+      { "item_key": { item_name, stamp, gr_wt, net_wt, is_negative_grouped } }
+    """
+    existing = await db.physical_stock.find(
+        {'verification_date': verification_date}, {"_id": 0}
+    ).to_list(None)
+
+    if existing:
+        result = {}
+        for doc in existing:
+            key = doc['item_name'].strip().lower()
+            result[key] = {
+                'item_name': doc['item_name'],
+                'stamp': doc.get('stamp', ''),
+                'gr_wt': doc.get('gr_wt', 0),
+                'net_wt': doc.get('net_wt', 0),
+                'is_negative_grouped': doc.get('is_negative_grouped', False),
+            }
+        return result
+
+    return await get_book_closing_stock_as_of_date(verification_date)
+
+
 async def get_current_inventory():
     """Calculate current inventory: Opening Stock + Purchases - Sales.
     Merges item group members into their leader for consolidated view.

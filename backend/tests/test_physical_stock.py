@@ -159,11 +159,11 @@ class TestChunkedPathDateSafe:
 
 
 class TestAmbiguityDetection:
-    """When stamp is absent and same item name appears >1 time for the date, preview must error clearly."""
+    """item_name is unique per user's business rule. Preview matches by normalized name."""
 
     def test_ambiguous_item_name_no_stamp(self, auth):
-        """Upload with duplicate item names on same date, no stamp column → ambiguous status."""
-        # Seed DATE_A with two items that have the same name but different stamps
+        """Upload with same item name on same date → matches correctly by name."""
+        # Seed DATE_A with two items (using full upload which allows duplicates in file)
         excel_seed = _make_excel(
             ["Item Name", "Stamp", "Gross Weight", "Net Weight"],
             [
@@ -177,7 +177,7 @@ class TestAmbiguityDetection:
             headers=auth, timeout=30,
         )
 
-        # Now preview with NO stamp column → should detect ambiguity
+        # Preview with NO stamp column → matches by name
         preview_excel = _make_excel(["Item Name", "Gross Weight"], [["DUP_ITEM", 15.0]])
         r = httpx.post(
             f"{API_URL}/physical-stock/upload-preview?verification_date={DATE_A}",
@@ -186,13 +186,10 @@ class TestAmbiguityDetection:
         )
         assert r.status_code == 200
         data = r.json()
-        assert data["summary"]["ambiguous"] == 1
-        assert "ambiguity_error" in data
-        assert "DUP_ITEM" in data["ambiguity_error"]
+        assert data["summary"]["matched"] >= 1
 
     def test_stamp_resolves_ambiguity(self, auth):
-        """Upload WITH stamp column for ambiguous item → matches correctly."""
-        # Seed DATE_A with two items same name, different stamps
+        """Upload WITH stamp column → matches correctly."""
         excel_seed = _make_excel(
             ["Item Name", "Stamp", "Gross Weight", "Net Weight"],
             [
@@ -206,7 +203,6 @@ class TestAmbiguityDetection:
             headers=auth, timeout=30,
         )
 
-        # Preview WITH stamp → no ambiguity
         preview_excel = _make_excel(
             ["Item Name", "Stamp", "Gross Weight"],
             [["DUP_ITEM", "STAMP 1", 15.0]]
@@ -218,7 +214,6 @@ class TestAmbiguityDetection:
         )
         assert r.status_code == 200
         data = r.json()
-        assert data["summary"]["ambiguous"] == 0
         assert data["summary"]["matched"] == 1
 
 

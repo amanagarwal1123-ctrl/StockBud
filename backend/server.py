@@ -41,7 +41,7 @@ from services.helpers import (
     normalize_stamp, get_column_value, parse_labor_value,
     normalize_date, stamp_sort_key, save_action, auto_normalize_stamps
 )
-from services.stock_service import get_current_inventory, get_stamp_closing_stock
+from services.stock_service import get_current_inventory, get_stamp_closing_stock, get_book_closing_stock_as_of_date, get_effective_physical_base_for_date
 from services.group_utils import build_group_maps, build_group_ledger, resolve_to_leader
 
 app = FastAPI()
@@ -2390,17 +2390,15 @@ async def upload_physical_stock_preview(
     verification_date: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
-    """Parse physical stock file and return a preview diff against db.physical_stock
-    for the selected verification_date ONLY. Does NOT mutate the database."""
+    """Parse physical stock file and return a preview diff against the effective base
+    for the selected verification_date. Does NOT mutate the database.
+
+    Effective base = existing physical stock snapshot for date, or computed book closing stock."""
     if current_user['role'] not in ['admin', 'manager']:
         raise HTTPException(status_code=403, detail="Admin or manager only")
 
     if not verification_date:
         raise HTTPException(status_code=400, detail="verification_date is required")
-
-    # Check if physical stock snapshot exists for this date
-    date_filter = {'verification_date': verification_date}
-    existing_count = await db.physical_stock.count_documents(date_filter)
 
     content = await file.read()
     loop = asyncio.get_event_loop()
@@ -2409,148 +2407,84 @@ async def upload_physical_stock_preview(
     if not records:
         raise HTTPException(status_code=400, detail="No valid records found in file")
 
-    # Determine update mode from the parsed records
+    # Determine update mode from parsed records
     has_net = any(r.get('has_net', False) for r in records)
     update_mode = 'gross_and_net' if has_net else 'gross_only'
 
-    # Determine if upload file contains stamp data
-    has_stamp = any(r.get('stamp', '') not in ('', 'Unassigned') for r in records)
-
-    # Merge uploaded rows by (normalized item name + stamp if available)
+    # Merge uploaded rows by normalized item name
     uploaded = {}
     for rec in records:
         item_key = rec['item_name'].strip().lower()
-        stamp_val = rec.get('stamp', '') or ''
-        if has_stamp and stamp_val and stamp_val != 'Unassigned':
-            merge_key = f"{item_key}||{stamp_val.strip().lower()}"
-        else:
-            merge_key = item_key
-        if merge_key not in uploaded:
-            uploaded[merge_key] = {'item_name': rec['item_name'], 'stamp': stamp_val, 'gr_wt': 0.0, 'net_wt': 0.0}
-        uploaded[merge_key]['gr_wt'] += rec.get('gr_wt', 0)
-        uploaded[merge_key]['net_wt'] += rec.get('net_wt', 0)
+        if item_key not in uploaded:
+            uploaded[item_key] = {'item_name': rec['item_name'], 'stamp': rec.get('stamp', ''), 'gr_wt': 0.0, 'net_wt': 0.0}
+        uploaded[item_key]['gr_wt'] += rec.get('gr_wt', 0)
+        uploaded[item_key]['net_wt'] += rec.get('net_wt', 0)
 
-    # Load ONLY physical stock rows for the selected verification_date
-    existing_docs = await db.physical_stock.find(date_filter, {"_id": 0}).to_list(None)
+    # Load effective base for this date
+    base = await get_effective_physical_base_for_date(verification_date)
+    has_existing_snapshot = await db.physical_stock.count_documents({'verification_date': verification_date}) > 0
 
-    # If no physical stock exists for this date, fall back to book stock
-    # so the user can incrementally build physical stock from partial uploads
-    use_book_fallback = len(existing_docs) == 0
-    book_items_map = {}
-    if use_book_fallback:
-        book_response = await get_current_inventory()
-        for item in book_response.get('stamp_items', book_response.get('inventory', [])):
-            k = item['item_name'].strip().lower()
-            book_items_map[k] = item
-        # Also include negative items
-        for item in book_response.get('negative_items', []):
-            k = item['item_name'].strip().lower()
-            if k not in book_items_map:
-                book_items_map[k] = item
-
-    # Build lookup structures
-    # name_only_map: normalized_name -> list of docs (for ambiguity check)
-    # stamp_map: (normalized_name, normalized_stamp) -> doc
-    from collections import defaultdict as _ddict
-    name_only_map = _ddict(list)
-    stamp_map = {}
-    for doc in existing_docs:
-        k = doc['item_name'].strip().lower()
-        name_only_map[k].append(doc)
-        s = (doc.get('stamp', '') or '').strip().lower()
-        stamp_map[(k, s)] = doc
-
-    # Build diff rows
+    # Build preview rows
     preview_rows = []
-    ambiguity_errors = []
-    for merge_key, upl in uploaded.items():
-        item_key = upl['item_name'].strip().lower()
-        upl_stamp = (upl.get('stamp', '') or '').strip().lower()
+    for item_key, upl in uploaded.items():
+        base_item = base.get(item_key)
 
-        # Resolve match — against physical stock first, then book stock
-        existing = None
-        is_new_insert = False
-
-        if use_book_fallback:
-            # No physical stock for this date — match against book stock
-            book_item = book_items_map.get(item_key)
-            if book_item:
-                existing = book_item
-                is_new_insert = True  # Will INSERT, not UPDATE
-            # else: unmatched (item not found in book stock either)
-        else:
-            if has_stamp and upl_stamp and upl_stamp != 'unassigned':
-                existing = stamp_map.get((item_key, upl_stamp))
-            else:
-                candidates = name_only_map.get(item_key, [])
-                if len(candidates) == 1:
-                    existing = candidates[0]
-                elif len(candidates) > 1:
-                    ambiguity_errors.append(upl['item_name'])
-                    preview_rows.append({
-                        'item_name': upl['item_name'],
-                        'update_mode': update_mode,
-                        'old_gr_wt': 0, 'new_gr_wt': round(upl['gr_wt'], 3), 'gr_delta': round(upl['gr_wt'], 3),
-                        'old_net_wt': 0, 'new_net_wt': round(upl['net_wt'], 3) if has_net else 0,
-                        'net_delta': round(upl['net_wt'], 3) if has_net else 0,
-                        'status': 'ambiguous',
-                    })
-                    continue
-
-        if not existing:
+        if not base_item:
+            # Item not found in base at all
             preview_rows.append({
                 'item_name': upl['item_name'],
+                'stamp': upl.get('stamp', ''),
                 'update_mode': update_mode,
                 'old_gr_wt': 0, 'new_gr_wt': round(upl['gr_wt'], 3), 'gr_delta': round(upl['gr_wt'], 3),
                 'old_net_wt': 0, 'new_net_wt': round(upl['net_wt'], 3) if has_net else 0,
                 'net_delta': round(upl['net_wt'], 3) if has_net else 0,
                 'status': 'unmatched',
+                'is_negative_grouped': False,
             })
             continue
 
-        old_gr = existing.get('gr_wt', 0)
-        old_net = existing.get('net_wt', 0)
+        old_gr = base_item.get('gr_wt', 0)
+        old_net = base_item.get('net_wt', 0)
         new_gr = round(upl['gr_wt'], 3)
-        new_net = round(upl['net_wt'], 3) if has_net else old_net
+        is_neg_grouped = base_item.get('is_negative_grouped', False)
+
+        # Net weight rules:
+        # - Grouped/negative items: ALWAYS preserve base net
+        # - Normal items, gross_only mode: preserve base net
+        # - Normal items, gross_and_net mode: use uploaded net
+        if is_neg_grouped or not has_net:
+            new_net = round(old_net, 3)
+        else:
+            new_net = round(upl['net_wt'], 3)
 
         preview_rows.append({
-            'item_name': existing['item_name'],
-            'stamp': existing.get('stamp', ''),
+            'item_name': base_item['item_name'],
+            'stamp': base_item.get('stamp', ''),
             'update_mode': update_mode,
             'old_gr_wt': round(old_gr, 3), 'new_gr_wt': new_gr,
             'gr_delta': round(new_gr - old_gr, 3),
-            'old_net_wt': round(old_net, 3), 'new_net_wt': round(new_net, 3),
-            'net_delta': round(new_net - old_net, 3) if has_net else 0,
+            'old_net_wt': round(old_net, 3), 'new_net_wt': new_net,
+            'net_delta': round(new_net - old_net, 3),
             'status': 'pending',
-            'is_new_insert': is_new_insert,
+            'is_negative_grouped': is_neg_grouped,
         })
 
     matched_count = sum(1 for r in preview_rows if r['status'] == 'pending')
     unmatched_count = sum(1 for r in preview_rows if r['status'] == 'unmatched')
-    ambiguous_count = sum(1 for r in preview_rows if r['status'] == 'ambiguous')
 
-    result = {
+    return {
         "success": True,
         "update_mode": update_mode,
         "verification_date": verification_date,
+        "has_existing_snapshot": has_existing_snapshot,
         "preview_rows": preview_rows,
         "summary": {
             "total_uploaded": len(preview_rows),
             "matched": matched_count,
             "unmatched": unmatched_count,
-            "ambiguous": ambiguous_count,
-            "unchanged_in_db": existing_count - matched_count,
+            "base_item_count": len(base),
         }
     }
-
-    if ambiguity_errors:
-        result["ambiguity_error"] = (
-            f"Ambiguous item names found: {', '.join(ambiguity_errors)}. "
-            f"These items exist more than once for {verification_date}. "
-            f"Include a Stamp column to resolve."
-        )
-
-    return result
 
 
 @api_router.post("/physical-stock/apply-updates")
@@ -2558,8 +2492,11 @@ async def apply_physical_stock_updates(
     request: Dict,
     current_user: dict = Depends(get_current_user)
 ):
-    """Apply approved partial updates to db.physical_stock, scoped to a specific verification_date.
-    Expects: { items: [{item_name, new_gr_wt, new_net_wt, update_mode}], verification_date }"""
+    """Apply approved partial updates to physical stock for a specific verification_date.
+
+    If no physical stock snapshot exists yet for the date, materializes a FULL snapshot
+    from book closing stock, then overlays the approved changes. Non-uploaded items
+    remain unchanged. After apply, the snapshot becomes the new base for future updates."""
     if current_user['role'] not in ['admin', 'manager']:
         raise HTTPException(status_code=403, detail="Admin or manager only")
 
@@ -2571,9 +2508,29 @@ async def apply_physical_stock_updates(
     if not items:
         raise HTTPException(status_code=400, detail="No items to apply")
 
-    # Revalidate: only update/insert rows for THIS verification_date
+    # Check if snapshot already exists
+    has_snapshot = await db.physical_stock.count_documents({'verification_date': verification_date}) > 0
+
+    if not has_snapshot:
+        # Materialize full snapshot from book closing stock for this date
+        book_base = await get_book_closing_stock_as_of_date(verification_date)
+        if book_base:
+            bulk_docs = []
+            for key, bi in book_base.items():
+                bulk_docs.append({
+                    'item_name': bi['item_name'],
+                    'stamp': bi.get('stamp', ''),
+                    'gr_wt': bi['gr_wt'],
+                    'net_wt': bi['net_wt'],
+                    'is_negative_grouped': bi.get('is_negative_grouped', False),
+                    'verification_date': verification_date,
+                })
+            if bulk_docs:
+                await db.physical_stock.insert_many(bulk_docs)
+
+    # Now apply the approved changes on top of the snapshot
     updated_count = 0
-    inserted_count = 0
+    session_items = []
     results = []
     for item in items:
         item_name = item.get('item_name', '')
@@ -2581,8 +2538,8 @@ async def apply_physical_stock_updates(
         update_mode = item.get('update_mode', 'gross_only')
         new_gr = item.get('new_gr_wt', 0)
         new_net = item.get('new_net_wt', 0)
+        is_neg_grouped = item.get('is_negative_grouped', False)
 
-        # Match by BOTH item name AND verification_date
         existing = await db.physical_stock.find_one(
             {
                 'item_name': {'$regex': f'^{re.escape(key)}$', '$options': 'i'},
@@ -2591,39 +2548,17 @@ async def apply_physical_stock_updates(
             {"_id": 0}
         )
         if not existing:
-            # No physical stock record yet — check if item exists in book stock before inserting
-            book_response = await get_current_inventory()
-            book_item = None
-            stamp_val = item.get('stamp', '')
-            for inv_item in book_response.get('stamp_items', book_response.get('inventory', [])):
-                if inv_item['item_name'].strip().lower() == key:
-                    book_item = inv_item
-                    if not stamp_val:
-                        stamp_val = inv_item.get('stamp', '')
-                    break
-
-            if not book_item:
-                # Item doesn't exist in physical stock OR book stock — skip
-                results.append({'item_name': item_name, 'status': 'skipped', 'reason': 'not_found_for_date'})
-                continue
-
-            new_doc = {
-                'item_name': item_name,
-                'stamp': stamp_val or '',
-                'gr_wt': new_gr,
-                'net_wt': new_net if update_mode == 'gross_and_net' else 0,
-                'verification_date': verification_date,
-            }
-            await db.physical_stock.insert_one(new_doc)
-            inserted_count += 1
-            updated_count += 1
-            results.append({'item_name': item_name, 'status': 'applied', 'action': 'inserted'})
+            results.append({'item_name': item_name, 'status': 'skipped', 'reason': 'not_found_for_date'})
             continue
 
-        update_fields = {
-            'gr_wt': new_gr,
-        }
-        if update_mode == 'gross_and_net':
+        old_gr = existing.get('gr_wt', 0)
+        old_net = existing.get('net_wt', 0)
+
+        update_fields = {'gr_wt': new_gr}
+        # Net weight rules: grouped/negative always preserve, normal depends on mode
+        if is_neg_grouped or update_mode == 'gross_only':
+            update_fields['net_wt'] = old_net  # preserve
+        else:
             update_fields['net_wt'] = new_net
 
         await db.physical_stock.update_one(
@@ -2631,53 +2566,114 @@ async def apply_physical_stock_updates(
             {'$set': update_fields}
         )
         updated_count += 1
+
+        session_items.append({
+            'item_name': existing['item_name'],
+            'stamp': existing.get('stamp', ''),
+            'update_mode': update_mode,
+            'old_gr_wt': round(old_gr, 3),
+            'new_gr_wt': round(new_gr, 3),
+            'gr_delta': round(new_gr - old_gr, 3),
+            'old_net_wt': round(old_net, 3),
+            'new_net_wt': round(update_fields['net_wt'], 3),
+            'net_delta': round(update_fields['net_wt'] - old_net, 3),
+            'is_negative_grouped': is_neg_grouped,
+            'action': 'updated',
+        })
         results.append({'item_name': existing['item_name'], 'status': 'applied', 'action': 'updated'})
 
-    # Log through existing audit pattern
+    # Sort session items by stamp then item name
+    session_items.sort(key=lambda x: (
+        (x.get('stamp', '') or '').strip().lower(),
+        x['item_name'].strip().lower()
+    ))
+
+    # Store session history
+    if updated_count > 0:
+        normal_count = sum(1 for si in session_items if not si.get('is_negative_grouped'))
+        neg_grouped_count = sum(1 for si in session_items if si.get('is_negative_grouped'))
+        session = {
+            'session_id': str(uuid.uuid4()),
+            'verification_date': verification_date,
+            'applied_at': datetime.now(timezone.utc).isoformat(),
+            'applied_by': current_user['username'],
+            'updated_count': updated_count,
+            'normal_item_count': normal_count,
+            'grouped_negative_item_count': neg_grouped_count,
+            'old_total_gr_wt': round(sum(si['old_gr_wt'] for si in session_items), 3),
+            'new_total_gr_wt': round(sum(si['new_gr_wt'] for si in session_items), 3),
+            'gr_delta_total': round(sum(si['gr_delta'] for si in session_items), 3),
+            'old_total_net_wt': round(sum(si['old_net_wt'] for si in session_items), 3),
+            'new_total_net_wt': round(sum(si['new_net_wt'] for si in session_items), 3),
+            'net_delta_total': round(sum(si['net_delta'] for si in session_items), 3),
+            'items': session_items,
+        }
+        await db.physical_stock_update_sessions.insert_one(session)
+
     await save_action(
         'physical_stock_partial_update',
-        f"Partial physical stock update for {verification_date}: {updated_count} items ({inserted_count} new, {updated_count - inserted_count} updated)",
-        {'updated_count': updated_count, 'inserted_count': inserted_count, 'verification_date': verification_date, 'by': current_user['username']}
+        f"Partial physical stock update for {verification_date}: {updated_count} items",
+        {'updated_count': updated_count, 'verification_date': verification_date, 'by': current_user['username']}
     )
 
     return {
         "success": True,
         "updated_count": updated_count,
-        "inserted_count": inserted_count,
         "skipped_count": len(items) - updated_count,
         "verification_date": verification_date,
         "results": results,
-        "message": f"Physical stock updated for {verification_date}: {updated_count} item{'s' if updated_count != 1 else ''} applied ({inserted_count} new)"
+        "message": f"Physical stock updated for {verification_date}: {updated_count} item{'s' if updated_count != 1 else ''} applied"
     }
 
 @api_router.get("/physical-stock/dates")
 async def get_physical_stock_dates(current_user: dict = Depends(get_current_user)):
     """Return distinct physical stock verification_date values sorted descending."""
     dates = await db.physical_stock.distinct("verification_date")
-    # Filter out None/empty and sort descending
     dates = sorted([d for d in dates if d], reverse=True)
     return {"dates": dates}
 
+@api_router.get("/physical-stock/update-history")
+async def get_physical_stock_update_history(
+    verification_date: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Return session summaries for physical stock updates, optionally filtered by date."""
+    query = {}
+    if verification_date:
+        query['verification_date'] = verification_date
+    sessions = await db.physical_stock_update_sessions.find(
+        query, {"_id": 0, "items": 0}
+    ).sort("applied_at", -1).to_list(100)
+    return {"sessions": sessions}
+
+@api_router.get("/physical-stock/update-history/{session_id}")
+async def get_physical_stock_update_session(
+    session_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Return full session details including sorted item rows."""
+    session = await db.physical_stock_update_sessions.find_one(
+        {"session_id": session_id}, {"_id": 0}
+    )
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session
+
 @api_router.get("/physical-stock/compare")
 async def compare_physical_with_book(verification_date: str, current_user: dict = Depends(get_current_user)):
-    """Compare physical stock with book stock and show differences.
-    verification_date is required — always operates on exactly one date."""
+    """Compare physical stock with book stock for a specific date.
+    Book stock = computed closing stock as of verification_date.
+    Physical stock = saved snapshot for that date."""
     
     if not verification_date:
         raise HTTPException(status_code=400, detail="verification_date is required")
     
-    # Get book stock — use stamp_items (ungrouped, per-stamp) for correct comparison
-    book_response = await get_current_inventory()
-    book_items = {item['item_name'].strip().lower(): item for item in book_response.get('stamp_items', book_response['inventory'])}
-    # Also include negative items
-    for item in book_response.get('negative_items', []):
-        key = item['item_name'].strip().lower()
-        if key not in book_items:
-            book_items[key] = item
+    # Get date-scoped book stock
+    book_base = await get_book_closing_stock_as_of_date(verification_date)
+    book_items = book_base  # already keyed by normalized name
     
-    # Get physical stock — always scoped to verification_date
-    phys_filter = {'verification_date': verification_date}
-    physical = await db.physical_stock.find(phys_filter, {"_id": 0}).to_list(None)
+    # Get physical stock snapshot for this date
+    physical = await db.physical_stock.find({'verification_date': verification_date}, {"_id": 0}).to_list(None)
     physical_items = {item['item_name'].strip().lower(): item for item in physical}
     
     # Compare
@@ -2686,14 +2682,11 @@ async def compare_physical_with_book(verification_date: str, current_user: dict 
     only_in_book = []
     only_in_physical = []
     
-    # Check items in both
-    for key in book_items.keys():
+    for key, book_item in book_items.items():
         if key in physical_items:
-            book_item = book_items[key]
             phys_item = physical_items[key]
-            
             book_net = book_item['net_wt']
-            phys_net = phys_item['net_wt']
+            phys_net = phys_item.get('net_wt', 0)
             diff = phys_net - book_net
             
             comparison = {
@@ -2703,38 +2696,34 @@ async def compare_physical_with_book(verification_date: str, current_user: dict 
                 'physical_net_wt': phys_net,
                 'difference': diff,
                 'difference_kg': round(diff/1000, 3),
-                'match_percentage': round((min(book_net, phys_net) / max(book_net, phys_net) * 100) if max(book_net, phys_net) > 0 else 100, 2)
+                'match_percentage': round((min(abs(book_net), abs(phys_net)) / max(abs(book_net), abs(phys_net)) * 100) if max(abs(book_net), abs(phys_net)) > 0 else 100, 2)
             }
             
             if abs(diff) < 10:
                 matches.append(comparison)
             else:
                 discrepancies.append(comparison)
-    
-    # Items only in book
-    for key in book_items.keys():
-        if key not in physical_items:
+        else:
             only_in_book.append({
-                'item_name': book_items[key]['item_name'],
-                'stamp': book_items[key].get('stamp', ''),
-                'book_net_wt': book_items[key]['net_wt'],
-                'book_net_wt_kg': round(book_items[key]['net_wt']/1000, 3)
+                'item_name': book_item['item_name'],
+                'stamp': book_item.get('stamp', ''),
+                'book_net_wt': book_item['net_wt'],
+                'book_net_wt_kg': round(book_item['net_wt']/1000, 3)
             })
     
-    # Items only in physical
-    for key in physical_items.keys():
+    for key in physical_items:
         if key not in book_items:
             only_in_physical.append({
                 'item_name': physical_items[key]['item_name'],
                 'stamp': physical_items[key].get('stamp', ''),
-                'physical_net_wt': physical_items[key]['net_wt'],
-                'physical_net_wt_kg': round(physical_items[key]['net_wt']/1000, 3)
+                'physical_net_wt': physical_items[key].get('net_wt', 0),
+                'physical_net_wt_kg': round(physical_items[key].get('net_wt', 0)/1000, 3)
             })
     
     discrepancies.sort(key=lambda x: abs(x['difference']), reverse=True)
     
     total_book_net = sum(item['net_wt'] for item in book_items.values())
-    total_physical_net = sum(item['net_wt'] for item in physical_items.values())
+    total_physical_net = sum(item.get('net_wt', 0) for item in physical_items.values())
     total_book_gross = sum(item.get('gr_wt', 0) for item in book_items.values())
     total_physical_gross = sum(item.get('gr_wt', 0) for item in physical_items.values())
     

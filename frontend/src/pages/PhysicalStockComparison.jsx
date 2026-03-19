@@ -28,6 +28,9 @@ export default function PhysicalStockComparison() {
   const [compareDate, setCompareDate] = useState('');
   const [availableDates, setAvailableDates] = useState([]);
   const [noDates, setNoDates] = useState(false);
+  const [updateSessions, setUpdateSessions] = useState([]);
+  const [expandedSession, setExpandedSession] = useState(null);
+  const [sessionDetail, setSessionDetail] = useState(null);
   const { isAdmin, isManager } = useAuth();
 
   useEffect(() => {
@@ -41,6 +44,7 @@ export default function PhysicalStockComparison() {
           const latestDate = dates[0]; // sorted descending
           setCompareDate(latestDate);
           fetchComparison(latestDate);
+          fetchUpdateSessions(latestDate);
         } else {
           setNoDates(true);
           setLoading(false);
@@ -72,7 +76,30 @@ export default function PhysicalStockComparison() {
     if (!date) return; // Don't allow clearing to empty
     setCompareDate(date);
     setLoading(true);
+    setExpandedSession(null);
+    setSessionDetail(null);
     fetchComparison(date);
+    fetchUpdateSessions(date);
+  };
+
+  const fetchUpdateSessions = async (date) => {
+    try {
+      const res = await axios.get(`${API}/physical-stock/update-history?verification_date=${date}`);
+      setUpdateSessions(res.data.sessions || []);
+    } catch { setUpdateSessions([]); }
+  };
+
+  const toggleSessionDetail = async (sessionId) => {
+    if (expandedSession === sessionId) {
+      setExpandedSession(null);
+      setSessionDetail(null);
+      return;
+    }
+    try {
+      const res = await axios.get(`${API}/physical-stock/update-history/${sessionId}`);
+      setSessionDetail(res.data);
+      setExpandedSession(sessionId);
+    } catch { toast.error('Failed to load session details'); }
   };
 
   const fetchStampWeights = async () => {
@@ -778,6 +805,84 @@ export default function PhysicalStockComparison() {
                 </TableBody>
               </Table>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Physical Stock Update Sessions */}
+      {updateSessions.length > 0 && (
+        <Card className="border-border/40" data-testid="update-sessions">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Scale className="h-5 w-5 text-primary" />
+              Physical Stock Update History
+            </CardTitle>
+            <CardDescription>Partial update sessions for {compareDate}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {updateSessions.map((s) => (
+              <div key={s.session_id} className="border rounded-lg overflow-hidden" data-testid={`session-${s.session_id}`}>
+                <div
+                  className="flex flex-wrap items-center gap-3 p-3 cursor-pointer hover:bg-muted/30 transition-colors"
+                  onClick={() => toggleSessionDetail(s.session_id)}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">
+                      {s.updated_count} item{s.updated_count !== 1 ? 's' : ''} updated
+                      <span className="text-muted-foreground font-normal ml-2">by {s.applied_by}</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">{new Date(s.applied_at).toLocaleString()}</p>
+                  </div>
+                  <div className="flex gap-4 text-xs font-mono">
+                    <span className={s.gr_delta_total >= 0 ? 'text-emerald-600' : 'text-red-600'}>
+                      Gross: {s.gr_delta_total >= 0 ? '+' : ''}{(s.gr_delta_total / 1000).toFixed(3)} kg
+                    </span>
+                    <span className={s.net_delta_total >= 0 ? 'text-emerald-600' : 'text-red-600'}>
+                      Net: {s.net_delta_total >= 0 ? '+' : ''}{(s.net_delta_total / 1000).toFixed(3)} kg
+                    </span>
+                  </div>
+                  <Badge variant="outline" className="text-xs shrink-0">
+                    {expandedSession === s.session_id ? 'Collapse' : 'Details'}
+                  </Badge>
+                </div>
+                {expandedSession === s.session_id && sessionDetail && (
+                  <div className="border-t bg-muted/10 p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="text-xs">
+                          <TableHead>Stamp</TableHead>
+                          <TableHead>Item Name</TableHead>
+                          <TableHead className="text-right">Old Gross (kg)</TableHead>
+                          <TableHead className="text-right">New Gross (kg)</TableHead>
+                          <TableHead className="text-right">Gross Delta</TableHead>
+                          <TableHead className="text-right">Old Net (kg)</TableHead>
+                          <TableHead className="text-right">New Net (kg)</TableHead>
+                          <TableHead className="text-right">Net Delta</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(sessionDetail.items || []).map((item, idx) => (
+                          <TableRow key={idx} className={item.is_negative_grouped ? 'bg-orange-50/50' : ''}>
+                            <TableCell className="text-xs"><Badge variant="outline" className="text-xs">{item.stamp || '—'}</Badge></TableCell>
+                            <TableCell className="text-sm font-medium">{item.item_name}</TableCell>
+                            <TableCell className="text-right font-mono text-xs">{(item.old_gr_wt / 1000).toFixed(3)}</TableCell>
+                            <TableCell className="text-right font-mono text-xs">{(item.new_gr_wt / 1000).toFixed(3)}</TableCell>
+                            <TableCell className={`text-right font-mono text-xs font-semibold ${item.gr_delta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                              {item.gr_delta >= 0 ? '+' : ''}{(item.gr_delta / 1000).toFixed(3)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-xs">{(item.old_net_wt / 1000).toFixed(3)}</TableCell>
+                            <TableCell className="text-right font-mono text-xs">{(item.new_net_wt / 1000).toFixed(3)}</TableCell>
+                            <TableCell className={`text-right font-mono text-xs font-semibold ${item.net_delta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                              {item.net_delta >= 0 ? '+' : ''}{(item.net_delta / 1000).toFixed(3)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            ))}
           </CardContent>
         </Card>
       )}

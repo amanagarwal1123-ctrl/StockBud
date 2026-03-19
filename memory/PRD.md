@@ -1,97 +1,61 @@
 # StockBud PRD
 
 ## Original Problem Statement
-StockBud is an intelligent inventory management system for jewelry businesses. It provides real-time stock tracking, profit analysis, seasonal ordering, physical vs book stock comparison, multi-role access control, and AI-powered insights.
+StockBud is an intelligent inventory management system for jewelry businesses with real-time stock tracking, profit analysis, seasonal ordering, physical vs book stock comparison, multi-role access, and AI insights.
 
-## Core Requirements
-1. Excel-based data upload (opening stock, purchase/sale ledgers)
-2. Real-time inventory calculation (Opening + Purchases - Sales)
-3. Physical vs Book stock comparison with date-scoped operations
-4. Profit analysis (silver + labour)
-5. Item mapping and grouping
-6. Seasonal buffer management with Indian festival awareness
-7. Order management with deficit alerts
-8. Multi-role access (Admin, Manager, Executive, Polythene Executive)
-9. AI-powered insights via Claude/Emergent LLM
-10. Data visualization and party analytics
+## What's Been Implemented (Current Session - Mar 19, 2026)
 
-## What's Been Implemented
+### Date-Scoped Book Closing Stock
+- New `get_book_closing_stock_as_of_date(date)` in stock_service.py
+- Computes: Opening Stock + Purchases(<=date) - Sales(<=date) +/- Branch Transfers +/- Polythene
+- Respects mappings, grouping, negative items
+- Tags items as `is_negative_grouped` for special handling
 
-### Previous Sessions
-- Full application built with all core features
-- Security hardening (Codex recommendations)
-- Bug fixes (role-based deletion, file upload UX, deployment, item grouping)
-- Physical stock partial update with date-scoping, stamp-aware matching & ambiguity detection
-- Serialized upload queue
+### Effective Base Resolution
+- New `get_effective_physical_base_for_date(date)` helper
+- If physical stock snapshot exists for date → use it
+- Else → compute book closing stock for that date
+- Enables chaining: 2nd upload sees 1st upload's changes
 
-### Current Session (Mar 18, 2026)
-**Dashboard Redesign:**
-- Removed "Software Capabilities" section, added transaction date range (DD/MM/YYYY)
-- Redesigned stat cards with color-coded borders and gradient backgrounds
-- `/api/stats` now returns `date_range` (from_date, to_date) and `total_items`
+### Rewritten Physical Stock Preview
+- Uses effective base (not today's inventory)
+- Grouped/negative items: always preserve net weight
+- Normal items, gross_only: preserve net
+- Normal items, gross+net: update both
+- No pre-existing snapshot required
 
-**PDF Manuals:**
-- Generated bilingual (EN + HI) static user manuals with annotated screenshots
-- Stored at `/manuals/StockBud_Manual_EN.pdf` and `/manuals/StockBud_Manual_HI.pdf`
+### Rewritten Physical Stock Apply
+- First apply for a date: materializes FULL snapshot from book closing stock (279+ items)
+- Then overlays approved changes
+- Non-uploaded items remain unchanged
+- Future uploads chain correctly against updated snapshot
+- Net-weight rules enforced (grouped/negative always preserve)
 
-**Bug Fix:** Fixed `useMemo` → `useEffect` in `PhysicalStockPreview.jsx`
+### Session History
+- New `physical_stock_update_sessions` collection
+- Stores: session_id, verification_date, applied_by, applied_at, totals, sorted item rows
+- Items tagged with is_negative_grouped, sorted by stamp then name
+- New endpoints: GET /physical-stock/update-history, GET /physical-stock/update-history/{id}
+- UI section in Physical vs Book page (expandable session cards)
 
-**Codex Patches (6 fixes):**
-1. **Physical stock direct-only**: `/api/upload/init` returns 400 for `physical_stock`. Frontend already excluded it from chunked path. Backend now explicitly blocks it.
-2. **Physical vs Book always date-scoped**: New `GET /api/physical-stock/dates` endpoint. Compare now requires `verification_date` (not optional). Frontend fetches dates on mount, auto-selects latest, uses Select dropdown.
-3. **Fix false success in apply flow**: `handleApproveSingle` and `handleApproveAll` now inspect per-row backend results. Only marks rows approved if backend says `applied`. Shows warning for partial, error for zero-updated.
-4. **Preserved existing behavior**: All date-scoped upload/preview/apply still work.
-5. **Non-physical uploads unaffected**: Purchase, sale, branch transfer, etc. still use chunked path.
-6. **Cleanup**: Apply response now includes `skipped_count`. Result banner is typed (success/warning/error).
-
-**Incremental Physical Stock Upload (Bug Fix):**
-- Removed requirement that a full physical stock snapshot must exist before partial uploads
-- When no physical stock exists for a date, preview now matches items against **book stock** (current inventory) to show meaningful old values
-- Apply endpoint can now INSERT new physical stock records (not just update existing ones) when item exists in book stock
-- Stamp info is auto-resolved from book stock for new inserts
-- Items not found in book stock OR physical stock are still properly skipped
+### Compare Uses Date-Scoped Book Stock
+- `GET /physical-stock/compare` now compares against `get_book_closing_stock_as_of_date(date)`, not today's inventory
 
 ## Architecture
 - Frontend: React + Tailwind + Shadcn/UI
-- Backend: FastAPI (Python) - monolithic `server.py`
+- Backend: FastAPI (Python) - monolithic server.py
 - Database: MongoDB
 - Auth: JWT (18-hour expiry)
-- AI: Claude via Emergent LLM integration
+
+## Key Files Changed
+- `backend/services/stock_service.py` — New functions: get_book_closing_stock_as_of_date, get_effective_physical_base_for_date
+- `backend/server.py` — Rewritten preview, apply, compare endpoints; new session history endpoints
+- `frontend/src/components/PhysicalStockPreview.jsx` — Passes is_negative_grouped to apply
+- `frontend/src/pages/PhysicalStockComparison.jsx` — Session history UI section
 
 ## Prioritized Backlog
-
-### P1 - High Priority
-- Refactor `server.py` into proper FastAPI structure (routers, services, models)
-
-### P2 - Medium Priority
-- Review skipped Codex issues (RBAC on GET endpoints, history/undo behavior, dedup with empty stamps)
-- Clean up older test files (pre-existing failures)
-
-### P3 - Low Priority
-- Additional data visualization features
-- Mobile responsiveness improvements
-
-## Key Files
-- `backend/server.py` - Monolithic backend
-- `frontend/src/pages/Dashboard.jsx` - Dashboard with date range + manual downloads
-- `frontend/src/components/PhysicalStockPreview.jsx` - Stock preview with accurate apply handling
-- `frontend/src/pages/PhysicalStockComparison.jsx` - Date-required comparison page
-- `frontend/src/context/UploadContext.jsx` - Serialized upload queue (physical_stock direct-only)
-- `frontend/public/manuals/` - Static PDF manuals
-- `backend/generate_manuals.py` - PDF generation script
-
-## Test Reports
-- `/app/test_reports/iteration_22.json` - Latest (all passed, 15 backend + all frontend)
-- `/app/backend/tests/test_codex_fixes.py` - 10 tests for Codex patches
-- `/app/backend/tests/test_codex_physical_stock_v22.py` - Additional testing agent tests
-- `/app/backend/tests/test_physical_stock.py` - Date-scoped physical stock tests
-- `/app/backend/tests/test_upload_flows.py` - Upload flow tests
-- `/app/backend/tests/test_dashboard_features.py` - Dashboard tests
-
-## Key API Endpoints (Physical Stock)
-- `POST /api/upload/init` - Returns 400 for physical_stock (direct-only)
-- `GET /api/physical-stock/dates` - Returns distinct dates sorted descending
-- `GET /api/physical-stock/compare?verification_date=X` - Required param, date-scoped
-- `POST /api/physical-stock/upload` - Direct full upload, date-scoped
-- `POST /api/physical-stock/upload-preview` - Preview with stamp-aware matching
-- `POST /api/physical-stock/apply-updates` - Returns updated_count, skipped_count, per-row results
+### P1
+- Refactor server.py into proper FastAPI structure (routers/services/models)
+### P2
+- Review remaining Codex issues (RBAC on GETs)
+- Fix pre-existing test file bugs (dashboard_features.py BASE_URL)
