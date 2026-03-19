@@ -173,28 +173,36 @@ async def get_book_closing_stock_as_of_date(verification_date: str):
 async def get_effective_physical_base_for_date(verification_date: str):
     """Return the effective base stock for a physical stock update.
 
-    If a physical stock snapshot already exists for the date, use it.
-    Otherwise, compute book closing stock as of that date.
+    If an active (non-reversed) session exists for the date, use the physical_stock snapshot.
+    Otherwise, compute book closing stock as of that date (even if stale physical_stock records exist).
 
     Returns: dict keyed by normalized item name
       { "item_key": { item_name, stamp, gr_wt, net_wt, is_negative_grouped } }
     """
-    existing = await db.physical_stock.find(
-        {'verification_date': verification_date}, {"_id": 0}
-    ).to_list(None)
+    # Check if there's any active (non-reversed, applied) session for this date
+    active_session = await db.physical_stock_update_sessions.find_one({
+        'verification_date': verification_date,
+        'session_state': {'$in': ['finalized', 'draft']},
+        'is_reversed': {'$ne': True},
+        'applied_count': {'$gt': 0},
+    })
 
-    if existing:
-        result = {}
-        for doc in existing:
-            key = doc['item_name'].strip().lower()
-            result[key] = {
-                'item_name': doc['item_name'],
-                'stamp': doc.get('stamp', ''),
-                'gr_wt': doc.get('gr_wt', 0),
-                'net_wt': doc.get('net_wt', 0),
-                'is_negative_grouped': doc.get('is_negative_grouped', False),
-            }
-        return result
+    if active_session:
+        existing = await db.physical_stock.find(
+            {'verification_date': verification_date}, {"_id": 0}
+        ).to_list(None)
+        if existing:
+            result = {}
+            for doc in existing:
+                key = doc['item_name'].strip().lower()
+                result[key] = {
+                    'item_name': doc['item_name'],
+                    'stamp': doc.get('stamp', ''),
+                    'gr_wt': doc.get('gr_wt', 0),
+                    'net_wt': doc.get('net_wt', 0),
+                    'is_negative_grouped': doc.get('is_negative_grouped', False),
+                }
+            return result
 
     return await get_book_closing_stock_as_of_date(verification_date)
 

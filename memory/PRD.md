@@ -42,6 +42,11 @@ Fields: item_key, item_name, baseline_date, gr_wt, net_wt, stamp, updated_at, se
 - Removes inventory_baselines for reversed items
 - Marks session as reversed
 
+### 5. Effective Base for Preview (CRITICAL FIX Mar 19, 2026)
+- `get_effective_physical_base_for_date()` checks for ACTIVE sessions before using physical_stock records
+- If ALL sessions for a date are reversed, falls back to book stock calculation
+- Prevents stale physical_stock records from being used as "Old" values
+
 ## Key Endpoints
 - `POST /api/physical-stock/upload-preview` — returns preview_session_id
 - `POST /api/physical-stock/apply-updates` — requires preview_session_id, creates inventory_baselines
@@ -54,20 +59,10 @@ Fields: item_key, item_name, baseline_date, gr_wt, net_wt, stamp, updated_at, se
 
 ## Files Changed
 - `backend/server.py` — apply-updates creates baselines, reverse removes them, stamp-verification/history gets all stamps
-- `backend/services/stock_service.py` — get_current_inventory AND get_book_closing_stock_as_of_date use baselines
+- `backend/services/stock_service.py` — get_current_inventory, get_book_closing_stock_as_of_date use baselines; get_effective_physical_base_for_date checks for active sessions
 - `frontend/src/pages/Dashboard.jsx` — Stock Reconciliation History with clickable expand, item-wise detail, reverse button. All stamps shown.
 - `frontend/src/components/PhysicalStockPreview.jsx` — session lifecycle, info banner
 - `frontend/src/pages/PhysicalStockComparison.jsx` — Session section removed, calendar date picker, DD-MM-YYYY format, defaults to today
-
-## UI Changes (Mar 19, 2026)
-- Physical vs Book page: Removed session history section (centralized on Dashboard)
-- Physical vs Book page: Replaced discrete date dropdown with continuous calendar date picker
-- Physical vs Book page: All dates now display as DD-MM-YYYY format
-- Physical vs Book page: Default date is now today (not future dates)
-- Dashboard: Reconciliation History rows are clickable → expand to show item-wise changes
-- Dashboard: Reverse button available on active sessions
-- Dashboard: Stamp Verification Status now shows ALL stamps (from all collections), not just master_items
-- Dashboard: Stamp status properly shows: Matched, Mismatch, Not Verified, Overdue
 
 ## Tests
 - 13/13 backend tests pass (test_rejected_row_weights.py + test_codex_fixes.py)
