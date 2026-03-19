@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Scale, CheckCircle2, AlertTriangle, XCircle, Download, Weight } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, XCircle, Download, Weight, CalendarIcon } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -10,9 +10,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { exportToCSV } from '@/utils/exportCSV';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
+
+const formatDateDisplay = (dateStr) => {
+  if (!dateStr) return '';
+  const [y, m, d] = dateStr.split('-');
+  return `${d}-${m}-${y}`;
+};
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -28,9 +36,7 @@ export default function PhysicalStockComparison() {
   const [compareDate, setCompareDate] = useState('');
   const [availableDates, setAvailableDates] = useState([]);
   const [noDates, setNoDates] = useState(false);
-  const [updateSessions, setUpdateSessions] = useState([]);
-  const [expandedSession, setExpandedSession] = useState(null);
-  const [sessionDetail, setSessionDetail] = useState(null);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
   const { isAdmin, isManager } = useAuth();
 
   useEffect(() => {
@@ -44,7 +50,6 @@ export default function PhysicalStockComparison() {
           const latestDate = dates[0]; // sorted descending
           setCompareDate(latestDate);
           fetchComparison(latestDate);
-          fetchUpdateSessions(latestDate);
         } else {
           setNoDates(true);
           setLoading(false);
@@ -73,47 +78,11 @@ export default function PhysicalStockComparison() {
   };
 
   const handleDateChange = (date) => {
-    if (!date) return; // Don't allow clearing to empty
+    if (!date) return;
     setCompareDate(date);
     setLoading(true);
-    setExpandedSession(null);
-    setSessionDetail(null);
+    setDatePickerOpen(false);
     fetchComparison(date);
-    fetchUpdateSessions(date);
-  };
-
-  const fetchUpdateSessions = async (date) => {
-    try {
-      const res = await axios.get(`${API}/physical-stock/update-history?verification_date=${date}`);
-      setUpdateSessions(res.data.sessions || []);
-    } catch { setUpdateSessions([]); }
-  };
-
-  const toggleSessionDetail = async (sessionId) => {
-    if (expandedSession === sessionId) {
-      setExpandedSession(null);
-      setSessionDetail(null);
-      return;
-    }
-    try {
-      const res = await axios.get(`${API}/physical-stock/update-history/${sessionId}`);
-      setSessionDetail(res.data);
-      setExpandedSession(sessionId);
-    } catch { toast.error('Failed to load session details'); }
-  };
-
-  const handleReverseSession = async (sessionId) => {
-    if (!window.confirm('Reverse this physical stock update? This will restore all items to their previous weights.')) return;
-    try {
-      await axios.post(`${API}/physical-stock/update-history/${sessionId}/reverse`);
-      toast.success('Session reversed successfully');
-      fetchComparison(compareDate);
-      fetchUpdateSessions(compareDate);
-      setExpandedSession(null);
-      setSessionDetail(null);
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Reverse failed');
-    }
   };
 
   const fetchStampWeights = async () => {
@@ -276,19 +245,36 @@ export default function PhysicalStockComparison() {
         </p>
         <div className="flex items-center gap-3 mt-3">
           <label className="text-sm font-medium text-muted-foreground">Verification Date:</label>
-          {availableDates.length > 0 ? (
-            <Select value={compareDate} onValueChange={handleDateChange}>
-              <SelectTrigger className="w-48 text-sm h-9" data-testid="compare-date-filter">
-                <SelectValue placeholder="Select date..." />
-              </SelectTrigger>
-              <SelectContent>
-                {availableDates.map(d => (
-                  <SelectItem key={d} value={d}>{d}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
+          {noDates && availableDates.length === 0 ? (
             <span className="text-sm text-muted-foreground">No physical stock dates available</span>
+          ) : (
+            <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="w-48 justify-start text-left font-normal text-sm h-9"
+                  data-testid="compare-date-filter"
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {compareDate ? formatDateDisplay(compareDate) : "Pick a date"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={compareDate ? new Date(compareDate + 'T00:00:00') : undefined}
+                  onSelect={(date) => {
+                    if (date) {
+                      const yyyy = date.getFullYear();
+                      const mm = String(date.getMonth() + 1).padStart(2, '0');
+                      const dd = String(date.getDate()).padStart(2, '0');
+                      handleDateChange(`${yyyy}-${mm}-${dd}`);
+                    }
+                  }}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
           )}
         </div>
       </div>
@@ -795,7 +781,7 @@ export default function PhysicalStockComparison() {
                   {verificationHistory.map((v, idx) => (
                     <TableRow key={idx} data-testid={`verif-row-${idx}`}>
                       <TableCell className="font-medium">{v.stamp}</TableCell>
-                      <TableCell className="text-sm">{v.verification_date}</TableCell>
+                      <TableCell className="text-sm">{formatDateDisplay(v.verification_date)}</TableCell>
                       <TableCell className="text-right font-mono text-sm">{(v.book_gross_wt / 1000).toFixed(3)} kg</TableCell>
                       <TableCell className="text-right font-mono text-sm">{(v.physical_gross_wt / 1000).toFixed(3)} kg</TableCell>
                       <TableCell className={`text-right font-mono text-sm font-semibold ${v.is_match ? 'text-green-600' : 'text-red-600'}`}>
@@ -823,113 +809,6 @@ export default function PhysicalStockComparison() {
         </Card>
       )}
 
-      {/* Physical Stock Update Sessions */}
-      {updateSessions.length > 0 && (
-        <Card className="border-border/40" data-testid="update-sessions">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Scale className="h-5 w-5 text-primary" />
-              Physical Stock Update History
-            </CardTitle>
-            <CardDescription>Partial update sessions for {compareDate}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {updateSessions.map((s) => (
-              <div key={s.session_id} className={`border rounded-lg overflow-hidden ${s.is_reversed ? 'opacity-60' : ''}`} data-testid={`session-${s.session_id}`}>
-                <div
-                  className="flex flex-wrap items-center gap-3 p-3 cursor-pointer hover:bg-muted/30 transition-colors"
-                  onClick={() => toggleSessionDetail(s.session_id)}
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium flex items-center gap-2">
-                      {s.applied_count || 0} applied
-                      {(s.rejected_count || 0) > 0 && <span className="text-muted-foreground text-xs">({s.rejected_count} rejected)</span>}
-                      {(s.skipped_count || 0) > 0 && <span className="text-muted-foreground text-xs">({s.skipped_count} skipped)</span>}
-                      {(s.unmatched_count || 0) > 0 && <span className="text-muted-foreground text-xs">({s.unmatched_count} unmatched)</span>}
-                      <span className="text-muted-foreground font-normal text-xs">by {s.applied_by}</span>
-                      {s.is_reversed && <Badge variant="destructive" className="text-xs">Reversed</Badge>}
-                      {s.session_state === 'draft' && <Badge variant="outline" className="text-xs">Draft</Badge>}
-                    </p>
-                    <p className="text-xs text-muted-foreground">{new Date(s.applied_at || s.created_at).toLocaleString()}</p>
-                  </div>
-                  <div className="flex gap-4 text-xs font-mono">
-                    <span className={(s.gr_delta_total || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}>
-                      Gross: {(s.gr_delta_total || 0) >= 0 ? '+' : ''}{((s.gr_delta_total || 0) / 1000).toFixed(3)} kg
-                    </span>
-                    <span className={(s.net_delta_total || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}>
-                      Net: {(s.net_delta_total || 0) >= 0 ? '+' : ''}{((s.net_delta_total || 0) / 1000).toFixed(3)} kg
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {s.reversible && !s.is_reversed && (
-                      <Button
-                        variant="outline" size="sm" className="text-xs text-destructive border-destructive/30 h-7"
-                        onClick={(e) => { e.stopPropagation(); handleReverseSession(s.session_id); }}
-                        data-testid={`reverse-btn-${s.session_id}`}
-                      >
-                        Reverse
-                      </Button>
-                    )}
-                    <Badge variant="outline" className="text-xs shrink-0">
-                      {expandedSession === s.session_id ? 'Collapse' : 'Details'}
-                    </Badge>
-                  </div>
-                </div>
-                {expandedSession === s.session_id && sessionDetail && (
-                  <div className="border-t bg-muted/10 p-0">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="text-xs">
-                          <TableHead>Status</TableHead>
-                          <TableHead>Stamp</TableHead>
-                          <TableHead>Item Name</TableHead>
-                          <TableHead className="text-right">Old Gross (kg)</TableHead>
-                          <TableHead className="text-right">Final Gross (kg)</TableHead>
-                          <TableHead className="text-right">Gross Delta</TableHead>
-                          <TableHead className="text-right">Old Net (kg)</TableHead>
-                          <TableHead className="text-right">Final Net (kg)</TableHead>
-                          <TableHead className="text-right">Net Delta</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {(sessionDetail.items || []).map((item, idx) => (
-                          <TableRow key={idx} className={
-                            item.status === 'applied' ? '' :
-                            item.status === 'rejected' ? 'bg-amber-50/50' :
-                            item.status === 'unmatched' ? 'bg-red-50/50' :
-                            item.status === 'skipped' ? 'bg-gray-50/50' : ''
-                          }>
-                            <TableCell>
-                              <Badge className={`text-xs ${
-                                item.status === 'applied' ? 'bg-emerald-600' :
-                                item.status === 'rejected' ? 'bg-amber-500' :
-                                item.status === 'unmatched' ? 'bg-red-500' :
-                                item.status === 'skipped' ? 'bg-gray-500' : 'bg-blue-500'
-                              }`}>{item.status}</Badge>
-                            </TableCell>
-                            <TableCell className="text-xs"><Badge variant="outline" className="text-xs">{item.stamp || '—'}</Badge></TableCell>
-                            <TableCell className="text-sm font-medium">{item.item_name}</TableCell>
-                            <TableCell className="text-right font-mono text-xs">{((item.old_gr_wt || 0) / 1000).toFixed(3)}</TableCell>
-                            <TableCell className="text-right font-mono text-xs">{((item.final_gr_wt || item.proposed_gr_wt || 0) / 1000).toFixed(3)}</TableCell>
-                            <TableCell className={`text-right font-mono text-xs font-semibold ${(item.gr_delta || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                              {(item.gr_delta || 0) >= 0 ? '+' : ''}{((item.gr_delta || 0) / 1000).toFixed(3)}
-                            </TableCell>
-                            <TableCell className="text-right font-mono text-xs">{((item.old_net_wt || 0) / 1000).toFixed(3)}</TableCell>
-                            <TableCell className="text-right font-mono text-xs">{((item.final_net_wt || item.proposed_net_wt || 0) / 1000).toFixed(3)}</TableCell>
-                            <TableCell className={`text-right font-mono text-xs font-semibold ${(item.net_delta || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                              {(item.net_delta || 0) >= 0 ? '+' : ''}{((item.net_delta || 0) / 1000).toFixed(3)}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

@@ -55,7 +55,12 @@ Fields: item_key, item_name, baseline_date, gr_wt, net_wt, stamp, updated_at, se
 - `backend/services/stock_service.py` — get_current_inventory AND get_book_closing_stock_as_of_date use baselines
 - `frontend/src/pages/Dashboard.jsx` — Stock Reconciliation History table with filter
 - `frontend/src/components/PhysicalStockPreview.jsx` — session lifecycle, info banner
-- `frontend/src/pages/PhysicalStockComparison.jsx` — session history UI, reverse button
+- `frontend/src/pages/PhysicalStockComparison.jsx` — Session section removed, calendar date picker, DD-MM-YYYY format
+
+## UI Changes (Mar 19, 2026)
+- Physical vs Book page: Removed session history section (moved to Dashboard)
+- Physical vs Book page: Replaced discrete date dropdown with continuous calendar date picker
+- Physical vs Book page: All dates now display as DD-MM-YYYY format
 
 ## Tests
 - 13/13 backend tests pass (test_rejected_row_weights.py + test_codex_fixes.py)
