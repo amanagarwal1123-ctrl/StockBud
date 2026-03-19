@@ -47,9 +47,11 @@ export default function PhysicalStockComparison() {
         const dates = datesRes.data?.dates || [];
         setAvailableDates(dates);
         if (dates.length > 0) {
-          const latestDate = dates[0]; // sorted descending
-          setCompareDate(latestDate);
-          fetchComparison(latestDate);
+          // Default to today if available in dates, otherwise latest date <= today, otherwise first date
+          const today = new Date().toISOString().split('T')[0];
+          const bestDate = dates.find(d => d <= today) || dates[dates.length - 1];
+          setCompareDate(bestDate);
+          fetchComparison(bestDate);
         } else {
           setNoDates(true);
           setLoading(false);

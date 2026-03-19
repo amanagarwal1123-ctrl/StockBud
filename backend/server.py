@@ -2012,14 +2012,21 @@ async def approve_stamp(
 async def get_stamp_verification_history(current_user: dict = Depends(get_current_user)):
     """Get verification history for all stamps"""
     
-    # Get all stamps from master
-    all_stamps = await db.master_items.distinct('stamp')
+    # Get stamps from ALL relevant sources, not just master_items
+    stamps_set = set()
+    for coll_name in ['master_items', 'opening_stock', 'physical_stock', 'transactions']:
+        coll = db[coll_name]
+        stamps = await coll.distinct('stamp')
+        stamps_set.update(s for s in stamps if s and s != 'Unassigned')
+    # Also include stamp_assignments stamps
+    sa_stamps = await db.stamp_assignments.distinct('stamp')
+    stamps_set.update(s for s in sa_stamps if s and s != 'Unassigned')
+    
+    all_stamps = sorted(stamps_set, key=stamp_sort_key)
     
     # Get latest verification for each
     history = []
-    for stamp in sorted(all_stamps, key=stamp_sort_key):
-        if not stamp or stamp == 'Unassigned':
-            continue
+    for stamp in all_stamps:
         
         # Check stamp_verifications first (physical verification)
         latest = await db.stamp_verifications.find_one(

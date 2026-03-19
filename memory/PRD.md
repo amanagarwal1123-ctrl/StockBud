@@ -50,21 +50,24 @@ Fields: item_key, item_name, baseline_date, gr_wt, net_wt, stamp, updated_at, se
 - `GET /api/physical-stock/update-history` — filtered, reversible flag
 - `GET /api/physical-stock/update-history/{session_id}` — session detail with items
 - `GET /api/inventory/current` — uses baselines for physical-stock-overridden items
+- `GET /api/stamp-verification/history` — all stamps from all collections with verification status
 
 ## Files Changed
-- `backend/server.py` — apply-updates creates baselines, reverse removes them
+- `backend/server.py` — apply-updates creates baselines, reverse removes them, stamp-verification/history gets all stamps
 - `backend/services/stock_service.py` — get_current_inventory AND get_book_closing_stock_as_of_date use baselines
-- `frontend/src/pages/Dashboard.jsx` — Stock Reconciliation History with clickable expand, item-wise detail, reverse button
+- `frontend/src/pages/Dashboard.jsx` — Stock Reconciliation History with clickable expand, item-wise detail, reverse button. All stamps shown.
 - `frontend/src/components/PhysicalStockPreview.jsx` — session lifecycle, info banner
-- `frontend/src/pages/PhysicalStockComparison.jsx` — Session section removed, calendar date picker, DD-MM-YYYY format
+- `frontend/src/pages/PhysicalStockComparison.jsx` — Session section removed, calendar date picker, DD-MM-YYYY format, defaults to today
 
 ## UI Changes (Mar 19, 2026)
 - Physical vs Book page: Removed session history section (centralized on Dashboard)
 - Physical vs Book page: Replaced discrete date dropdown with continuous calendar date picker
 - Physical vs Book page: All dates now display as DD-MM-YYYY format
-- Dashboard: Reconciliation History rows are now clickable → expand to show item-wise changes
+- Physical vs Book page: Default date is now today (not future dates)
+- Dashboard: Reconciliation History rows are clickable → expand to show item-wise changes
 - Dashboard: Reverse button available on active sessions
-- Dashboard: Chevron indicators for expand/collapse state
+- Dashboard: Stamp Verification Status now shows ALL stamps (from all collections), not just master_items
+- Dashboard: Stamp status properly shows: Matched, Mismatch, Not Verified, Overdue
 
 ## Tests
 - 13/13 backend tests pass (test_rejected_row_weights.py + test_codex_fixes.py)

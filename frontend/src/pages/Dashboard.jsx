@@ -485,7 +485,12 @@ export default function Dashboard() {
                         {stamp.difference ? `${stamp.difference >= 0 ? '+' : ''}${stamp.difference.toFixed(3)} kg` : '-'}
                       </TableCell>
                       <TableCell>
-                        {isOverdue ? (
+                        {stamp.last_verified_date === null ? (
+                          <Badge variant="outline" className="text-xs gap-1 text-muted-foreground">
+                            <Clock className="h-3 w-3" />
+                            Not Verified
+                          </Badge>
+                        ) : isOverdue ? (
                           <Badge className="bg-red-600 text-xs gap-1">
                             <AlertTriangle className="h-3 w-3" />
                             Overdue
@@ -494,6 +499,11 @@ export default function Dashboard() {
                           <Badge className="bg-green-600 text-xs gap-1">
                             <CheckCircle2 className="h-3 w-3" />
                             Matched
+                          </Badge>
+                        ) : stamp.is_match === false ? (
+                          <Badge className="bg-orange-500 text-xs gap-1">
+                            <AlertTriangle className="h-3 w-3" />
+                            Mismatch
                           </Badge>
                         ) : (
                           <Badge variant="outline" className="text-xs">Unknown</Badge>
