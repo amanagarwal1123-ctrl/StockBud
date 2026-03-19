@@ -3,61 +3,65 @@
 ## Original Problem Statement
 StockBud is an intelligent inventory management system for jewelry businesses.
 
-## Current Session (Mar 19, 2026) — Session Lifecycle, Reverse, UI Clarity
+## Core Inventory Logic
+- **Book Stock**: Opening Stock + Purchases - Sales +/- Branch Transfers +/- Polythene
+- **Physical Stock Baseline**: When physical stock is approved, it becomes the new starting point for that item. Current Stock = Baseline + Post-Baseline Transactions.
+- **Reverse**: Undoing a physical stock session removes the baseline and reverts to book calculation.
+
+## Physical Stock Baseline Feature (Mar 19, 2026)
+When a user uploads physical stock and approves items:
+1. Approved values are stored in `inventory_baselines` collection
+2. `get_current_inventory()` uses baseline as starting point (replaces opening stock)
+3. Only transactions AFTER baseline_date are counted for baseline items
+4. Non-baseline items retain normal book calculation
+5. Polythene adjustments also respect baseline dates
+6. Reverse removes baselines → current stock reverts to book values
+
+### Collection: `inventory_baselines`
+Fields: item_key, item_name, baseline_date, gr_wt, net_wt, stamp, updated_at, session_id
+
+## Session Lifecycle (Mar 19, 2026)
 
 ### 1. One Upload = One Session
 - Preview creates a draft session with `preview_session_id`
 - Apply updates the SAME session (no new session per click)
-- Approve-single then approve-all stays in one session
 - Session tracks full row list: applied, rejected, unmatched, skipped, pending
 
-### 2. Session Finalization
-- Modal close triggers finalize: remaining pending rows → rejected
-- Zero-applied sessions → abandoned (hidden from history)
-- `POST /api/physical-stock/finalize-session`
+### 2. Draft Initialization
+- Pending rows start with final_gr_wt = old_gr_wt, gr_delta = 0 (not proposed values)
 
-### 3. Reverse/Undo
+### 3. Session Finalization
+- Modal close triggers finalize: remaining pending rows → rejected
+- Rejected rows reset: final_* = old_*, deltas = 0
+- Zero-applied sessions → abandoned (hidden from history)
+
+### 4. Reverse/Undo
 - `POST /api/physical-stock/update-history/{session_id}/reverse`
 - Only latest unreversed session per date can be reversed
-- Restores old weights for applied rows
+- Restores old weights for applied rows in physical_stock
+- Removes inventory_baselines for reversed items
 - Marks session as reversed
-
-### 4. UI Clarity
-- Blue "Preview only" info banner before any approval
-- Session history shows: status counts, gross/net deltas, reverse button
-- Detail view shows per-row status (applied/rejected/unmatched/skipped)
-
-### 5. Session History Model
-Collection: `physical_stock_update_sessions`
-Fields: session_id, verification_date, session_state (draft/finalized/reversed/abandoned),
-created_at, applied_at, applied_by, reversed_at, reversed_by, is_reversed,
-uploaded_count, applied_count, rejected_count, unmatched_count, skipped_count,
-totals (old/new/delta for gr/net), items (full row list sorted by stamp+name)
 
 ## Key Endpoints
 - `POST /api/physical-stock/upload-preview` — returns preview_session_id
-- `POST /api/physical-stock/apply-updates` — requires preview_session_id
+- `POST /api/physical-stock/apply-updates` — requires preview_session_id, creates inventory_baselines
 - `POST /api/physical-stock/finalize-session` — finalize draft
-- `POST /api/physical-stock/update-history/{id}/reverse` — reverse latest
+- `POST /api/physical-stock/update-history/{id}/reverse` — reverse latest, removes baselines
 - `GET /api/physical-stock/update-history` — filtered, reversible flag
-- `GET /api/physical-stock/update-history/{id}` — full details
+- `GET /api/inventory/current` — uses baselines for physical-stock-overridden items
 
 ## Files Changed
-- `backend/server.py` — preview, apply, finalize, reverse, history endpoints
-- `backend/services/stock_service.py` — date-scoped helpers (unchanged this session)
+- `backend/server.py` — apply-updates creates baselines, reverse removes them
+- `backend/services/stock_service.py` — get_current_inventory uses baselines
 - `frontend/src/components/PhysicalStockPreview.jsx` — session lifecycle, info banner
 - `frontend/src/pages/PhysicalStockComparison.jsx` — session history UI, reverse button
 
 ## Tests
-- 36/36 existing backend tests pass
-- Live smoke: preview→approve→finalize→history→reverse all working
-- 3/3 rejected-row-weight tests pass (test_rejected_row_weights.py)
-
-## Bug Fix: Rejected Rows Stored Wrong Final Weights (Feb 2026)
-- **Root cause**: Draft init set `final_gr_wt = proposed_gr_wt` for pending rows; finalization only flipped status to `rejected` without resetting weights
-- **Fix 1** (line ~2459): Draft init now sets `final_gr_wt = old_gr_wt`, `gr_delta = 0` for pending rows
-- **Fix 2** (line ~2650): Finalization resets rejected rows: `final_*` → `old_*`, deltas → 0
+- 13/13 backend tests pass (test_rejected_row_weights.py + test_codex_fixes.py)
+- 10/10 baseline-specific tests pass (test_physical_stock_baseline.py)
+- Full e2e flow verified: preview→approve→current stock updated→reverse→current stock reverted
 
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P2: Fix pre-existing dashboard test file
+- P2: Mobile responsiveness
