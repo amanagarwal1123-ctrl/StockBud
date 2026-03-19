@@ -2721,8 +2721,15 @@ async def reverse_physical_stock_session(
             {'item_name': {'$regex': f'^{re.escape(key)}$', '$options': 'i'}, 'verification_date': v_date},
             {'$set': {'gr_wt': item['old_gr_wt'], 'net_wt': item['old_net_wt']}}
         )
-        # Remove inventory baseline so current stock reverts to book calculation
-        await db.inventory_baselines.delete_one({'item_key': key})
+        # Remove inventory baseline only if it belongs to THIS session
+        existing_bl = await db.inventory_baselines.find_one({'item_key': key}, {'_id': 0})
+        if existing_bl and existing_bl.get('session_id') == session_id:
+            await db.inventory_baselines.delete_one({'item_key': key})
+        elif existing_bl and existing_bl.get('session_id') != session_id:
+            pass  # Baseline belongs to a different session — keep it
+        else:
+            # No session_id recorded or no baseline — safe to delete
+            await db.inventory_baselines.delete_one({'item_key': key})
         restored += 1
 
     await db.physical_stock_update_sessions.update_one(
