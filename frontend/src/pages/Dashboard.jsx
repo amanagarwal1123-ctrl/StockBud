@@ -32,6 +32,14 @@ export default function Dashboard() {
     fetchStats();
     fetchStampHistory();
     fetchReconSessions();
+
+    const onFocus = () => {
+      fetchStats();
+      fetchStampHistory();
+      fetchReconSessions();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
   }, []);
 
   const fetchStats = async () => {
