@@ -12,7 +12,7 @@ import pytest
 import httpx
 import os
 
-BASE = os.environ.get("TEST_API_URL", "https://stock-session-undo.preview.emergentagent.com")
+BASE = os.environ.get("TEST_API_URL", "https://inventory-checkpoint-1.preview.emergentagent.com")
 API = f"{BASE}/api"
 
 @pytest.fixture(scope="module")
