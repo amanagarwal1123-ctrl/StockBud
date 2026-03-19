@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Package, TrendingUp, AlertTriangle, CheckCircle2, Clock, FileText, Download, Calendar, Users, BarChart3, ArrowUpRight } from 'lucide-react';
+import { Package, TrendingUp, AlertTriangle, CheckCircle2, Clock, FileText, Download, Calendar, Users, BarChart3, ArrowUpRight, RotateCcw, Filter, Scale } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -21,10 +22,13 @@ export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [stampHistory, setStampHistory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [reconSessions, setReconSessions] = useState([]);
+  const [reconFilter, setReconFilter] = useState('all');
 
   useEffect(() => {
     fetchStats();
     fetchStampHistory();
+    fetchReconSessions();
   }, []);
 
   const fetchStats = async () => {
@@ -46,6 +50,21 @@ export default function Dashboard() {
       console.error('Error fetching stamp history:', error);
     }
   };
+
+  const fetchReconSessions = async () => {
+    try {
+      const res = await axios.get(`${API}/physical-stock/update-history`);
+      setReconSessions(res.data.sessions || []);
+    } catch (error) {
+      console.error('Error fetching reconciliation sessions:', error);
+    }
+  };
+
+  const filteredReconSessions = reconSessions.filter(s => {
+    if (reconFilter === 'active') return !s.is_reversed && s.session_state !== 'reversed';
+    if (reconFilter === 'reversed') return s.is_reversed || s.session_state === 'reversed';
+    return true;
+  });
 
   const getDaysSinceVerification = (lastDate) => {
     if (!lastDate) return 999;
@@ -214,6 +233,96 @@ export default function Dashboard() {
           </Card>
         ))}
       </div>
+
+      {/* Reconciliation Sessions */}
+      <Card className="border-border/30 shadow-sm overflow-hidden" data-testid="recon-sessions-card">
+        <CardHeader className="bg-gradient-to-r from-card to-muted/20 border-b border-border/30">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-md bg-indigo-500/10">
+                <Scale className="h-4 w-4 text-indigo-600" />
+              </div>
+              <div>
+                <CardTitle className="text-base">Stock Reconciliation History</CardTitle>
+                <CardDescription className="text-xs">All physical stock update sessions across dates</CardDescription>
+              </div>
+            </div>
+            <Select value={reconFilter} onValueChange={setReconFilter}>
+              <SelectTrigger className="w-[140px] h-8 text-xs" data-testid="recon-filter">
+                <Filter className="h-3 w-3 mr-1" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Sessions</SelectItem>
+                <SelectItem value="active">Active Only</SelectItem>
+                <SelectItem value="reversed">Reversed Only</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto max-h-[28rem]">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/30">
+                  <TableHead className="font-semibold text-xs">Date</TableHead>
+                  <TableHead className="font-semibold text-xs">Status</TableHead>
+                  <TableHead className="font-semibold text-xs">Items</TableHead>
+                  <TableHead className="text-right font-semibold text-xs">Gross Change</TableHead>
+                  <TableHead className="text-right font-semibold text-xs">Net Change</TableHead>
+                  <TableHead className="font-semibold text-xs">By</TableHead>
+                  <TableHead className="font-semibold text-xs">When</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredReconSessions.map((s) => {
+                  const grDelta = s.gr_delta_total || 0;
+                  const netDelta = s.net_delta_total || 0;
+                  const isReversed = s.is_reversed || s.session_state === 'reversed';
+                  const appliedCount = s.applied_count || 0;
+                  const rejectedCount = s.rejected_count || 0;
+                  const createdAt = s.applied_at || s.created_at || '';
+                  const dateStr = createdAt ? new Date(createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+
+                  return (
+                    <TableRow key={s.session_id} className={isReversed ? 'opacity-60' : 'hover:bg-muted/20'} data-testid={`recon-row-${s.session_id.slice(0,8)}`}>
+                      <TableCell className="font-mono text-sm font-semibold">{formatDateDDMMYYYY(s.verification_date)}</TableCell>
+                      <TableCell>
+                        {isReversed ? (
+                          <Badge className="bg-red-500/80 text-xs gap-1"><RotateCcw className="h-3 w-3" />Reversed</Badge>
+                        ) : s.reversible ? (
+                          <Badge className="bg-emerald-600 text-xs gap-1"><CheckCircle2 className="h-3 w-3" />Active</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-xs">Finalized</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        <span className="text-emerald-600 font-semibold">{appliedCount}</span>
+                        {rejectedCount > 0 && <span className="text-muted-foreground ml-1">({rejectedCount} rej)</span>}
+                      </TableCell>
+                      <TableCell className={`text-right font-mono text-xs font-semibold ${grDelta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {grDelta >= 0 ? '+' : ''}{(grDelta / 1000).toFixed(3)} kg
+                      </TableCell>
+                      <TableCell className={`text-right font-mono text-xs font-semibold ${netDelta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {netDelta >= 0 ? '+' : ''}{(netDelta / 1000).toFixed(3)} kg
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{s.applied_by || '—'}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{dateStr}</TableCell>
+                    </TableRow>
+                  );
+                })}
+                {filteredReconSessions.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground text-sm">
+                      {reconFilter !== 'all' ? 'No sessions match the current filter' : 'No reconciliation sessions yet'}
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Stamp Verification Status */}
       <Card className="border-border/30 shadow-sm overflow-hidden">

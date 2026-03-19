@@ -52,7 +52,8 @@ Fields: item_key, item_name, baseline_date, gr_wt, net_wt, stamp, updated_at, se
 
 ## Files Changed
 - `backend/server.py` — apply-updates creates baselines, reverse removes them
-- `backend/services/stock_service.py` — get_current_inventory uses baselines
+- `backend/services/stock_service.py` — get_current_inventory AND get_book_closing_stock_as_of_date use baselines
+- `frontend/src/pages/Dashboard.jsx` — Stock Reconciliation History table with filter
 - `frontend/src/components/PhysicalStockPreview.jsx` — session lifecycle, info banner
 - `frontend/src/pages/PhysicalStockComparison.jsx` — session history UI, reverse button
 
