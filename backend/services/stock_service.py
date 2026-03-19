@@ -7,6 +7,8 @@ async def get_book_closing_stock_as_of_date(verification_date: str):
     """Compute the closing/book stock as of a specific date.
 
     Logic: Opening Stock + Purchases(<=date) - Sales(<=date) +/- branch transfers(<=date)
+    If an item has a physical stock baseline (baseline_date <= verification_date),
+    uses: Baseline + transactions between baseline_date and verification_date.
     Same mapping/grouping logic as get_current_inventory() but date-filtered.
 
     Returns a flat dict keyed by normalized item name:
@@ -27,6 +29,10 @@ async def get_book_closing_stock_as_of_date(verification_date: str):
 
     groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
 
+    # Load inventory baselines
+    baselines_raw = await db.inventory_baselines.find({}, {"_id": 0}).to_list(None)
+    baselines = {b['item_key']: b for b in baselines_raw}
+
     mapping_dict, member_to_leader, group_members_map = build_group_maps(groups, mappings)
 
     group_names_set = {g['group_name'] for g in groups}
@@ -42,13 +48,41 @@ async def get_book_closing_stock_as_of_date(verification_date: str):
         leader = member_to_leader.get(master_name, master_name)
         return master_name, leader
 
+    # Build baseline lookup by resolved display key
+    baseline_by_key = {}
+    for bval in baselines.values():
+        raw = bval['item_name'].strip()
+        master = mapping_dict.get(raw, raw)
+        leader = member_to_leader.get(master, master)
+        display_key = leader.strip().lower()
+        # Only use baseline if baseline_date <= verification_date
+        if bval['baseline_date'] <= verification_date:
+            if display_key not in baseline_by_key or bval['baseline_date'] > baseline_by_key[display_key]['baseline_date']:
+                baseline_by_key[display_key] = bval
+    for bval in baselines.values():
+        raw_key = bval['item_key']
+        if raw_key not in baseline_by_key and bval['baseline_date'] <= verification_date:
+            baseline_by_key[raw_key] = bval
+
     inventory_map = {}
 
-    # Opening stock
+    # Opening stock — skip items with baselines
     for item in opening:
         raw_name = item['item_name'].strip()
         master_name, display_name = _resolve(raw_name)
         key = display_name.strip().lower()
+        if key in baseline_by_key:
+            # Initialize entry but skip opening values
+            if key not in inventory_map:
+                resolved_stamp = master_stamp_dict.get(
+                    display_name,
+                    master_stamp_dict.get(master_name, item.get('stamp', '') or 'Unassigned')
+                )
+                inventory_map[key] = {
+                    'item_name': display_name, 'stamp': resolved_stamp,
+                    'gr_wt': 0.0, 'net_wt': 0.0,
+                }
+            continue
         if key not in inventory_map:
             resolved_stamp = master_stamp_dict.get(
                 display_name,
@@ -61,11 +95,25 @@ async def get_book_closing_stock_as_of_date(verification_date: str):
         inventory_map[key]['gr_wt'] += item.get('gr_wt', 0)
         inventory_map[key]['net_wt'] += item.get('net_wt', 0)
 
-    # Transactions
+    # Inject baseline values
+    for key, bl in baseline_by_key.items():
+        if key not in inventory_map:
+            bl_stamp = bl.get('stamp') or master_stamp_dict.get(bl['item_name'], 'Unassigned')
+            inventory_map[key] = {
+                'item_name': bl['item_name'], 'stamp': bl_stamp,
+                'gr_wt': 0.0, 'net_wt': 0.0,
+            }
+        inventory_map[key]['gr_wt'] += bl['gr_wt']
+        inventory_map[key]['net_wt'] += bl['net_wt']
+
+    # Transactions — skip pre-baseline transactions for baseline items
     for trans in transactions:
         trans_name = trans['item_name'].strip()
         master_name, display_name = _resolve(trans_name)
         key = display_name.strip().lower()
+        bl = baseline_by_key.get(key)
+        if bl and trans.get('date', '') <= bl['baseline_date']:
+            continue  # Already accounted for in baseline
         if key not in inventory_map:
             item_stamp = master_stamp_dict.get(
                 display_name,
@@ -82,7 +130,7 @@ async def get_book_closing_stock_as_of_date(verification_date: str):
             inventory_map[key]['gr_wt'] -= trans.get('gr_wt', 0)
             inventory_map[key]['net_wt'] -= trans.get('net_wt', 0)
 
-    # Polythene adjustments up to date
+    # Polythene adjustments up to date — skip pre-baseline for baseline items
     polythene = await db.polythene_adjustments.find(
         {'date': {'$lte': end_date}}, {"_id": 0}
     ).to_list(None)
@@ -91,6 +139,10 @@ async def get_book_closing_stock_as_of_date(verification_date: str):
         adj_item = adj['item_name']
         master_item = mapping_dict.get(adj_item, adj_item)
         leader = member_to_leader.get(master_item, master_item)
+        adj_key = leader.strip().lower()
+        bl = baseline_by_key.get(adj_key)
+        if bl and adj.get('date', '') <= bl['baseline_date']:
+            continue
         pw = adj['poly_weight'] * 1000
         if adj['operation'] == 'add':
             poly_map[leader] += pw
