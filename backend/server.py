@@ -2398,14 +2398,9 @@ async def upload_physical_stock_preview(
     if not verification_date:
         raise HTTPException(status_code=400, detail="verification_date is required")
 
-    # Check base snapshot exists for this specific date
+    # Check if physical stock snapshot exists for this date
     date_filter = {'verification_date': verification_date}
     existing_count = await db.physical_stock.count_documents(date_filter)
-    if existing_count == 0:
-        raise HTTPException(
-            status_code=400,
-            detail=f"No physical stock snapshot exists for {verification_date}. Please upload a full physical stock file for that date first."
-        )
 
     content = await file.read()
     loop = asyncio.get_event_loop()
@@ -2438,6 +2433,21 @@ async def upload_physical_stock_preview(
     # Load ONLY physical stock rows for the selected verification_date
     existing_docs = await db.physical_stock.find(date_filter, {"_id": 0}).to_list(None)
 
+    # If no physical stock exists for this date, fall back to book stock
+    # so the user can incrementally build physical stock from partial uploads
+    use_book_fallback = len(existing_docs) == 0
+    book_items_map = {}
+    if use_book_fallback:
+        book_response = await get_current_inventory()
+        for item in book_response.get('stamp_items', book_response.get('inventory', [])):
+            k = item['item_name'].strip().lower()
+            book_items_map[k] = item
+        # Also include negative items
+        for item in book_response.get('negative_items', []):
+            k = item['item_name'].strip().lower()
+            if k not in book_items_map:
+                book_items_map[k] = item
+
     # Build lookup structures
     # name_only_map: normalized_name -> list of docs (for ambiguity check)
     # stamp_map: (normalized_name, normalized_stamp) -> doc
@@ -2457,25 +2467,35 @@ async def upload_physical_stock_preview(
         item_key = upl['item_name'].strip().lower()
         upl_stamp = (upl.get('stamp', '') or '').strip().lower()
 
-        # Resolve match
+        # Resolve match — against physical stock first, then book stock
         existing = None
-        if has_stamp and upl_stamp and upl_stamp != 'unassigned':
-            existing = stamp_map.get((item_key, upl_stamp))
+        is_new_insert = False
+
+        if use_book_fallback:
+            # No physical stock for this date — match against book stock
+            book_item = book_items_map.get(item_key)
+            if book_item:
+                existing = book_item
+                is_new_insert = True  # Will INSERT, not UPDATE
+            # else: unmatched (item not found in book stock either)
         else:
-            candidates = name_only_map.get(item_key, [])
-            if len(candidates) == 1:
-                existing = candidates[0]
-            elif len(candidates) > 1:
-                ambiguity_errors.append(upl['item_name'])
-                preview_rows.append({
-                    'item_name': upl['item_name'],
-                    'update_mode': update_mode,
-                    'old_gr_wt': 0, 'new_gr_wt': round(upl['gr_wt'], 3), 'gr_delta': round(upl['gr_wt'], 3),
-                    'old_net_wt': 0, 'new_net_wt': round(upl['net_wt'], 3) if has_net else 0,
-                    'net_delta': round(upl['net_wt'], 3) if has_net else 0,
-                    'status': 'ambiguous',
-                })
-                continue
+            if has_stamp and upl_stamp and upl_stamp != 'unassigned':
+                existing = stamp_map.get((item_key, upl_stamp))
+            else:
+                candidates = name_only_map.get(item_key, [])
+                if len(candidates) == 1:
+                    existing = candidates[0]
+                elif len(candidates) > 1:
+                    ambiguity_errors.append(upl['item_name'])
+                    preview_rows.append({
+                        'item_name': upl['item_name'],
+                        'update_mode': update_mode,
+                        'old_gr_wt': 0, 'new_gr_wt': round(upl['gr_wt'], 3), 'gr_delta': round(upl['gr_wt'], 3),
+                        'old_net_wt': 0, 'new_net_wt': round(upl['net_wt'], 3) if has_net else 0,
+                        'net_delta': round(upl['net_wt'], 3) if has_net else 0,
+                        'status': 'ambiguous',
+                    })
+                    continue
 
         if not existing:
             preview_rows.append({
@@ -2502,6 +2522,7 @@ async def upload_physical_stock_preview(
             'old_net_wt': round(old_net, 3), 'new_net_wt': round(new_net, 3),
             'net_delta': round(new_net - old_net, 3) if has_net else 0,
             'status': 'pending',
+            'is_new_insert': is_new_insert,
         })
 
     matched_count = sum(1 for r in preview_rows if r['status'] == 'pending')
@@ -2550,8 +2571,9 @@ async def apply_physical_stock_updates(
     if not items:
         raise HTTPException(status_code=400, detail="No items to apply")
 
-    # Revalidate: only update rows for THIS verification_date
+    # Revalidate: only update/insert rows for THIS verification_date
     updated_count = 0
+    inserted_count = 0
     results = []
     for item in items:
         item_name = item.get('item_name', '')
@@ -2569,7 +2591,33 @@ async def apply_physical_stock_updates(
             {"_id": 0}
         )
         if not existing:
-            results.append({'item_name': item_name, 'status': 'skipped', 'reason': 'not_found_for_date'})
+            # No physical stock record yet — check if item exists in book stock before inserting
+            book_response = await get_current_inventory()
+            book_item = None
+            stamp_val = item.get('stamp', '')
+            for inv_item in book_response.get('stamp_items', book_response.get('inventory', [])):
+                if inv_item['item_name'].strip().lower() == key:
+                    book_item = inv_item
+                    if not stamp_val:
+                        stamp_val = inv_item.get('stamp', '')
+                    break
+
+            if not book_item:
+                # Item doesn't exist in physical stock OR book stock — skip
+                results.append({'item_name': item_name, 'status': 'skipped', 'reason': 'not_found_for_date'})
+                continue
+
+            new_doc = {
+                'item_name': item_name,
+                'stamp': stamp_val or '',
+                'gr_wt': new_gr,
+                'net_wt': new_net if update_mode == 'gross_and_net' else 0,
+                'verification_date': verification_date,
+            }
+            await db.physical_stock.insert_one(new_doc)
+            inserted_count += 1
+            updated_count += 1
+            results.append({'item_name': item_name, 'status': 'applied', 'action': 'inserted'})
             continue
 
         update_fields = {
@@ -2583,22 +2631,23 @@ async def apply_physical_stock_updates(
             {'$set': update_fields}
         )
         updated_count += 1
-        results.append({'item_name': existing['item_name'], 'status': 'applied'})
+        results.append({'item_name': existing['item_name'], 'status': 'applied', 'action': 'updated'})
 
     # Log through existing audit pattern
     await save_action(
         'physical_stock_partial_update',
-        f"Partial physical stock update for {verification_date}: {updated_count} items updated",
-        {'updated_count': updated_count, 'verification_date': verification_date, 'by': current_user['username']}
+        f"Partial physical stock update for {verification_date}: {updated_count} items ({inserted_count} new, {updated_count - inserted_count} updated)",
+        {'updated_count': updated_count, 'inserted_count': inserted_count, 'verification_date': verification_date, 'by': current_user['username']}
     )
 
     return {
         "success": True,
         "updated_count": updated_count,
+        "inserted_count": inserted_count,
         "skipped_count": len(items) - updated_count,
         "verification_date": verification_date,
         "results": results,
-        "message": f"Physical stock updated successfully for {verification_date}: {updated_count} item{'s' if updated_count != 1 else ''} updated"
+        "message": f"Physical stock updated for {verification_date}: {updated_count} item{'s' if updated_count != 1 else ''} applied ({inserted_count} new)"
     }
 
 @api_router.get("/physical-stock/dates")

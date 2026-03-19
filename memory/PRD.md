@@ -44,6 +44,13 @@ StockBud is an intelligent inventory management system for jewelry businesses. I
 5. **Non-physical uploads unaffected**: Purchase, sale, branch transfer, etc. still use chunked path.
 6. **Cleanup**: Apply response now includes `skipped_count`. Result banner is typed (success/warning/error).
 
+**Incremental Physical Stock Upload (Bug Fix):**
+- Removed requirement that a full physical stock snapshot must exist before partial uploads
+- When no physical stock exists for a date, preview now matches items against **book stock** (current inventory) to show meaningful old values
+- Apply endpoint can now INSERT new physical stock records (not just update existing ones) when item exists in book stock
+- Stamp info is auto-resolved from book stock for new inserts
+- Items not found in book stock OR physical stock are still properly skipped
+
 ## Architecture
 - Frontend: React + Tailwind + Shadcn/UI
 - Backend: FastAPI (Python) - monolithic `server.py`
