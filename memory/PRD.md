@@ -1,61 +1,57 @@
 # StockBud PRD
 
 ## Original Problem Statement
-StockBud is an intelligent inventory management system for jewelry businesses with real-time stock tracking, profit analysis, seasonal ordering, physical vs book stock comparison, multi-role access, and AI insights.
+StockBud is an intelligent inventory management system for jewelry businesses.
 
-## What's Been Implemented (Current Session - Mar 19, 2026)
+## Current Session (Mar 19, 2026) — Session Lifecycle, Reverse, UI Clarity
 
-### Date-Scoped Book Closing Stock
-- New `get_book_closing_stock_as_of_date(date)` in stock_service.py
-- Computes: Opening Stock + Purchases(<=date) - Sales(<=date) +/- Branch Transfers +/- Polythene
-- Respects mappings, grouping, negative items
-- Tags items as `is_negative_grouped` for special handling
+### 1. One Upload = One Session
+- Preview creates a draft session with `preview_session_id`
+- Apply updates the SAME session (no new session per click)
+- Approve-single then approve-all stays in one session
+- Session tracks full row list: applied, rejected, unmatched, skipped, pending
 
-### Effective Base Resolution
-- New `get_effective_physical_base_for_date(date)` helper
-- If physical stock snapshot exists for date → use it
-- Else → compute book closing stock for that date
-- Enables chaining: 2nd upload sees 1st upload's changes
+### 2. Session Finalization
+- Modal close triggers finalize: remaining pending rows → rejected
+- Zero-applied sessions → abandoned (hidden from history)
+- `POST /api/physical-stock/finalize-session`
 
-### Rewritten Physical Stock Preview
-- Uses effective base (not today's inventory)
-- Grouped/negative items: always preserve net weight
-- Normal items, gross_only: preserve net
-- Normal items, gross+net: update both
-- No pre-existing snapshot required
+### 3. Reverse/Undo
+- `POST /api/physical-stock/update-history/{session_id}/reverse`
+- Only latest unreversed session per date can be reversed
+- Restores old weights for applied rows
+- Marks session as reversed
 
-### Rewritten Physical Stock Apply
-- First apply for a date: materializes FULL snapshot from book closing stock (279+ items)
-- Then overlays approved changes
-- Non-uploaded items remain unchanged
-- Future uploads chain correctly against updated snapshot
-- Net-weight rules enforced (grouped/negative always preserve)
+### 4. UI Clarity
+- Blue "Preview only" info banner before any approval
+- Session history shows: status counts, gross/net deltas, reverse button
+- Detail view shows per-row status (applied/rejected/unmatched/skipped)
 
-### Session History
-- New `physical_stock_update_sessions` collection
-- Stores: session_id, verification_date, applied_by, applied_at, totals, sorted item rows
-- Items tagged with is_negative_grouped, sorted by stamp then name
-- New endpoints: GET /physical-stock/update-history, GET /physical-stock/update-history/{id}
-- UI section in Physical vs Book page (expandable session cards)
+### 5. Session History Model
+Collection: `physical_stock_update_sessions`
+Fields: session_id, verification_date, session_state (draft/finalized/reversed/abandoned),
+created_at, applied_at, applied_by, reversed_at, reversed_by, is_reversed,
+uploaded_count, applied_count, rejected_count, unmatched_count, skipped_count,
+totals (old/new/delta for gr/net), items (full row list sorted by stamp+name)
 
-### Compare Uses Date-Scoped Book Stock
-- `GET /physical-stock/compare` now compares against `get_book_closing_stock_as_of_date(date)`, not today's inventory
+## Key Endpoints
+- `POST /api/physical-stock/upload-preview` — returns preview_session_id
+- `POST /api/physical-stock/apply-updates` — requires preview_session_id
+- `POST /api/physical-stock/finalize-session` — finalize draft
+- `POST /api/physical-stock/update-history/{id}/reverse` — reverse latest
+- `GET /api/physical-stock/update-history` — filtered, reversible flag
+- `GET /api/physical-stock/update-history/{id}` — full details
 
-## Architecture
-- Frontend: React + Tailwind + Shadcn/UI
-- Backend: FastAPI (Python) - monolithic server.py
-- Database: MongoDB
-- Auth: JWT (18-hour expiry)
+## Files Changed
+- `backend/server.py` — preview, apply, finalize, reverse, history endpoints
+- `backend/services/stock_service.py` — date-scoped helpers (unchanged this session)
+- `frontend/src/components/PhysicalStockPreview.jsx` — session lifecycle, info banner
+- `frontend/src/pages/PhysicalStockComparison.jsx` — session history UI, reverse button
 
-## Key Files Changed
-- `backend/services/stock_service.py` — New functions: get_book_closing_stock_as_of_date, get_effective_physical_base_for_date
-- `backend/server.py` — Rewritten preview, apply, compare endpoints; new session history endpoints
-- `frontend/src/components/PhysicalStockPreview.jsx` — Passes is_negative_grouped to apply
-- `frontend/src/pages/PhysicalStockComparison.jsx` — Session history UI section
+## Tests
+- 36/36 existing backend tests pass
+- Live smoke: preview→approve→finalize→history→reverse all working
 
-## Prioritized Backlog
-### P1
-- Refactor server.py into proper FastAPI structure (routers/services/models)
-### P2
-- Review remaining Codex issues (RBAC on GETs)
-- Fix pre-existing test file bugs (dashboard_features.py BASE_URL)
+## Backlog
+- P1: Refactor server.py into proper FastAPI structure
+- P2: Fix pre-existing dashboard test file

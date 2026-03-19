@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
-import { Check, CheckCheck, Download, AlertTriangle, ArrowUpRight, ArrowDownRight, Minus, CheckCircle2 } from 'lucide-react';
+import { Check, CheckCheck, Download, AlertTriangle, ArrowUpRight, ArrowDownRight, Minus, CheckCircle2, Info } from 'lucide-react';
 import axios from 'axios';
 import { exportToCSV } from '../utils/exportCSV';
 
@@ -25,23 +26,24 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
   const [rows, setRows] = useState([]);
   const [applying, setApplying] = useState(null);
   const [lastApplyResult, setLastApplyResult] = useState(null);
+  const sessionIdRef = useRef(null);
+  const hasAppliedRef = useRef(false);
 
-  // Sync rows when previewData opens
   useEffect(() => {
     if (open && previewData?.preview_rows) {
       setRows(previewData.preview_rows);
       setLastApplyResult(null);
+      sessionIdRef.current = previewData.preview_session_id || null;
+      hasAppliedRef.current = false;
     }
   }, [open, previewData]);
 
   const verificationDate = previewData?.verification_date || '';
   const updateMode = previewData?.update_mode || 'gross_only';
-  const ambiguityError = previewData?.ambiguity_error || null;
 
   const pendingRows = rows.filter(r => r.status === 'pending');
   const approvedRows = rows.filter(r => r.status === 'approved');
   const unmatchedRows = rows.filter(r => r.status === 'unmatched');
-  const ambiguousRows = rows.filter(r => r.status === 'ambiguous');
 
   const summaryGrDelta = pendingRows.reduce((s, r) => s + (r.gr_delta || 0), 0);
   const summaryNetDelta = pendingRows.reduce((s, r) => s + (r.net_delta || 0), 0);
@@ -57,6 +59,7 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
         stamp: r.stamp || '',
       })),
       verification_date: verificationDate,
+      preview_session_id: sessionIdRef.current,
     };
     const res = await axios.post(`${API}/physical-stock/apply-updates`, payload);
     return res.data;
@@ -68,20 +71,17 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
     setApplying('single');
     try {
       const result = await applyItems([row]);
-      // Check per-row result from backend
       const rowResult = result.results?.find(r => r.item_name.toLowerCase() === itemName.toLowerCase());
       if (rowResult?.status === 'applied') {
+        hasAppliedRef.current = true;
         setRows(prev => prev.map(r =>
           r.item_name === itemName && r.status === 'pending' ? { ...r, status: 'approved' } : r
         ));
-        const msg = `Physical stock updated successfully for ${verificationDate}: 1 item updated`;
-        setLastApplyResult({ type: 'success', text: msg });
-        toast.success(msg);
+        setLastApplyResult({ type: 'success', text: `Updated ${itemName} for ${verificationDate}` });
+        toast.success(`Updated ${itemName}`);
       } else {
-        const reason = rowResult?.reason || 'unknown';
-        const msg = `Item "${itemName}" was not applied (${reason}). Preview may be stale.`;
-        setLastApplyResult({ type: 'warning', text: msg });
-        toast.warning(msg);
+        setLastApplyResult({ type: 'warning', text: `"${itemName}" was not applied. Preview may be stale.` });
+        toast.warning(`"${itemName}" was not applied`);
       }
     } catch (err) {
       toast.error(err.response?.data?.detail || err.message || 'Apply failed');
@@ -98,10 +98,11 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
       const appliedSet = new Set(
         (result.results || []).filter(r => r.status === 'applied').map(r => r.item_name.toLowerCase())
       );
-      const skippedCount = result.skipped_count || 0;
       const updatedCount = result.updated_count || 0;
+      const skippedCount = result.skipped_count || 0;
 
-      // Only mark actually applied rows as approved
+      if (updatedCount > 0) hasAppliedRef.current = true;
+
       setRows(prev => prev.map(r => {
         if (r.status === 'pending' && appliedSet.has(r.item_name.toLowerCase())) {
           return { ...r, status: 'approved' };
@@ -110,17 +111,14 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
       }));
 
       if (updatedCount > 0 && skippedCount === 0) {
-        const msg = `Physical stock updated successfully for ${verificationDate}: ${updatedCount} item${updatedCount !== 1 ? 's' : ''} updated`;
-        setLastApplyResult({ type: 'success', text: msg });
-        toast.success(msg);
-      } else if (updatedCount > 0 && skippedCount > 0) {
-        const msg = `Partial update for ${verificationDate}: ${updatedCount} applied, ${skippedCount} skipped (preview may be stale)`;
-        setLastApplyResult({ type: 'warning', text: msg });
-        toast.warning(msg);
+        setLastApplyResult({ type: 'success', text: `${updatedCount} item${updatedCount !== 1 ? 's' : ''} updated for ${verificationDate}` });
+        toast.success(`${updatedCount} items updated`);
+      } else if (updatedCount > 0) {
+        setLastApplyResult({ type: 'warning', text: `${updatedCount} applied, ${skippedCount} skipped` });
+        toast.warning(`Partial: ${updatedCount} applied, ${skippedCount} skipped`);
       } else {
-        const msg = `No items were updated for ${verificationDate}. Preview may be stale — re-upload to refresh.`;
-        setLastApplyResult({ type: 'error', text: msg });
-        toast.error(msg);
+        setLastApplyResult({ type: 'error', text: 'No items updated. Preview may be stale.' });
+        toast.error('No items updated');
       }
     } catch (err) {
       toast.error(err.response?.data?.detail || err.message || 'Apply failed');
@@ -129,11 +127,20 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
     }
   };
 
+  const handleClose = async () => {
+    // Finalize the session on close
+    if (sessionIdRef.current) {
+      try {
+        await axios.post(`${API}/physical-stock/finalize-session`, { session_id: sessionIdRef.current });
+      } catch { /* ignore finalize errors */ }
+    }
+    onClose();
+  };
+
   const handleExport = () => {
     const exportData = rows.map(r => ({
       'Verification Date': verificationDate,
-      'Item Name': r.item_name,
-      'Stamp': r.stamp || '',
+      'Item Name': r.item_name, 'Stamp': r.stamp || '',
       'Mode': r.update_mode,
       'Old Gross (kg)': (r.old_gr_wt / 1000).toFixed(3),
       'New Gross (kg)': (r.new_gr_wt / 1000).toFixed(3),
@@ -149,7 +156,7 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
   const gToKg = (g) => (g / 1000).toFixed(3);
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose(); }}>
       <DialogContent className="max-w-[95vw] max-h-[90vh] overflow-hidden flex flex-col" data-testid="physical-stock-preview-modal">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -161,62 +168,45 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
           </DialogDescription>
         </DialogHeader>
 
-        {/* Result banner after apply */}
+        {/* Preview-only info banner */}
+        {approvedRows.length === 0 && pendingRows.length > 0 && !lastApplyResult && (
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-200 text-sm" data-testid="preview-info-banner">
+            <Info className="h-4 w-4 shrink-0" />
+            Preview only. No stock has been updated yet. Approve rows to apply changes.
+          </div>
+        )}
+
+        {/* Result banner */}
         {lastApplyResult && (
           <div className={`flex items-center gap-2 p-3 rounded-lg text-sm ${
-            lastApplyResult.type === 'success'
-              ? 'bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
-              : lastApplyResult.type === 'warning'
-              ? 'bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200'
-              : 'bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-200'
+            lastApplyResult.type === 'success' ? 'bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 text-emerald-800'
+            : lastApplyResult.type === 'warning' ? 'bg-amber-50 dark:bg-amber-950/30 border border-amber-200 text-amber-800'
+            : 'bg-red-50 dark:bg-red-950/30 border border-red-200 text-red-800'
           }`} data-testid="apply-result-banner">
-            {lastApplyResult.type === 'success' ? (
-              <CheckCircle2 className="h-4 w-4 shrink-0" />
-            ) : (
-              <AlertTriangle className="h-4 w-4 shrink-0" />
-            )}
+            {lastApplyResult.type === 'success' ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertTriangle className="h-4 w-4 shrink-0" />}
             {lastApplyResult.text}
           </div>
         )}
 
-        {/* Ambiguity warning */}
-        {ambiguityError && (
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 text-orange-800 dark:text-orange-200 text-sm" data-testid="ambiguity-warning">
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-            {ambiguityError}
-          </div>
-        )}
-
-        {/* Summary bar */}
+        {/* Summary */}
         <div className="flex flex-wrap gap-3 text-sm border rounded-lg p-3 bg-muted/30" data-testid="preview-summary">
           <div>Pending: <strong>{pendingRows.length}</strong></div>
-          <div>Approved: <strong className="text-emerald-600">{approvedRows.length}</strong></div>
+          <div>Applied: <strong className="text-emerald-600">{approvedRows.length}</strong></div>
           <div>Unmatched: <strong className="text-red-600">{unmatchedRows.length}</strong></div>
-          {ambiguousRows.length > 0 && (
-            <div>Ambiguous: <strong className="text-orange-600">{ambiguousRows.length}</strong></div>
-          )}
           <div className="ml-auto flex gap-3">
             <span>Gross delta: <DeltaBadge value={summaryGrDelta / 1000} /></span>
-            {updateMode === 'gross_and_net' && (
-              <span>Net delta: <DeltaBadge value={summaryNetDelta / 1000} /></span>
-            )}
+            {updateMode === 'gross_and_net' && <span>Net delta: <DeltaBadge value={summaryNetDelta / 1000} /></span>}
           </div>
         </div>
 
-        {/* Action bar */}
+        {/* Actions */}
         <div className="flex gap-2">
-          <Button
-            size="sm"
-            onClick={handleApproveAll}
-            disabled={pendingRows.length === 0 || applying !== null}
-            data-testid="approve-all-btn"
-          >
+          <Button size="sm" onClick={handleApproveAll} disabled={pendingRows.length === 0 || applying !== null} data-testid="approve-all-btn">
             <CheckCheck className="h-4 w-4 mr-1" />
             {applying === 'all' ? 'Applying...' : `Approve All (${pendingRows.length})`}
           </Button>
           <Button size="sm" variant="outline" onClick={handleExport} data-testid="export-preview-btn">
-            <Download className="h-4 w-4 mr-1" />
-            Export CSV
+            <Download className="h-4 w-4 mr-1" /> Export CSV
           </Button>
         </div>
 
@@ -243,7 +233,7 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
             </TableHeader>
             <TableBody>
               {rows.map((row, idx) => (
-                <TableRow key={idx} className={row.status === 'unmatched' ? 'bg-red-50 dark:bg-red-950/20' : row.status === 'approved' ? 'bg-emerald-50 dark:bg-emerald-950/20' : row.status === 'ambiguous' ? 'bg-orange-50 dark:bg-orange-950/20' : ''}>
+                <TableRow key={idx} className={row.status === 'unmatched' ? 'bg-red-50 dark:bg-red-950/20' : row.status === 'approved' ? 'bg-emerald-50 dark:bg-emerald-950/20' : ''}>
                   <TableCell className="font-medium text-sm">{row.item_name}</TableCell>
                   <TableCell><Badge variant="outline" className="text-xs">{row.stamp || '—'}</Badge></TableCell>
                   <TableCell className="text-right font-mono text-sm">{gToKg(row.old_gr_wt)}</TableCell>
@@ -258,40 +248,23 @@ export default function PhysicalStockPreview({ open, onClose, previewData }) {
                   )}
                   <TableCell>
                     {row.status === 'pending' && <Badge className="bg-amber-500 text-xs">Pending</Badge>}
-                    {row.status === 'approved' && <Badge className="bg-emerald-600 text-xs">Approved</Badge>}
-                    {row.status === 'unmatched' && (
-                      <Badge variant="destructive" className="text-xs">
-                        <AlertTriangle className="h-3 w-3 mr-1" />Unmatched
-                      </Badge>
-                    )}
-                    {row.status === 'ambiguous' && (
-                      <Badge className="bg-orange-500 text-xs">
-                        <AlertTriangle className="h-3 w-3 mr-1" />Ambiguous
-                      </Badge>
-                    )}
+                    {row.status === 'approved' && <Badge className="bg-emerald-600 text-xs">Applied</Badge>}
+                    {row.status === 'unmatched' && <Badge variant="destructive" className="text-xs"><AlertTriangle className="h-3 w-3 mr-1" />Unmatched</Badge>}
                   </TableCell>
                   <TableCell className="text-right">
                     {row.status === 'pending' && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleApproveSingle(row.item_name)}
-                        disabled={applying !== null}
-                        data-testid={`approve-row-${idx}`}
-                      >
+                      <Button size="sm" variant="ghost" onClick={() => handleApproveSingle(row.item_name)} disabled={applying !== null} data-testid={`approve-row-${idx}`}>
                         <Check className="h-4 w-4" />
                       </Button>
                     )}
                     {row.status === 'approved' && <Check className="h-4 w-4 text-emerald-600" />}
-                    {(row.status === 'unmatched' || row.status === 'ambiguous') && <Minus className="h-4 w-4 text-muted-foreground" />}
+                    {row.status === 'unmatched' && <Minus className="h-4 w-4 text-muted-foreground" />}
                   </TableCell>
                 </TableRow>
               ))}
               {rows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={updateMode === 'gross_and_net' ? 10 : 7} className="text-center py-8 text-muted-foreground">
-                    No preview data
-                  </TableCell>
+                  <TableCell colSpan={updateMode === 'gross_and_net' ? 10 : 7} className="text-center py-8 text-muted-foreground">No preview data</TableCell>
                 </TableRow>
               )}
             </TableBody>

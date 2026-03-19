@@ -2390,10 +2390,7 @@ async def upload_physical_stock_preview(
     verification_date: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
-    """Parse physical stock file and return a preview diff against the effective base
-    for the selected verification_date. Does NOT mutate the database.
-
-    Effective base = existing physical stock snapshot for date, or computed book closing stock."""
+    """Parse physical stock file and return a preview diff. Creates a draft session."""
     if current_user['role'] not in ['admin', 'manager']:
         raise HTTPException(status_code=403, detail="Admin or manager only")
 
@@ -2407,11 +2404,9 @@ async def upload_physical_stock_preview(
     if not records:
         raise HTTPException(status_code=400, detail="No valid records found in file")
 
-    # Determine update mode from parsed records
     has_net = any(r.get('has_net', False) for r in records)
     update_mode = 'gross_and_net' if has_net else 'gross_only'
 
-    # Merge uploaded rows by normalized item name
     uploaded = {}
     for rec in records:
         item_key = rec['item_name'].strip().lower()
@@ -2420,26 +2415,21 @@ async def upload_physical_stock_preview(
         uploaded[item_key]['gr_wt'] += rec.get('gr_wt', 0)
         uploaded[item_key]['net_wt'] += rec.get('net_wt', 0)
 
-    # Load effective base for this date
     base = await get_effective_physical_base_for_date(verification_date)
     has_existing_snapshot = await db.physical_stock.count_documents({'verification_date': verification_date}) > 0
 
-    # Build preview rows
     preview_rows = []
     for item_key, upl in uploaded.items():
         base_item = base.get(item_key)
 
         if not base_item:
-            # Item not found in base at all
             preview_rows.append({
-                'item_name': upl['item_name'],
-                'stamp': upl.get('stamp', ''),
-                'update_mode': update_mode,
+                'item_name': upl['item_name'], 'stamp': upl.get('stamp', ''),
+                'update_mode': update_mode, 'is_negative_grouped': False,
                 'old_gr_wt': 0, 'new_gr_wt': round(upl['gr_wt'], 3), 'gr_delta': round(upl['gr_wt'], 3),
                 'old_net_wt': 0, 'new_net_wt': round(upl['net_wt'], 3) if has_net else 0,
                 'net_delta': round(upl['net_wt'], 3) if has_net else 0,
                 'status': 'unmatched',
-                'is_negative_grouped': False,
             })
             continue
 
@@ -2447,33 +2437,51 @@ async def upload_physical_stock_preview(
         old_net = base_item.get('net_wt', 0)
         new_gr = round(upl['gr_wt'], 3)
         is_neg_grouped = base_item.get('is_negative_grouped', False)
-
-        # Net weight rules:
-        # - Grouped/negative items: ALWAYS preserve base net
-        # - Normal items, gross_only mode: preserve base net
-        # - Normal items, gross_and_net mode: use uploaded net
-        if is_neg_grouped or not has_net:
-            new_net = round(old_net, 3)
-        else:
-            new_net = round(upl['net_wt'], 3)
+        new_net = round(old_net, 3) if (is_neg_grouped or not has_net) else round(upl['net_wt'], 3)
 
         preview_rows.append({
-            'item_name': base_item['item_name'],
-            'stamp': base_item.get('stamp', ''),
-            'update_mode': update_mode,
-            'old_gr_wt': round(old_gr, 3), 'new_gr_wt': new_gr,
-            'gr_delta': round(new_gr - old_gr, 3),
-            'old_net_wt': round(old_net, 3), 'new_net_wt': new_net,
-            'net_delta': round(new_net - old_net, 3),
+            'item_name': base_item['item_name'], 'stamp': base_item.get('stamp', ''),
+            'update_mode': update_mode, 'is_negative_grouped': is_neg_grouped,
+            'old_gr_wt': round(old_gr, 3), 'new_gr_wt': new_gr, 'gr_delta': round(new_gr - old_gr, 3),
+            'old_net_wt': round(old_net, 3), 'new_net_wt': new_net, 'net_delta': round(new_net - old_net, 3),
             'status': 'pending',
-            'is_negative_grouped': is_neg_grouped,
         })
 
-    matched_count = sum(1 for r in preview_rows if r['status'] == 'pending')
-    unmatched_count = sum(1 for r in preview_rows if r['status'] == 'unmatched')
+    # Create draft session
+    session_id = str(uuid.uuid4())
+    draft_items = []
+    for r in preview_rows:
+        draft_items.append({
+            'item_name': r['item_name'], 'stamp': r.get('stamp', ''),
+            'status': r['status'], 'update_mode': r.get('update_mode', update_mode),
+            'is_negative_grouped': r.get('is_negative_grouped', False),
+            'old_gr_wt': r.get('old_gr_wt', 0), 'proposed_gr_wt': r.get('new_gr_wt', 0),
+            'final_gr_wt': r.get('new_gr_wt', 0) if r['status'] == 'pending' else r.get('old_gr_wt', 0),
+            'gr_delta': r.get('gr_delta', 0),
+            'old_net_wt': r.get('old_net_wt', 0), 'proposed_net_wt': r.get('new_net_wt', 0),
+            'final_net_wt': r.get('new_net_wt', 0) if r['status'] == 'pending' else r.get('old_net_wt', 0),
+            'net_delta': r.get('net_delta', 0),
+        })
+    draft_items.sort(key=lambda x: ((x.get('stamp', '') or '').lower(), x['item_name'].lower()))
 
+    await db.physical_stock_update_sessions.insert_one({
+        'session_id': session_id,
+        'verification_date': verification_date,
+        'session_state': 'draft',
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        'applied_by': current_user['username'],
+        'update_mode': update_mode,
+        'uploaded_count': len(preview_rows),
+        'applied_count': 0, 'rejected_count': 0,
+        'unmatched_count': sum(1 for r in preview_rows if r['status'] == 'unmatched'),
+        'skipped_count': 0,
+        'items': draft_items,
+    })
+
+    matched_count = sum(1 for r in preview_rows if r['status'] == 'pending')
     return {
         "success": True,
+        "preview_session_id": session_id,
         "update_mode": update_mode,
         "verification_date": verification_date,
         "has_existing_snapshot": has_existing_snapshot,
@@ -2481,7 +2489,7 @@ async def upload_physical_stock_preview(
         "summary": {
             "total_uploaded": len(preview_rows),
             "matched": matched_count,
-            "unmatched": unmatched_count,
+            "unmatched": sum(1 for r in preview_rows if r['status'] == 'unmatched'),
             "base_item_count": len(base),
         }
     }
@@ -2492,46 +2500,36 @@ async def apply_physical_stock_updates(
     request: Dict,
     current_user: dict = Depends(get_current_user)
 ):
-    """Apply approved partial updates to physical stock for a specific verification_date.
-
-    If no physical stock snapshot exists yet for the date, materializes a FULL snapshot
-    from book closing stock, then overlays the approved changes. Non-uploaded items
-    remain unchanged. After apply, the snapshot becomes the new base for future updates."""
+    """Apply approved items within an existing preview session."""
     if current_user['role'] not in ['admin', 'manager']:
         raise HTTPException(status_code=403, detail="Admin or manager only")
 
     items = request.get('items', [])
     verification_date = request.get('verification_date')
+    preview_session_id = request.get('preview_session_id')
 
     if not verification_date:
         raise HTTPException(status_code=400, detail="verification_date is required")
     if not items:
         raise HTTPException(status_code=400, detail="No items to apply")
 
-    # Check if snapshot already exists
+    # Materialize snapshot if needed
     has_snapshot = await db.physical_stock.count_documents({'verification_date': verification_date}) > 0
-
     if not has_snapshot:
-        # Materialize full snapshot from book closing stock for this date
         book_base = await get_book_closing_stock_as_of_date(verification_date)
         if book_base:
-            bulk_docs = []
-            for key, bi in book_base.items():
-                bulk_docs.append({
-                    'item_name': bi['item_name'],
-                    'stamp': bi.get('stamp', ''),
-                    'gr_wt': bi['gr_wt'],
-                    'net_wt': bi['net_wt'],
-                    'is_negative_grouped': bi.get('is_negative_grouped', False),
-                    'verification_date': verification_date,
-                })
+            bulk_docs = [{
+                'item_name': bi['item_name'], 'stamp': bi.get('stamp', ''),
+                'gr_wt': bi['gr_wt'], 'net_wt': bi['net_wt'],
+                'is_negative_grouped': bi.get('is_negative_grouped', False),
+                'verification_date': verification_date,
+            } for bi in book_base.values()]
             if bulk_docs:
                 await db.physical_stock.insert_many(bulk_docs)
 
-    # Now apply the approved changes on top of the snapshot
     updated_count = 0
-    session_items = []
     results = []
+    applied_items_detail = []
     for item in items:
         item_name = item.get('item_name', '')
         key = item_name.strip().lower()
@@ -2541,10 +2539,7 @@ async def apply_physical_stock_updates(
         is_neg_grouped = item.get('is_negative_grouped', False)
 
         existing = await db.physical_stock.find_one(
-            {
-                'item_name': {'$regex': f'^{re.escape(key)}$', '$options': 'i'},
-                'verification_date': verification_date,
-            },
+            {'item_name': {'$regex': f'^{re.escape(key)}$', '$options': 'i'}, 'verification_date': verification_date},
             {"_id": 0}
         )
         if not existing:
@@ -2553,11 +2548,9 @@ async def apply_physical_stock_updates(
 
         old_gr = existing.get('gr_wt', 0)
         old_net = existing.get('net_wt', 0)
-
         update_fields = {'gr_wt': new_gr}
-        # Net weight rules: grouped/negative always preserve, normal depends on mode
         if is_neg_grouped or update_mode == 'gross_only':
-            update_fields['net_wt'] = old_net  # preserve
+            update_fields['net_wt'] = old_net
         else:
             update_fields['net_wt'] = new_net
 
@@ -2566,49 +2559,48 @@ async def apply_physical_stock_updates(
             {'$set': update_fields}
         )
         updated_count += 1
-
-        session_items.append({
+        applied_items_detail.append({
             'item_name': existing['item_name'],
-            'stamp': existing.get('stamp', ''),
-            'update_mode': update_mode,
-            'old_gr_wt': round(old_gr, 3),
-            'new_gr_wt': round(new_gr, 3),
-            'gr_delta': round(new_gr - old_gr, 3),
-            'old_net_wt': round(old_net, 3),
-            'new_net_wt': round(update_fields['net_wt'], 3),
+            'old_gr_wt': round(old_gr, 3), 'final_gr_wt': round(new_gr, 3), 'gr_delta': round(new_gr - old_gr, 3),
+            'old_net_wt': round(old_net, 3), 'final_net_wt': round(update_fields['net_wt'], 3),
             'net_delta': round(update_fields['net_wt'] - old_net, 3),
-            'is_negative_grouped': is_neg_grouped,
-            'action': 'updated',
         })
-        results.append({'item_name': existing['item_name'], 'status': 'applied', 'action': 'updated'})
+        results.append({'item_name': existing['item_name'], 'status': 'applied'})
 
-    # Sort session items by stamp then item name
-    session_items.sort(key=lambda x: (
-        (x.get('stamp', '') or '').strip().lower(),
-        x['item_name'].strip().lower()
-    ))
+    # Update draft session if provided
+    if preview_session_id and updated_count > 0:
+        session = await db.physical_stock_update_sessions.find_one({'session_id': preview_session_id})
+        if session:
+            applied_names = {d['item_name'].lower() for d in applied_items_detail}
+            updated_items = []
+            for si in session.get('items', []):
+                name_lower = si['item_name'].strip().lower()
+                if name_lower in applied_names and si.get('status') == 'pending':
+                    detail = next((d for d in applied_items_detail if d['item_name'].lower() == name_lower), None)
+                    if detail:
+                        si['status'] = 'applied'
+                        si['final_gr_wt'] = detail['final_gr_wt']
+                        si['final_net_wt'] = detail['final_net_wt']
+                        si['gr_delta'] = detail['gr_delta']
+                        si['net_delta'] = detail['net_delta']
+                updated_items.append(si)
 
-    # Store session history
-    if updated_count > 0:
-        normal_count = sum(1 for si in session_items if not si.get('is_negative_grouped'))
-        neg_grouped_count = sum(1 for si in session_items if si.get('is_negative_grouped'))
-        session = {
-            'session_id': str(uuid.uuid4()),
-            'verification_date': verification_date,
-            'applied_at': datetime.now(timezone.utc).isoformat(),
-            'applied_by': current_user['username'],
-            'updated_count': updated_count,
-            'normal_item_count': normal_count,
-            'grouped_negative_item_count': neg_grouped_count,
-            'old_total_gr_wt': round(sum(si['old_gr_wt'] for si in session_items), 3),
-            'new_total_gr_wt': round(sum(si['new_gr_wt'] for si in session_items), 3),
-            'gr_delta_total': round(sum(si['gr_delta'] for si in session_items), 3),
-            'old_total_net_wt': round(sum(si['old_net_wt'] for si in session_items), 3),
-            'new_total_net_wt': round(sum(si['new_net_wt'] for si in session_items), 3),
-            'net_delta_total': round(sum(si['net_delta'] for si in session_items), 3),
-            'items': session_items,
-        }
-        await db.physical_stock_update_sessions.insert_one(session)
+            applied_rows = [i for i in updated_items if i.get('status') == 'applied']
+            await db.physical_stock_update_sessions.update_one(
+                {'session_id': preview_session_id},
+                {'$set': {
+                    'items': updated_items,
+                    'applied_count': len(applied_rows),
+                    'applied_at': datetime.now(timezone.utc).isoformat(),
+                    'applied_by': current_user['username'],
+                    'old_total_gr_wt': round(sum(i.get('old_gr_wt', 0) for i in applied_rows), 3),
+                    'new_total_gr_wt': round(sum(i.get('final_gr_wt', 0) for i in applied_rows), 3),
+                    'gr_delta_total': round(sum(i.get('gr_delta', 0) for i in applied_rows), 3),
+                    'old_total_net_wt': round(sum(i.get('old_net_wt', 0) for i in applied_rows), 3),
+                    'new_total_net_wt': round(sum(i.get('final_net_wt', 0) for i in applied_rows), 3),
+                    'net_delta_total': round(sum(i.get('net_delta', 0) for i in applied_rows), 3),
+                }}
+            )
 
     await save_action(
         'physical_stock_partial_update',
@@ -2625,6 +2617,109 @@ async def apply_physical_stock_updates(
         "message": f"Physical stock updated for {verification_date}: {updated_count} item{'s' if updated_count != 1 else ''} applied"
     }
 
+@api_router.post("/physical-stock/finalize-session")
+async def finalize_physical_stock_session(
+    request: Dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Finalize a draft session: remaining pending rows become rejected. Empty sessions get abandoned."""
+    session_id = request.get('session_id')
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+
+    session = await db.physical_stock_update_sessions.find_one({'session_id': session_id})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.get('session_state') != 'draft':
+        return {"success": True, "message": "Session already finalized"}
+
+    items = session.get('items', [])
+    applied_count = sum(1 for i in items if i.get('status') == 'applied')
+
+    if applied_count == 0:
+        # Abandon empty session
+        await db.physical_stock_update_sessions.update_one(
+            {'session_id': session_id},
+            {'$set': {'session_state': 'abandoned'}}
+        )
+        return {"success": True, "message": "Session abandoned (no items applied)"}
+
+    # Mark remaining pending as rejected
+    for i in items:
+        if i.get('status') == 'pending':
+            i['status'] = 'rejected'
+
+    rejected_count = sum(1 for i in items if i.get('status') == 'rejected')
+    await db.physical_stock_update_sessions.update_one(
+        {'session_id': session_id},
+        {'$set': {
+            'session_state': 'finalized',
+            'finalized_at': datetime.now(timezone.utc).isoformat(),
+            'items': items,
+            'rejected_count': rejected_count,
+        }}
+    )
+    return {"success": True, "message": f"Session finalized: {applied_count} applied, {rejected_count} rejected"}
+
+@api_router.post("/physical-stock/update-history/{session_id}/reverse")
+async def reverse_physical_stock_session(
+    session_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Reverse the latest unreversed session for its date. Restores old weights."""
+    if current_user['role'] not in ['admin', 'manager']:
+        raise HTTPException(status_code=403, detail="Admin or manager only")
+
+    session = await db.physical_stock_update_sessions.find_one({'session_id': session_id}, {'_id': 0})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.get('is_reversed'):
+        raise HTTPException(status_code=400, detail="Session already reversed")
+    if session.get('session_state') not in ('finalized', 'draft'):
+        raise HTTPException(status_code=400, detail="Only finalized/draft sessions can be reversed")
+
+    v_date = session['verification_date']
+
+    # Check it's the latest unreversed session for this date
+    later = await db.physical_stock_update_sessions.find_one({
+        'verification_date': v_date,
+        'session_state': {'$in': ['finalized', 'draft']},
+        'is_reversed': {'$ne': True},
+        'applied_at': {'$gt': session.get('applied_at', session.get('created_at', ''))},
+    })
+    if later:
+        raise HTTPException(status_code=400, detail="Cannot reverse: a later unreversed session exists for this date. Reverse the latest session first.")
+
+    # Restore old weights for applied rows
+    restored = 0
+    for item in session.get('items', []):
+        if item.get('status') != 'applied':
+            continue
+        key = item['item_name'].strip().lower()
+        await db.physical_stock.update_one(
+            {'item_name': {'$regex': f'^{re.escape(key)}$', '$options': 'i'}, 'verification_date': v_date},
+            {'$set': {'gr_wt': item['old_gr_wt'], 'net_wt': item['old_net_wt']}}
+        )
+        restored += 1
+
+    await db.physical_stock_update_sessions.update_one(
+        {'session_id': session_id},
+        {'$set': {
+            'is_reversed': True,
+            'reversed_at': datetime.now(timezone.utc).isoformat(),
+            'reversed_by': current_user['username'],
+            'session_state': 'reversed',
+        }}
+    )
+
+    await save_action(
+        'physical_stock_reverse',
+        f"Reversed physical stock session for {v_date}: {restored} items restored",
+        {'session_id': session_id, 'verification_date': v_date, 'restored': restored, 'by': current_user['username']}
+    )
+
+    return {"success": True, "restored_count": restored, "message": f"Reversed: {restored} items restored to previous values"}
+
 @api_router.get("/physical-stock/dates")
 async def get_physical_stock_dates(current_user: dict = Depends(get_current_user)):
     """Return distinct physical stock verification_date values sorted descending."""
@@ -2637,13 +2732,33 @@ async def get_physical_stock_update_history(
     verification_date: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
-    """Return session summaries for physical stock updates, optionally filtered by date."""
-    query = {}
+    """Return session summaries for physical stock updates (excluding abandoned and empty drafts)."""
+    query = {'session_state': {'$in': ['finalized', 'reversed']}}
     if verification_date:
         query['verification_date'] = verification_date
-    sessions = await db.physical_stock_update_sessions.find(
+    # Also include drafts that have applied items (still open)
+    draft_query = {'session_state': 'draft', 'applied_count': {'$gt': 0}}
+    if verification_date:
+        draft_query['verification_date'] = verification_date
+
+    finalized = await db.physical_stock_update_sessions.find(
         query, {"_id": 0, "items": 0}
-    ).sort("applied_at", -1).to_list(100)
+    ).sort("created_at", -1).to_list(100)
+    drafts = await db.physical_stock_update_sessions.find(
+        draft_query, {"_id": 0, "items": 0}
+    ).sort("created_at", -1).to_list(20)
+    sessions = drafts + finalized
+
+    # Determine which session is reversible (latest unreversed per date)
+    latest_unreversed = {}
+    for s in sessions:
+        vd = s['verification_date']
+        if not s.get('is_reversed') and s.get('session_state') in ('finalized', 'draft') and s.get('applied_count', 0) > 0:
+            if vd not in latest_unreversed:
+                latest_unreversed[vd] = s['session_id']
+    for s in sessions:
+        s['reversible'] = s['session_id'] == latest_unreversed.get(s['verification_date'])
+
     return {"sessions": sessions}
 
 @api_router.get("/physical-stock/update-history/{session_id}")

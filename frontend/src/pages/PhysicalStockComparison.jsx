@@ -102,6 +102,20 @@ export default function PhysicalStockComparison() {
     } catch { toast.error('Failed to load session details'); }
   };
 
+  const handleReverseSession = async (sessionId) => {
+    if (!window.confirm('Reverse this physical stock update? This will restore all items to their previous weights.')) return;
+    try {
+      await axios.post(`${API}/physical-stock/update-history/${sessionId}/reverse`);
+      toast.success('Session reversed successfully');
+      fetchComparison(compareDate);
+      fetchUpdateSessions(compareDate);
+      setExpandedSession(null);
+      setSessionDetail(null);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Reverse failed');
+    }
+  };
+
   const fetchStampWeights = async () => {
     try {
       const response = await axios.get(`${API}/inventory/current`);
@@ -821,59 +835,89 @@ export default function PhysicalStockComparison() {
           </CardHeader>
           <CardContent className="space-y-3">
             {updateSessions.map((s) => (
-              <div key={s.session_id} className="border rounded-lg overflow-hidden" data-testid={`session-${s.session_id}`}>
+              <div key={s.session_id} className={`border rounded-lg overflow-hidden ${s.is_reversed ? 'opacity-60' : ''}`} data-testid={`session-${s.session_id}`}>
                 <div
                   className="flex flex-wrap items-center gap-3 p-3 cursor-pointer hover:bg-muted/30 transition-colors"
                   onClick={() => toggleSessionDetail(s.session_id)}
                 >
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium">
-                      {s.updated_count} item{s.updated_count !== 1 ? 's' : ''} updated
-                      <span className="text-muted-foreground font-normal ml-2">by {s.applied_by}</span>
+                    <p className="text-sm font-medium flex items-center gap-2">
+                      {s.applied_count || 0} applied
+                      {(s.rejected_count || 0) > 0 && <span className="text-muted-foreground text-xs">({s.rejected_count} rejected)</span>}
+                      {(s.skipped_count || 0) > 0 && <span className="text-muted-foreground text-xs">({s.skipped_count} skipped)</span>}
+                      {(s.unmatched_count || 0) > 0 && <span className="text-muted-foreground text-xs">({s.unmatched_count} unmatched)</span>}
+                      <span className="text-muted-foreground font-normal text-xs">by {s.applied_by}</span>
+                      {s.is_reversed && <Badge variant="destructive" className="text-xs">Reversed</Badge>}
+                      {s.session_state === 'draft' && <Badge variant="outline" className="text-xs">Draft</Badge>}
                     </p>
-                    <p className="text-xs text-muted-foreground">{new Date(s.applied_at).toLocaleString()}</p>
+                    <p className="text-xs text-muted-foreground">{new Date(s.applied_at || s.created_at).toLocaleString()}</p>
                   </div>
                   <div className="flex gap-4 text-xs font-mono">
-                    <span className={s.gr_delta_total >= 0 ? 'text-emerald-600' : 'text-red-600'}>
-                      Gross: {s.gr_delta_total >= 0 ? '+' : ''}{(s.gr_delta_total / 1000).toFixed(3)} kg
+                    <span className={(s.gr_delta_total || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}>
+                      Gross: {(s.gr_delta_total || 0) >= 0 ? '+' : ''}{((s.gr_delta_total || 0) / 1000).toFixed(3)} kg
                     </span>
-                    <span className={s.net_delta_total >= 0 ? 'text-emerald-600' : 'text-red-600'}>
-                      Net: {s.net_delta_total >= 0 ? '+' : ''}{(s.net_delta_total / 1000).toFixed(3)} kg
+                    <span className={(s.net_delta_total || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}>
+                      Net: {(s.net_delta_total || 0) >= 0 ? '+' : ''}{((s.net_delta_total || 0) / 1000).toFixed(3)} kg
                     </span>
                   </div>
-                  <Badge variant="outline" className="text-xs shrink-0">
-                    {expandedSession === s.session_id ? 'Collapse' : 'Details'}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    {s.reversible && !s.is_reversed && (
+                      <Button
+                        variant="outline" size="sm" className="text-xs text-destructive border-destructive/30 h-7"
+                        onClick={(e) => { e.stopPropagation(); handleReverseSession(s.session_id); }}
+                        data-testid={`reverse-btn-${s.session_id}`}
+                      >
+                        Reverse
+                      </Button>
+                    )}
+                    <Badge variant="outline" className="text-xs shrink-0">
+                      {expandedSession === s.session_id ? 'Collapse' : 'Details'}
+                    </Badge>
+                  </div>
                 </div>
                 {expandedSession === s.session_id && sessionDetail && (
                   <div className="border-t bg-muted/10 p-0">
                     <Table>
                       <TableHeader>
                         <TableRow className="text-xs">
+                          <TableHead>Status</TableHead>
                           <TableHead>Stamp</TableHead>
                           <TableHead>Item Name</TableHead>
                           <TableHead className="text-right">Old Gross (kg)</TableHead>
-                          <TableHead className="text-right">New Gross (kg)</TableHead>
+                          <TableHead className="text-right">Final Gross (kg)</TableHead>
                           <TableHead className="text-right">Gross Delta</TableHead>
                           <TableHead className="text-right">Old Net (kg)</TableHead>
-                          <TableHead className="text-right">New Net (kg)</TableHead>
+                          <TableHead className="text-right">Final Net (kg)</TableHead>
                           <TableHead className="text-right">Net Delta</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {(sessionDetail.items || []).map((item, idx) => (
-                          <TableRow key={idx} className={item.is_negative_grouped ? 'bg-orange-50/50' : ''}>
+                          <TableRow key={idx} className={
+                            item.status === 'applied' ? '' :
+                            item.status === 'rejected' ? 'bg-amber-50/50' :
+                            item.status === 'unmatched' ? 'bg-red-50/50' :
+                            item.status === 'skipped' ? 'bg-gray-50/50' : ''
+                          }>
+                            <TableCell>
+                              <Badge className={`text-xs ${
+                                item.status === 'applied' ? 'bg-emerald-600' :
+                                item.status === 'rejected' ? 'bg-amber-500' :
+                                item.status === 'unmatched' ? 'bg-red-500' :
+                                item.status === 'skipped' ? 'bg-gray-500' : 'bg-blue-500'
+                              }`}>{item.status}</Badge>
+                            </TableCell>
                             <TableCell className="text-xs"><Badge variant="outline" className="text-xs">{item.stamp || '—'}</Badge></TableCell>
                             <TableCell className="text-sm font-medium">{item.item_name}</TableCell>
-                            <TableCell className="text-right font-mono text-xs">{(item.old_gr_wt / 1000).toFixed(3)}</TableCell>
-                            <TableCell className="text-right font-mono text-xs">{(item.new_gr_wt / 1000).toFixed(3)}</TableCell>
-                            <TableCell className={`text-right font-mono text-xs font-semibold ${item.gr_delta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                              {item.gr_delta >= 0 ? '+' : ''}{(item.gr_delta / 1000).toFixed(3)}
+                            <TableCell className="text-right font-mono text-xs">{((item.old_gr_wt || 0) / 1000).toFixed(3)}</TableCell>
+                            <TableCell className="text-right font-mono text-xs">{((item.final_gr_wt || item.proposed_gr_wt || 0) / 1000).toFixed(3)}</TableCell>
+                            <TableCell className={`text-right font-mono text-xs font-semibold ${(item.gr_delta || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                              {(item.gr_delta || 0) >= 0 ? '+' : ''}{((item.gr_delta || 0) / 1000).toFixed(3)}
                             </TableCell>
-                            <TableCell className="text-right font-mono text-xs">{(item.old_net_wt / 1000).toFixed(3)}</TableCell>
-                            <TableCell className="text-right font-mono text-xs">{(item.new_net_wt / 1000).toFixed(3)}</TableCell>
-                            <TableCell className={`text-right font-mono text-xs font-semibold ${item.net_delta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                              {item.net_delta >= 0 ? '+' : ''}{(item.net_delta / 1000).toFixed(3)}
+                            <TableCell className="text-right font-mono text-xs">{((item.old_net_wt || 0) / 1000).toFixed(3)}</TableCell>
+                            <TableCell className="text-right font-mono text-xs">{((item.final_net_wt || item.proposed_net_wt || 0) / 1000).toFixed(3)}</TableCell>
+                            <TableCell className={`text-right font-mono text-xs font-semibold ${(item.net_delta || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                              {(item.net_delta || 0) >= 0 ? '+' : ''}{((item.net_delta || 0) / 1000).toFixed(3)}
                             </TableCell>
                           </TableRow>
                         ))}
