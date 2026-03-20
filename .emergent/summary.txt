@@ -1,67 +1,70 @@
 <analysis>**original_problem_statement:**
-The user initiated a series of bug reports and feature requests related to the physical stock reconciliation process:
+The user reported a series of UI bugs, data inconsistencies, and missing features after a major refactor in a previous session.
 
-1.  **Bug: Rejected Row Weights:** The user reported that when a physical stock session was finalized, any items marked as rejected were incorrectly storing their  as their , instead of reverting to their .
-2.  **Bug: Current Stock Not Updating:** The user uploaded a physical stock file, approved the changes, and observed that the Current Stock page did not reflect the new, reconciled values.
-3.  **Architecture Change:** The user clarified the core business logic: when a physical stock update is approved, it should become the **new baseline** for the Current Stock calculation. All future transactions (purchases, sales) should be calculated on top of this new baseline.
-4.  **Bug: Stale Baselines After Reverse:** After the baseline logic was implemented, the user found that reversing a session did not correctly revert the current stock values if other sessions had also created baselines for the same items.
-5.  **Bug/Feature: Physical vs. Book Mismatch:** After a reconciliation, the Physical vs. Book page still showed a discrepancy because its Book Stock calculation did not use the new inventory baselines.
-6.  **Feature: Centralized Reconciliation History:** The user requested a unified list on the dashboard to show all reconciliation sessions across all dates, with the ability to filter by status (active/reversed).
+1.  **UI Cleanup**: The Physical vs. Book page needed UI cleanup. The user requested the removal of the session history section (as it was moved to the dashboard), replacement of a discrete date dropdown with a continuous calendar, and formatting all dates to .
+2.  **Missing Functionality**: After the session history was moved to the Dashboard, the user pointed out that the features to expand a session to see item-wise changes and the Reverse button were lost. They needed to be re-implemented on the Dashboard.
+3.  **Data Integrity Bugs**:
+    *   The Physical vs. Book page defaulted to a future date from test data instead of the current date.
+    *   The Stamp Verification Status on the Dashboard only showed a subset of stamps, not all of them.
+    *   The current stock value appeared to fluctuate or be inconsistent between the Current Stock page and the Approval page after a physical stock update.
+    *   After reversing all reconciliation sessions for a date, uploading a new file showed incorrect Old stock values, pulling from stale, previously uploaded data instead of the live book stock.
+4.  **Item Matching & Delta Calculation Bugs**:
+    *   In the physical stock upload preview, items that were members of a group (e.g., ) were showing as unmatched because the matching logic didn't account for group relationships.
+    *   A follow-up bug occurred where uploading a file containing both a group leader and its member (e.g.,  and ) created duplicate rows in the preview, leading to incorrect delta calculations.
+5.  **Stale Data on Dashboard**: The Dashboard did not automatically refresh after a new reconciliation session was created on another page, requiring a manual page reload to see the new entry.
+6.  **Production Anomaly**: The user reported a small, unexplained increase (+17 grams) in gross weight on the production environment after rejecting a file, which the agent could not reproduce locally.
 
 **User's preferred language**: English
 
 **what currently exists?**
-The application's core inventory logic has been fundamentally changed to support **inventory baselining**. When a physical stock update is approved, it creates a baseline record for each approved item in a new  collection.
-
--   The **Current Stock** page calculation () now uses these baselines as the starting point and only applies transactions that occurred *after* the baseline date.
--   The **Physical vs. Book** page's Book Stock calculation () has also been updated to use this same baseline logic, ensuring that a reconciled item shows zero discrepancy on its reconciliation date.
--   The **Reverse/Undo** flow has been hardened to be session-specific. It now only removes baselines created by the exact session being reversed, preventing stale data from affecting inventory calculations.
--   The **Dashboard** now features a new Stock Reconciliation History section that displays a complete, filterable list of all reconciliation sessions (active, reversed, all) from all dates, providing a centralized audit trail.
--   The initial bug where rejected rows stored incorrect final weights has been fixed.
+The application has undergone significant bug fixing and UI improvements.
+- The Physical vs. Book page has a cleaner UI with a proper calendar date picker, DD-MM-YYYY date formatting, and no longer contains the redundant session history. It correctly defaults to the current date.
+- The Stock Reconciliation History on the Dashboard is now fully functional, featuring clickable rows that expand to show detailed item-wise changes and a Reverse button for active sessions.
+- The Dashboard's Stamp Verification Status now correctly displays all stamps from the system, with accurate status indicators for Matched, Mismatched, Overdue, and Not Verified.
+- A  event listener has been added to the Dashboard, ensuring that session history and other stats automatically refresh when the user navigates back to it.
+- Several critical backend data integrity bugs have been fixed:
+    - The physical stock upload preview now correctly uses live book stock as the baseline when all previous sessions for a date have been reversed.
+    - The item matching logic in the upload preview now resolves group members and aliases to their leader items, preventing unmatched errors.
+    - The preview now correctly merges uploaded items that resolve to the same base key, preventing duplicate rows and ensuring accurate delta calculations.
 
 **Last working item**:
--   **Last item agent was working**: Implementing the Stock Reconciliation History section on the dashboard and fixing the book stock calculation on the Physical vs. Book page.
--   **Status**: COMPLETED
--   **Agent Testing Done**: Y (Agent added the new UI to the Dashboard, verified with a screenshot, and ran backend tests to confirm the book stock calculation now uses baselines.)
--   **Which testing method agent to use?**: NA
+-   **Last item agent was working**: Fixing a bug in the physical stock upload preview where having both a group leader and its member in the uploaded file created duplicate rows with incorrect deltas.
+-   **Status**: USER VERIFICATION PENDING
+-   **Agent Testing Done**: Y (Agent simulated the exact scenario with a Python script and confirmed that weights for items resolving to the same base key are now correctly merged into a single row before delta calculation.)
+-   **Which testing method agent to use?**: manual testing by curl
 -   **User Testing Done**: N
 
 **All Pending/In progress Issue list**:
-None.
+-   **Issue 1**: **(P0)** User needs to verify the fix for duplicate rows in the physical stock preview by re-uploading a file containing both a group leader and its member.
 
 **In progress Task List**:
 None.
 
 **Upcoming and Future Tasks**
 -   **Upcoming Tasks**:
-    -   **P0: User Verification of All Changes**: The user needs to perform end-to-end testing on the deployed application to verify:
-        -   The new Stock Reconciliation History on the dashboard.
-        -   The Physical vs. Book page shows correct, baseline-aware book stock after a reconciliation.
-        -   The Current Stock page correctly reflects the new baseline values after an approval.
-        -   The Reverse functionality correctly reverts the current stock to its pre-baseline state.
+    -   **P0: User Verification**: The user needs to perform end-to-end testing on all the fixes implemented in this session, especially the final fix for the duplicate rows/delta calculation.
+    -   **P1: Investigate Production Gross Weight Anomaly**: The user reported a +17g gross weight increase on production after a file rejection. This was not reproducible by the agent and requires further investigation, possibly with access to the production database and logs.
 
 -   **Future Tasks**:
-    -   **P1: Refactor **: Break down the monolithic backend file into a modular FastAPI project structure.
-    -   **P2: Fix Dashboard Test File**: The test file  has a known issue that causes test runs to fail.
-    -   **P2: Review Skipped Codex Issues**: Revisit lower-priority security items, including RBAC on GET endpoints.
+    -   **P1: Refactor **: Break down the monolithic backend file into a modular FastAPI project structure (e.g., using routers).
     -   **P2: Mobile Responsiveness**: Improve the application's usability on mobile devices.
+    -   **P2: Fix **: Address the known issue in the dashboard test file that causes test runs to fail.
 
 **Completed work in this session**
--   **Bug Fix (Rejected Row Weights)**: Modified  in  to ensure rejected items correctly retain their  weights instead of proposed weights.
--   **Feature (Inventory Baselining)**:
-    -   Created a new  collection in MongoDB.
-    -   Modified  in  to create/update baselines for approved items.
-    -   Rewrote  in  to use baselines as the starting point for inventory calculations.
--   **Bug Fix (Stale Baselines)**: Hardened  in  to only delete baselines associated with the specific  being reversed.
--   **Bug Fix (Physical vs Book Calculation)**: Modified  in  to also use the new baseline logic, ensuring reconciled items show no discrepancy.
--   **Feature (Dashboard History)**:
-    -   Modified  to add a new Stock Reconciliation History section.
-    -   This section fetches all sessions from  and includes client-side filtering for All, Active, and Reversed sessions.
+-   **UI Cleanup (Physical vs Book)**: Removed session history, replaced date dropdown with a calendar, and standardized date format to DD-MM-YYYY in .
+-   **Feature (Dashboard History)**: Re-implemented session detail expansion and the Reverse button on the Dashboard in .
+-   **Bug Fix (Default Date)**: Modified  to default to the current date.
+-   **Bug Fix (Stale Dashboard)**: Added a  event listener in  to automatically refresh data.
+-   **Bug Fix (All Stamps)**: Modified  in  to gather stamps from all relevant collections (, , etc.), not just .
+-   **Bug Fix (Stale Old Values)**: Corrected the logic in  in  to use current book stock if no active reconciliation sessions exist for a date.
+-   **Bug Fix (Unmatched Group Members)**: Enhanced the  endpoint in  to use  logic, correctly matching group members to their base items.
+-   **Bug Fix (Duplicate Rows/Wrong Deltas)**: Refactored the  logic in  to first merge uploaded items that resolve to the same base key, then calculate deltas, preventing duplicates.
 
 **Earlier issues found/mentioned but not fixed**
--   **Issue 1**: RBAC on 30+ GET endpoints was skipped as it was deemed high-risk for breaking frontend functionality.
--   **Issue 2**:  behavior mismatch was skipped as fixing it was considered a major feature and a design decision, not a bug.
--   **Issue 3**: Deduplication of executive entries with empty stamps was skipped due to the risk of altering intended business logic.
+-   **Issue 1**: **(P1) Session History UI Placement**: The user pointed out that the session history was moved to the Dashboard, but their initial (and potentially ongoing) expectation might have been for it to be on the Physical vs. Book page. The agent offered to move it but was directed to fix another issue ( stale data) instead. This requirement needs clarification.
+-   **Issue 2**: RBAC on 30+ GET endpoints was skipped as it was deemed high-risk for breaking frontend functionality.
+-   **Issue 3**:  behavior mismatch was skipped as fixing it was considered a major feature and a design decision, not a bug.
+-   **Issue 4**: Deduplication of executive entries with empty stamps was skipped due to the risk of altering intended business logic.
 
 **Known issue recurrence from previous fork**
 None.
@@ -70,49 +73,54 @@ None.
 
 
 **Key Technical Concepts**
--   **Inventory Baselining**: The most significant change. The  data, upon approval, now acts as a baseline or checkpoint for an item's inventory. The  and  services were rewritten to use this logic: . This fundamentally connects the physical and book stock systems.
--   **Session-Scoped Data Integrity**: The  logic was improved to be session-specific when deleting baselines, preventing a reversal of one session from incorrectly deleting baselines created by another.
+-   **Data Integrity on Frontend**: Addressed stale data on the dashboard by implementing a  event listener to trigger data refetching, ensuring the UI reflects the latest backend state without requiring a manual refresh.
+-   **Complex Backend Data Aggregation**: The item matching logic for physical stock uploads was significantly enhanced. It now involves a multi-step process:
+    1.  Fetch all group and mapping definitions.
+    2.  For each uploaded item, resolve its raw name to a canonical leader item name.
+    3.  Aggregate weights of all uploaded items that resolve to the *same* leader.
+    4.  Compare the aggregated uploaded weight against the single base stock entry for that leader to calculate the correct delta.
+-   **State-Dependent Logic**: The logic for determining the Old Stock baseline was made state-dependent. It now checks if any *active* reconciliation sessions exist for a given date before deciding whether to use stale  data or fall back to the live .
 
 **key DB schema**
--   **inventory_baselines** (New Collection): Stores the authoritative stock level for an item after a physical count.
-    -   **Key Columns**:  (lowercase item name), , , , .
+No changes were made to the database schema in this session.
 
 **changes in tech stack**
 None.
 
 **All files of reference**
--   : Contains the new core baseline logic for all inventory calculations.
--   : Contains the modified API endpoints that create and remove baselines (, ).
--   : Contains the new UI for the centralized reconciliation history.
--   : New test file verifying the initial bug fix.
+-   : The main file where most bug fixes occurred, particularly in the  and  endpoints.
+-   : Contains the fix for the stale Old values logic.
+-   : Contains the enhanced reconciliation history UI and the auto-refresh logic.
+-   : Contains the UI cleanup and new calendar component.
 
 **Areas that need refactoring**:
--    remains a high-priority candidate for being broken down into a more modular structure (e.g., routers, services).
+-    remains a monolithic file and is the highest priority for refactoring into a modular structure with FastAPI routers and services.
 
 **key api endpoints**
--   **MODIFIED**:  (Now creates records in ).
--   **MODIFIED**:  (Now removes baselines matching the ).
--   **MODIFIED**:  (The underlying service now uses baseline logic).
--   **MODIFIED**:  (The underlying service for Book Stock now uses baseline logic).
--   **MODIFIED**:  (Now called without a date filter from the dashboard to fetch all sessions).
+-   **MODIFIED**: : Completely refactored to handle group/alias resolution and merge duplicate-resolving items before calculating deltas.
+-   **MODIFIED**: : Logic updated to query multiple collections to return a comprehensive list of all stamps in the system.
+-   The underlying services for  and  were impacted by the fix in .
 
 **Critical Info for New Agent**
-1.  **Inventory Baselining is the Source of Truth**: The core logic has changed. Physical stock approval creates a baseline. The  page and  page now depend on this  collection. Do not assume inventory is calculated only from opening stock and transactions anymore.
-2.  ** is Key**: The most critical business logic for inventory is now in  and  within this service file. Any future changes to stock calculation must happen here.
-3.  **Reverse is Session-Scoped**: The  functionality is now safer, but it's important to remember it deletes baselines *only* if the  matches. This prevents accidental data corruption but means multiple baselines for the same item from different sessions could exist.
+1.  **Item Matching is Complex**: The physical stock upload logic () is now robust but complex. It merges items before comparison. Be aware of this aggregation step if debugging deltas in the future. Any item name must be resolved to its leader before its stock is looked up.
+2.  **Dashboard Auto-Refreshes**: The Dashboard now uses a  event listener to stay up-to-date. Changes made on other pages (like approving a physical stock session) should now appear automatically when the user returns to the Dashboard tab.
+3.  **Production Anomaly**: A +17g gross weight change was reported on production after a file *rejection*. The agent could not find a code path for this and could not reproduce it. This may be a production-specific data issue or an edge case not covered in the local environment. It needs to be investigated carefully.
+4.  **Requirement Ambiguity**: The user has not given a final decision on where the Stock Reconciliation History should live ( vs. ). The current implementation places it on the . Clarify this with the user before making further changes.
 
 **documents and test reports created in this job**
--   
--   
--    (Updated)
+-    (Updated multiple times)
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **User**: Bug report: rejected rows in a physical stock session are incorrectly saving proposed weights as final weights.
-2.  **User**: Bug report: After uploading and approving a physical stock file, the Current Stock page is not updating.
-3.  **User**: Clarification of business logic: Approved physical stock **must** become the new current stock baseline for all future calculations.
-4.  **User**: Bug report: After reversing a session, the current stock is not reverting to its original value, showing reconciled values instead. This pointed to stale baselines.
-5.  **User**: Bug report: After reconciliation, the Physical vs. Book page still shows a discrepancy because the book stock calculation isn't aware of the new baseline. The session also doesn't appear on the page.
-6.  **User**: Feature Request: Create a centralized list of all reconciliation sessions on the dashboard, filterable by status (active/reversed), because the Physical vs. Book page is date-limited.
+1.  **User**: Remove the session section from the Physical vs Book page, fix the date (shows 2026-03-26 and random dates), and format dates as DD-MM-YYYY.
+2.  **User**: Pointed out that after the UI cleanup, the expand/reverse functionality was missing from the new session history on the dashboard.
+3.  **User**: Reported multiple data bugs: default date is wrong, stock fluctuates, deltas are wrong, and not all stamps are shown on the dashboard.
+4.  **User**: Reported that current stock values differ between the Current Stock page and the Approval page. (Agent found this was likely a caching/hot-reload issue).
+5.  **User**: Reported that after reversing all sessions, the Old Gross in the upload preview was showing stale data instead of the current book stock.
+6.  **User**: Clarified the user's two concerns: [P1] the session history UI is on the wrong page, and [P2] the dashboard data is stale until a manual refresh.
+7.  **User**: Instructed the agent to fix P2 (stale dashboard data).
+8.  **User**: Reported two new issues from production: 1) a small gross weight change after a file *rejection*, and 2) certain grouped items were showing as unmatched in the upload preview.
+9.  **User**: Confirmed the agent should proceed with the proposed fix for the unmatched items.
+10. **User**: Reported a follow-up bug where fixing the unmatched issue led to duplicate rows and incorrect deltas for grouped items.
 
 **Project Health Check:**
 -   **Broken**: None.
@@ -124,15 +132,15 @@ None.
 -   **Playwright**: Backend dependency for browser automation to capture screenshots.
 
 **Testing status**
--   **Testing agent used after significant changes**: YES (for the baseline feature).
+-   **Testing agent used after significant changes**: NO
 -   **Troubleshoot agent used after agent stuck in loop**: NO
--   **Test files created**:
-    -   
--   **Known regressions**: None. All 13 backend tests pass.
+-   **Test files created**: None.
+-   **Known regressions**: None identified in this session.
 
 **Credentials to test flow:**
 -   **Username**: 
 -   **Password**: 
 
 **What agent forgot to execute**
-The agent successfully addressed all user requests and bug reports from the session. Nothing was forgotten.</analysis>
+-   Initially, when moving the session history UI from Physical vs. Book to Dashboard, the agent forgot to also move the expand/collapse and Reverse functionality. The user pointed this out, and the agent then corrected it.
+-   The user raised two points:  session history UI on wrong page and  stale dashboard data. The agent was instructed to fix , but  was never resolved or clarified. The requirement of where the session history should ultimately reside is still pending clarification.</analysis>

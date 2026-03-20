@@ -174,7 +174,8 @@ async def get_effective_physical_base_for_date(verification_date: str):
     """Return the effective base stock for a physical stock update.
 
     If an active (non-reversed) session exists for the date, use the physical_stock snapshot.
-    Otherwise, compute book closing stock as of that date (even if stale physical_stock records exist).
+    Otherwise, use get_current_inventory() to ensure the base matches what the
+    Current Stock page shows (same identity model, polythene, grouping logic).
 
     Returns: dict keyed by normalized item name
       { "item_key": { item_name, stamp, gr_wt, net_wt, is_negative_grouped } }
@@ -204,7 +205,28 @@ async def get_effective_physical_base_for_date(verification_date: str):
                 }
             return result
 
-    return await get_book_closing_stock_as_of_date(verification_date)
+    # Use current inventory computation to ensure base matches the Current Stock page.
+    # This avoids identity-model mismatches between get_book_closing_stock_as_of_date()
+    # and get_current_inventory() (polythene keying, group handling differences).
+    current = await get_current_inventory()
+    all_items = current.get('inventory', []) + current.get('negative_items', [])
+
+    groups_raw = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    group_names_set = {g['group_name'] for g in groups_raw}
+
+    result = {}
+    for item in all_items:
+        key = item['item_name'].strip().lower()
+        is_neg = item.get('gr_wt', 0) < -0.01 or item.get('net_wt', 0) < -0.01
+        is_group = item['item_name'] in group_names_set
+        result[key] = {
+            'item_name': item['item_name'],
+            'stamp': item.get('stamp', 'Unassigned'),
+            'gr_wt': item.get('gr_wt', 0),
+            'net_wt': item.get('net_wt', 0),
+            'is_negative_grouped': is_neg or is_group,
+        }
+    return result
 
 
 async def get_current_inventory():

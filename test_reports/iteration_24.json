@@ -1,0 +1,80 @@
+{
+  "summary": "Comprehensive testing of Physical Stock Upload Preview bug fixes. All 9 backend tests passed (100%). Frontend verification passed - Login works, Dashboard loads, Physical vs Book page loads with date selector and comparison features, Current Stock page shows inventory with group member breakdowns.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_upload_preview_fixes.py",
+    "/app/test_reports/pytest/upload_preview_fixes.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "✓ Upload-preview resolver builds comprehensive name_to_base_key lookup (server.py lines 2434-2464)",
+    "✓ Group members (SNT-40 PREMIUM) correctly resolve to leader (SNT 40-256)",
+    "✓ get_effective_physical_base_for_date() now uses get_current_inventory() (stock_service.py lines 173-229)",
+    "✓ Base values in upload-preview match Current Stock page values",
+    "✓ Compare endpoint includes gross_difference and gross_difference_kg fields (server.py lines 2924-2925)",
+    "✓ Compare endpoint uses gross difference for classification when net is negligible (server.py line 2930)",
+    "✓ Physical stock dates returned in descending order",
+    "✓ Apply-updates expects 'items' array with full item data (not 'updates')"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_upload_preview_fixes.py"
+  ],
+  "success_rate": {
+    "backend": "100% (9/9 tests passed)",
+    "frontend": "100% (All UI verifications passed)"
+  },
+  "test_credentials": {
+    "admin": {"username": "admin", "password": "admin123"}
+  },
+  "seed_data_creation": "Test files created dynamically with openpyxl for upload-preview testing. Used existing data for date 2026-03-31.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Physical Stock Upload Preview bug fixes fully verified. Key endpoints: POST /api/physical-stock/upload-preview (group member resolution verified), GET /api/inventory/current (returns inventory with group member breakdowns), GET /api/physical-stock/compare (includes gross_difference fields), POST /api/physical-stock/apply-updates (expects 'items' array). Test database has groups: SNT 40-256 (members: SNT-40 PREMIUM, SNT 40-256), TULSI 70 -264 (members: TULSI 70 -264, TULSI 70 BELT).",
+  "features_verified": {
+    "group_member_resolution": {
+      "status": "VERIFIED",
+      "description": "Uploading group member (SNT-40 PREMIUM) correctly resolves to leader (SNT 40-256) in preview",
+      "code_location": "server.py lines 2434-2464 - comprehensive name_to_base_key lookup"
+    },
+    "base_matches_current_stock": {
+      "status": "VERIFIED",
+      "description": "Upload-preview base values (old_gr_wt, old_net_wt) match GET /api/inventory/current",
+      "code_location": "stock_service.py lines 173-229 - get_effective_physical_base_for_date uses get_current_inventory()"
+    },
+    "compare_gross_difference": {
+      "status": "VERIFIED",
+      "description": "Compare endpoint includes gross_difference, gross_difference_kg, book_gross_wt, physical_gross_wt",
+      "code_location": "server.py lines 2924-2925"
+    },
+    "compare_requires_date": {
+      "status": "VERIFIED",
+      "description": "Compare endpoint returns 422 without verification_date parameter"
+    },
+    "current_inventory": {
+      "status": "VERIFIED",
+      "description": "Returns all items with proper structure including is_group flag and members array"
+    },
+    "apply_updates": {
+      "status": "VERIFIED",
+      "description": "Apply updates endpoint works correctly with 'items' array"
+    },
+    "dates_sorted": {
+      "status": "VERIFIED",
+      "description": "Physical stock dates returned in descending order"
+    }
+  },
+  "playwright_test_results": {
+    "login": "PASS",
+    "dashboard_load": "PASS - Shows 11,767 transactions, Stock Reconciliation History",
+    "physical_vs_book": "PASS - Page loads with date selector (data-testid='compare-date-filter'), summary cards (Book Stock, Physical Stock, Difference, Accuracy)",
+    "current_stock": "PASS - Shows 78 items, SNT 40-256 group with expandable members"
+  }
+}

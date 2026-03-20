@@ -2425,30 +2425,64 @@ async def upload_physical_stock_preview(
     base = await get_effective_physical_base_for_date(verification_date)
     has_existing_snapshot = await db.physical_stock.count_documents({'verification_date': verification_date}) > 0
 
-    # Build mapping+group resolution for matching uploaded names to base
+    # Build comprehensive name→base_key reverse lookup
     all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
     all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
-    ps_mapping_dict, ps_member_to_leader, _ = build_group_maps(all_groups, all_mappings)
+    ps_mapping_dict, ps_member_to_leader, ps_group_members = build_group_maps(all_groups, all_mappings)
 
-    # Resolve uploaded items to base keys, merging weights for items that resolve to the same entry
-    resolved_uploads = {}  # base_key -> {item_name, stamp, gr_wt, net_wt, base_item}
+    # Step 1: direct base key lookup
+    name_to_base_key = {k: k for k in base}
+
+    # Step 2: group members → leader base key
+    for g in all_groups:
+        leader_key = g['group_name'].strip().lower()
+        if leader_key in base:
+            for member in g.get('members', []):
+                name_to_base_key[member.strip().lower()] = leader_key
+
+    # Step 3: mapping transaction_name → master_name → leader → base key
+    for m in all_mappings:
+        txn_key = m['transaction_name'].strip().lower()
+        master_name = m['master_name'].strip()
+        leader = ps_member_to_leader.get(master_name, master_name)
+        leader_key = leader.strip().lower()
+        if leader_key in base:
+            name_to_base_key[txn_key] = leader_key
+        # Also map the master_name itself (it might be a member or standalone)
+        master_key = master_name.strip().lower()
+        if master_key not in name_to_base_key and leader_key in base:
+            name_to_base_key[master_key] = leader_key
+
+    # Step 4: mapping targets (master_names) that are group members
+    for m in all_mappings:
+        master_name = m['master_name'].strip()
+        master_key = master_name.strip().lower()
+        if master_key not in name_to_base_key:
+            leader = ps_member_to_leader.get(master_name, master_name)
+            leader_key = leader.strip().lower()
+            if leader_key in base:
+                name_to_base_key[master_key] = leader_key
+
+    # Resolve uploaded items to base keys using the comprehensive lookup
+    resolved_uploads = {}  # base_key -> {base_item, gr_wt, net_wt}
     unmatched_uploads = []
     for item_key, upl in uploaded.items():
-        base_item = base.get(item_key)
-        resolved_base_key = item_key
+        resolved_base_key = name_to_base_key.get(item_key)
 
-        # If not found by raw name, resolve through mappings+groups
-        if not base_item:
+        if not resolved_base_key:
+            # Fallback: try chain resolution (case-sensitive, then case-insensitive)
             raw_name = upl['item_name'].strip()
             master = ps_mapping_dict.get(raw_name, raw_name)
             leader = ps_member_to_leader.get(master, master)
-            resolved_base_key = leader.strip().lower()
-            if resolved_base_key != item_key:
-                base_item = base.get(resolved_base_key)
+            candidate_key = leader.strip().lower()
+            if candidate_key in base:
+                resolved_base_key = candidate_key
 
-        if not base_item:
+        if not resolved_base_key:
             unmatched_uploads.append(upl)
             continue
+
+        base_item = base[resolved_base_key]
 
         # Merge into resolved_uploads keyed by the base entry key
         if resolved_base_key not in resolved_uploads:
@@ -2557,7 +2591,7 @@ async def apply_physical_stock_updates(
     # Materialize snapshot if needed
     has_snapshot = await db.physical_stock.count_documents({'verification_date': verification_date}) > 0
     if not has_snapshot:
-        book_base = await get_book_closing_stock_as_of_date(verification_date)
+        book_base = await get_effective_physical_base_for_date(verification_date)
         if book_base:
             bulk_docs = [{
                 'item_name': bi['item_name'], 'stamp': bi.get('stamp', ''),
@@ -2873,19 +2907,28 @@ async def compare_physical_with_book(verification_date: str, current_user: dict 
             phys_item = physical_items[key]
             book_net = book_item['net_wt']
             phys_net = phys_item.get('net_wt', 0)
-            diff = phys_net - book_net
+            book_gross = book_item.get('gr_wt', 0)
+            phys_gross = phys_item.get('gr_wt', 0)
+            diff_net = phys_net - book_net
+            diff_gross = phys_gross - book_gross
             
             comparison = {
                 'item_name': book_item['item_name'],
                 'stamp': book_item.get('stamp', ''),
                 'book_net_wt': book_net,
                 'physical_net_wt': phys_net,
-                'difference': diff,
-                'difference_kg': round(diff/1000, 3),
+                'book_gross_wt': book_gross,
+                'physical_gross_wt': phys_gross,
+                'difference': diff_net,
+                'difference_kg': round(diff_net/1000, 3),
+                'gross_difference': diff_gross,
+                'gross_difference_kg': round(diff_gross/1000, 3),
                 'match_percentage': round((min(abs(book_net), abs(phys_net)) / max(abs(book_net), abs(phys_net)) * 100) if max(abs(book_net), abs(phys_net)) > 0 else 100, 2)
             }
             
-            if abs(diff) < 10:
+            # Use gross difference for classification when net values are identical (gross-only files)
+            classify_diff = diff_gross if (abs(diff_net) < 1 and abs(diff_gross) >= 1) else diff_net
+            if abs(classify_diff) < 10:
                 matches.append(comparison)
             else:
                 discrepancies.append(comparison)
