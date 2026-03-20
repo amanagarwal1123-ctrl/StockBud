@@ -2430,35 +2430,55 @@ async def upload_physical_stock_preview(
     all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
     ps_mapping_dict, ps_member_to_leader, _ = build_group_maps(all_groups, all_mappings)
 
-    preview_rows = []
+    # Resolve uploaded items to base keys, merging weights for items that resolve to the same entry
+    resolved_uploads = {}  # base_key -> {item_name, stamp, gr_wt, net_wt, base_item}
+    unmatched_uploads = []
     for item_key, upl in uploaded.items():
         base_item = base.get(item_key)
+        resolved_base_key = item_key
 
         # If not found by raw name, resolve through mappings+groups
         if not base_item:
             raw_name = upl['item_name'].strip()
             master = ps_mapping_dict.get(raw_name, raw_name)
             leader = ps_member_to_leader.get(master, master)
-            resolved_key = leader.strip().lower()
-            if resolved_key != item_key:
-                base_item = base.get(resolved_key)
+            resolved_base_key = leader.strip().lower()
+            if resolved_base_key != item_key:
+                base_item = base.get(resolved_base_key)
 
         if not base_item:
-            preview_rows.append({
-                'item_name': upl['item_name'], 'stamp': upl.get('stamp', ''),
-                'update_mode': update_mode, 'is_negative_grouped': False,
-                'old_gr_wt': 0, 'new_gr_wt': round(upl['gr_wt'], 3), 'gr_delta': round(upl['gr_wt'], 3),
-                'old_net_wt': 0, 'new_net_wt': round(upl['net_wt'], 3) if has_net else 0,
-                'net_delta': round(upl['net_wt'], 3) if has_net else 0,
-                'status': 'unmatched',
-            })
+            unmatched_uploads.append(upl)
             continue
 
+        # Merge into resolved_uploads keyed by the base entry key
+        if resolved_base_key not in resolved_uploads:
+            resolved_uploads[resolved_base_key] = {
+                'base_item': base_item, 'gr_wt': 0.0, 'net_wt': 0.0,
+            }
+        resolved_uploads[resolved_base_key]['gr_wt'] += upl['gr_wt']
+        resolved_uploads[resolved_base_key]['net_wt'] += upl['net_wt']
+
+    preview_rows = []
+
+    # Unmatched items
+    for upl in unmatched_uploads:
+        preview_rows.append({
+            'item_name': upl['item_name'], 'stamp': upl.get('stamp', ''),
+            'update_mode': update_mode, 'is_negative_grouped': False,
+            'old_gr_wt': 0, 'new_gr_wt': round(upl['gr_wt'], 3), 'gr_delta': round(upl['gr_wt'], 3),
+            'old_net_wt': 0, 'new_net_wt': round(upl['net_wt'], 3) if has_net else 0,
+            'net_delta': round(upl['net_wt'], 3) if has_net else 0,
+            'status': 'unmatched',
+        })
+
+    # Matched items (merged)
+    for base_key, merged in resolved_uploads.items():
+        base_item = merged['base_item']
         old_gr = base_item.get('gr_wt', 0)
         old_net = base_item.get('net_wt', 0)
-        new_gr = round(upl['gr_wt'], 3)
+        new_gr = round(merged['gr_wt'], 3)
         is_neg_grouped = base_item.get('is_negative_grouped', False)
-        new_net = round(old_net, 3) if (is_neg_grouped or not has_net) else round(upl['net_wt'], 3)
+        new_net = round(old_net, 3) if (is_neg_grouped or not has_net) else round(merged['net_wt'], 3)
 
         preview_rows.append({
             'item_name': base_item['item_name'], 'stamp': base_item.get('stamp', ''),
