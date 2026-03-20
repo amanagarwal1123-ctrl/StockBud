@@ -44,9 +44,9 @@ Fields: item_key, item_name, baseline_date, gr_wt, net_wt, stamp, updated_at, se
 
 ### 5. Effective Base for Preview
 - `get_effective_physical_base_for_date()` checks for ACTIVE sessions before using physical_stock records
-- If ALL sessions for a date are reversed, falls back to `get_current_inventory()` output
+- If ALL sessions for a date are reversed, falls back to date-filtered `get_current_inventory()`
 - Prevents stale physical_stock records from being used as "Old" values
-- Base now uses `get_current_inventory()` ensuring consistency with Current Stock page
+- Base uses `get_current_inventory(as_of_date=verification_date)` ensuring both date-scoping AND consistency with Current Stock page identity model
 
 ### 6. Upload Preview Item Matching (FIXED Mar 20, 2026)
 - **Comprehensive resolver**: Builds a `name_to_base_key` reverse lookup from ALL groups, mappings, and their chains
@@ -55,38 +55,40 @@ Fields: item_key, item_name, baseline_date, gr_wt, net_wt, stamp, updated_at, se
 - Multiple uploaded items resolving to the same base key are MERGED before delta computation
 - Fallback chain resolution still runs if the comprehensive lookup misses
 
-### 7. Identity Model Fix (FIXED Mar 20, 2026)
-- `get_effective_physical_base_for_date()` now uses `get_current_inventory()` output instead of `get_book_closing_stock_as_of_date()`
-- This ensures the upload-preview base values exactly match the Current Stock page
-- Eliminates value mismatches caused by different polythene/group handling in the two functions
-- `apply-updates` also uses the same base for materializing snapshots
+### 7. Identity Model Unification (FIXED Mar 20, 2026)
+- `get_current_inventory(as_of_date)` now accepts optional date parameter
+- When `as_of_date` is set: filters transactions (date <= as_of_date), baselines (baseline_date <= as_of_date), polythene (date <= as_of_date)
+- `_flat_base_from_inventory(as_of_date)` helper extracts flat base dict from inventory result
+- Both `get_effective_physical_base_for_date()` and compare endpoint use `_flat_base_from_inventory()`
+- This ensures upload-preview, apply-updates, AND compare all use the same identity model as the Current Stock page
+- `get_book_closing_stock_as_of_date()` no longer used in server.py (only retained in stock_service.py for potential future use)
 
 ### 8. Compare Screen Gross Weight (FIXED Mar 20, 2026)
 - Compare endpoint now includes `gross_difference`, `gross_difference_kg`, `book_gross_wt`, `physical_gross_wt` fields
 - For gross-only physical files where net difference is negligible, gross difference is used for match/discrepancy classification
 
 ## Key Endpoints
-- `POST /api/physical-stock/upload-preview` -- parses file, resolves names through comprehensive lookup, returns preview diff
+- `POST /api/physical-stock/upload-preview` -- parses file, resolves names through comprehensive lookup, date-scoped base
 - `POST /api/physical-stock/apply-updates` -- requires preview_session_id, creates inventory_baselines
 - `POST /api/physical-stock/finalize-session` -- finalize draft
 - `POST /api/physical-stock/update-history/{id}/reverse` -- reverse latest, removes baselines
 - `GET /api/physical-stock/update-history` -- filtered, reversible flag
 - `GET /api/physical-stock/update-history/{session_id}` -- session detail with items
-- `GET /api/inventory/current` -- uses baselines for physical-stock-overridden items
-- `GET /api/physical-stock/compare` -- includes both net and gross weight comparison
+- `GET /api/inventory/current` -- uses baselines for physical-stock-overridden items (no date filter)
+- `GET /api/physical-stock/compare` -- date-filtered, same identity model, gross+net comparison
 - `GET /api/stamp-verification/history` -- all stamps from all collections with verification status
 
 ## Files Changed
-- `backend/server.py` -- upload-preview with comprehensive resolver; compare endpoint with gross weight; apply-updates uses consistent base
-- `backend/services/stock_service.py` -- get_effective_physical_base_for_date now uses get_current_inventory(); get_current_inventory, get_book_closing_stock_as_of_date use baselines
+- `backend/server.py` -- upload-preview with comprehensive resolver; compare uses _flat_base_from_inventory; apply-updates uses consistent base
+- `backend/services/stock_service.py` -- get_current_inventory(as_of_date), _flat_base_from_inventory(), get_effective_physical_base_for_date passes date
 - `frontend/src/pages/Dashboard.jsx` -- Reconciliation History with clickable expand, reverse button, all stamps, refetch on focus
 - `frontend/src/pages/PhysicalStockComparison.jsx` -- Calendar date picker, DD-MM-YYYY format, defaults to today
 
 ## Tests
+- 18/18 date-filtering and compare tests pass (iteration 25)
 - 9/9 upload-preview fix tests pass (iteration 24)
 - Frontend verification: login, dashboard, physical vs book, current stock all pass
-- Verified: SNT-40 PREMIUM, TULSI 70 BELT, MADRASI YASH SHOLDER resolve correctly in preview
-- Base values in upload-preview match Current Stock page values
+- Date filtering verified: CHAIN MS-70 shows different base values for different verification dates
 
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
