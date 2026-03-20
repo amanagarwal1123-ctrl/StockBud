@@ -41,7 +41,7 @@ from services.helpers import (
     normalize_stamp, get_column_value, parse_labor_value,
     normalize_date, stamp_sort_key, save_action, auto_normalize_stamps
 )
-from services.stock_service import get_current_inventory, get_stamp_closing_stock, get_effective_physical_base_for_date, _flat_base_from_inventory
+from services.stock_service import get_current_inventory, get_effective_physical_base_for_date, _flat_base_from_inventory
 from services.group_utils import build_group_maps, build_group_ledger, resolve_to_leader
 
 app = FastAPI()
@@ -1760,7 +1760,12 @@ async def get_approval_details(stamp: str, verification_date: Optional[str] = No
         entered_map[entered['item_name']] = entered['gross_wt']
     
     # Calculate expected closing stock for the verification_date
-    closing_stock = await get_stamp_closing_stock(stamp, verification_date)
+    # Use get_current_inventory (baseline-aware) and extract stamp items
+    current_inv = await get_current_inventory(as_of_date=verification_date)
+    stamp_items_list = current_inv.get('by_stamp', {}).get(stamp, [])
+    closing_stock = {}
+    for si in stamp_items_list:
+        closing_stock[si['item_name']] = round(si['gr_wt'] / 1000, 3)
     
     # Build comparison for ALL items in stamp
     comparison = []

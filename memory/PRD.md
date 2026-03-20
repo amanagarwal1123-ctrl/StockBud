@@ -20,79 +20,68 @@ When a user uploads physical stock and approves items:
 ### Collection: `inventory_baselines`
 Fields: item_key, item_name, baseline_date, gr_wt, net_wt, stamp, updated_at, session_id
 
-## Session Lifecycle (Mar 19, 2026)
+## Unified Stock Computation (Mar 20, 2026)
+All stock-dependent features now use `get_current_inventory(as_of_date)` as the single source of truth:
+- **Current Stock page**: `get_current_inventory()` (no date filter)
+- **Upload Preview base**: `get_current_inventory(as_of_date=verification_date)` via `_flat_base_from_inventory()`
+- **Compare page**: `_flat_base_from_inventory(verification_date)`
+- **Stamp Approvals**: `get_current_inventory(as_of_date=verification_date)` via `by_stamp`
+- **Apply Updates snapshot**: `get_effective_physical_base_for_date(verification_date)`
+
+`get_book_closing_stock_as_of_date()` and `get_stamp_closing_stock()` are retained in stock_service.py but no longer called from server.py.
+
+## Session Lifecycle
 
 ### 1. One Upload = One Session
 - Preview creates a draft session with `preview_session_id`
 - Apply updates the SAME session (no new session per click)
 - Session tracks full row list: applied, rejected, unmatched, skipped, pending
 
-### 2. Draft Initialization
-- Pending rows start with final_gr_wt = old_gr_wt, gr_delta = 0 (not proposed values)
-
-### 3. Session Finalization
-- Modal close triggers finalize: remaining pending rows -> rejected
-- Rejected rows reset: final_* = old_*, deltas = 0
-- Zero-applied sessions -> abandoned (hidden from history)
-
-### 4. Reverse/Undo
-- `POST /api/physical-stock/update-history/{session_id}/reverse`
-- Only latest unreversed session per date can be reversed
-- Restores old weights for applied rows in physical_stock
-- Removes inventory_baselines for reversed items
-- Marks session as reversed
-
-### 5. Effective Base for Preview
+### 2. Effective Base for Preview
 - `get_effective_physical_base_for_date()` checks for ACTIVE sessions before using physical_stock records
 - If ALL sessions for a date are reversed, falls back to date-filtered `get_current_inventory()`
-- Prevents stale physical_stock records from being used as "Old" values
-- Base uses `get_current_inventory(as_of_date=verification_date)` ensuring both date-scoping AND consistency with Current Stock page identity model
+- Base uses `get_current_inventory(as_of_date=verification_date)`
 
-### 6. Upload Preview Item Matching (FIXED Mar 20, 2026)
-- **Comprehensive resolver**: Builds a `name_to_base_key` reverse lookup from ALL groups, mappings, and their chains
-- Group members (e.g., TULSI 70 BELT -> TULSI 70 -264) resolve automatically via group definitions
-- Mapped items (e.g., MADRASI YASH SHOLDER -186 -> MADRASI YASH -186) resolve via mapping definitions
-- Multiple uploaded items resolving to the same base key are MERGED before delta computation
-- Fallback chain resolution still runs if the comprehensive lookup misses
+### 3. Upload Preview Item Matching
+- Comprehensive `name_to_base_key` reverse lookup from ALL groups, mappings, and their chains
+- Group members resolve automatically; mapped items resolve via mapping definitions
+- Multiple uploaded items resolving to same base key are MERGED before delta computation
 
-### 7. Identity Model Unification (FIXED Mar 20, 2026)
-- `get_current_inventory(as_of_date)` now accepts optional date parameter
-- When `as_of_date` is set: filters transactions (date <= as_of_date), baselines (baseline_date <= as_of_date), polythene (date <= as_of_date)
-- `_flat_base_from_inventory(as_of_date)` helper extracts flat base dict from inventory result
-- Both `get_effective_physical_base_for_date()` and compare endpoint use `_flat_base_from_inventory()`
-- This ensures upload-preview, apply-updates, AND compare all use the same identity model as the Current Stock page
-- `get_book_closing_stock_as_of_date()` no longer used in server.py (only retained in stock_service.py for potential future use)
+### 4. Compare Screen
+- Uses `_flat_base_from_inventory(verification_date)` — same identity model as current stock
+- Includes both net and gross weight comparison with `gross_difference` fields
+- Gross difference used for classification when net is negligible (gross-only files)
 
-### 8. Compare Screen Gross Weight (FIXED Mar 20, 2026)
-- Compare endpoint now includes `gross_difference`, `gross_difference_kg`, `book_gross_wt`, `physical_gross_wt` fields
-- For gross-only physical files where net difference is negligible, gross difference is used for match/discrepancy classification
+### 5. Stamp Approvals Book Values (FIXED Mar 20, 2026)
+- Was using `get_stamp_closing_stock()` which ignored baselines
+- Now uses `get_current_inventory(as_of_date=verification_date).by_stamp[stamp]`
+- After physical stock reconciliation, stamp approval book values reflect updated stock
 
 ## Key Endpoints
-- `POST /api/physical-stock/upload-preview` -- parses file, resolves names through comprehensive lookup, date-scoped base
-- `POST /api/physical-stock/apply-updates` -- requires preview_session_id, creates inventory_baselines
+- `POST /api/physical-stock/upload-preview` -- comprehensive resolver, date-scoped base
+- `POST /api/physical-stock/apply-updates` -- creates inventory_baselines
 - `POST /api/physical-stock/finalize-session` -- finalize draft
-- `POST /api/physical-stock/update-history/{id}/reverse` -- reverse latest, removes baselines
-- `GET /api/physical-stock/update-history` -- filtered, reversible flag
-- `GET /api/physical-stock/update-history/{session_id}` -- session detail with items
-- `GET /api/inventory/current` -- uses baselines for physical-stock-overridden items (no date filter)
-- `GET /api/physical-stock/compare` -- date-filtered, same identity model, gross+net comparison
-- `GET /api/stamp-verification/history` -- all stamps from all collections with verification status
+- `POST /api/physical-stock/update-history/{id}/reverse` -- reverse, removes baselines
+- `GET /api/inventory/current` -- baseline-aware, full inventory
+- `GET /api/physical-stock/compare` -- date-filtered, unified identity, gross+net
+- `GET /api/manager/approval-details/{stamp}` -- baseline-aware stamp book values
+- `GET /api/manager/pending-approvals` -- pending stock entries
+- `GET /api/stamp-verification/history` -- all stamps with verification status
 
 ## Files Changed
-- `backend/server.py` -- upload-preview with comprehensive resolver; compare uses _flat_base_from_inventory; apply-updates uses consistent base
-- `backend/services/stock_service.py` -- get_current_inventory(as_of_date), _flat_base_from_inventory(), get_effective_physical_base_for_date passes date
-- `frontend/src/pages/Dashboard.jsx` -- Reconciliation History with clickable expand, reverse button, all stamps, refetch on focus
-- `frontend/src/pages/PhysicalStockComparison.jsx` -- Calendar date picker, DD-MM-YYYY format, defaults to today
+- `backend/server.py` -- upload-preview resolver; compare uses _flat_base_from_inventory; approval-details uses get_current_inventory(as_of_date).by_stamp
+- `backend/services/stock_service.py` -- get_current_inventory(as_of_date), _flat_base_from_inventory(), get_effective_physical_base_for_date
+- `frontend/src/pages/Dashboard.jsx` -- Reconciliation History with expand/reverse
+- `frontend/src/pages/PhysicalStockComparison.jsx` -- Calendar date picker, DD-MM-YYYY
 
 ## Tests
 - 18/18 date-filtering and compare tests pass (iteration 25)
 - 9/9 upload-preview fix tests pass (iteration 24)
-- Frontend verification: login, dashboard, physical vs book, current stock all pass
-- Date filtering verified: CHAIN MS-70 shows different base values for different verification dates
+- All regression tests pass: inventory, compare, approvals, health
 
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
-- P1: User to verify -3.050 delta on production after deploying this fix
+- P1: User to verify delta and stamp approval values on production
 - P2: Fix pre-existing dashboard test file
 - P2: Mobile responsiveness
 - Investigate: +17g gross weight change on production after file rejection
