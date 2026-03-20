@@ -1,0 +1,71 @@
+{
+  "summary": "Backend testing of P1 date-filtering bug fixes. 18/19 tests passed (1 skipped due to session handling). Key P1 fixes verified: (1) get_current_inventory(as_of_date) correctly filters transactions by date - tested with CHAIN MS-70 showing old_gr_wt=-29722 for 2026-02-28 vs old_gr_wt=13162 for 2026-03-31. (2) Upload-preview passes verification_date to get_current_inventory() for date-scoped base. (3) Compare endpoint uses _flat_base_from_inventory() preserving member identity. (4) Compare returns gross_difference, book_gross_wt, physical_gross_wt fields.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_date_filtering_and_compare.py",
+    "/app/backend/tests/test_upload_preview_fixes.py",
+    "/app/test_reports/pytest/p1_date_filtering_complete.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Date filtering in get_current_inventory(as_of_date) correctly filters: transactions (date <= as_of_date), baselines (baseline_date <= as_of_date), polythene (date <= as_of_date)",
+    "get_effective_physical_base_for_date() now passes verification_date to _flat_base_from_inventory(), which passes it to get_current_inventory()",
+    "_flat_base_from_inventory() helper extracted and reused by both upload-preview and compare endpoint",
+    "Compare endpoint now uses _flat_base_from_inventory() instead of get_book_closing_stock_as_of_date(), preserving member identity",
+    "Compare endpoint returns: gross_difference, gross_difference_kg, book_gross_wt, physical_gross_wt - all present in matches/discrepancies"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_date_filtering_and_compare.py",
+    "/app/backend/tests/test_upload_preview_fixes.py"
+  ],
+  "success_rate": {
+    "backend": "100% (18/18 passed, 1 skipped)"
+  },
+  "test_credentials": {
+    "admin": {"username": "admin", "password": "admin123"}
+  },
+  "seed_data_creation": "None - used existing data for testing. Key test case: CHAIN MS-70 has transactions on 2026-03-02 allowing verification of date filtering (before/after transaction gives different base values)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "P1 date-filtering fixes fully verified. Key verification: upload-preview with verification_date=2026-02-28 for CHAIN MS-70 returns old_gr_wt=-29722 (before Mar 2 purchase), while verification_date=2026-03-31 returns old_gr_wt=13162 (after purchase). Compare endpoint confirmed to use same identity model as current stock via _flat_base_from_inventory(). Test files updated to use verification_date=2100-01-01 for baseline-dependent tests (ITEM-ALPHA has baseline_date=2099-12-31).",
+  "features_verified": {
+    "date_filtering_inventory": {
+      "status": "VERIFIED",
+      "description": "get_current_inventory(as_of_date) filters transactions/baselines/polythene by date",
+      "evidence": "CHAIN MS-70: verification_date=2026-02-28 gives old_gr_wt=-29722, verification_date=2026-03-31 gives old_gr_wt=13162"
+    },
+    "upload_preview_date_scoped_base": {
+      "status": "VERIFIED",
+      "description": "Upload-preview base values change based on verification_date",
+      "code_location": "stock_service.py lines 208-210 - passes verification_date to _flat_base_from_inventory"
+    },
+    "compare_same_identity_model": {
+      "status": "VERIFIED",
+      "description": "Compare endpoint uses _flat_base_from_inventory() for consistent identity with current stock",
+      "code_location": "server.py line 2892 - uses _flat_base_from_inventory(verification_date)"
+    },
+    "compare_gross_difference_fields": {
+      "status": "VERIFIED",
+      "description": "Compare returns gross_difference, gross_difference_kg, book_gross_wt, physical_gross_wt",
+      "evidence": "Sample item has all fields: book_gross_wt, physical_gross_wt, gross_difference, gross_difference_kg"
+    },
+    "current_inventory_regression": {
+      "status": "VERIFIED",
+      "description": "GET /api/inventory/current still returns full inventory without date filtering",
+      "evidence": "Returns 78 items, total_gr_wt=123886, total_net_wt=-55728"
+    },
+    "group_resolution": {
+      "status": "VERIFIED",
+      "description": "Group members (SNT-40 PREMIUM, TULSI 70 BELT) resolve to leaders in upload-preview",
+      "evidence": "Upload with group member names successfully resolves via name_to_base_key lookup"
+    }
+  }
+}

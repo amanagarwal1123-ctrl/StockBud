@@ -214,8 +214,10 @@ class TestUploadPreviewBaseMatchesCurrentStock:
         try:
             with open(temp_path, "rb") as f:
                 files = {"file": ("test_base_match.xlsx", f, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+                # Use a date far in the future to ensure all baselines are included
+                # (ITEM-ALPHA has baseline_date=2099-12-31)
                 response = requests.post(
-                    f"{BASE_URL}/api/physical-stock/upload-preview?verification_date=2099-12-02",
+                    f"{BASE_URL}/api/physical-stock/upload-preview?verification_date=2100-01-01",
                     headers=auth_headers,
                     files=files
                 )

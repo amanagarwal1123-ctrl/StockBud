@@ -205,10 +205,17 @@ async def get_effective_physical_base_for_date(verification_date: str):
                 }
             return result
 
-    # Use current inventory computation to ensure base matches the Current Stock page.
-    # This avoids identity-model mismatches between get_book_closing_stock_as_of_date()
-    # and get_current_inventory() (polythene keying, group handling differences).
-    current = await get_current_inventory()
+    # Use current inventory computation with date filtering to ensure base matches
+    # the Current Stock page identity model (polythene keying, group handling).
+    return await _flat_base_from_inventory(verification_date)
+
+
+async def _flat_base_from_inventory(as_of_date: str = None):
+    """Build a flat base dict from get_current_inventory() output.
+    Reused by get_effective_physical_base_for_date and compare endpoint.
+    Returns: { "item_key": { item_name, stamp, gr_wt, net_wt, is_negative_grouped } }
+    """
+    current = await get_current_inventory(as_of_date=as_of_date)
     all_items = current.get('inventory', []) + current.get('negative_items', [])
 
     groups_raw = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
@@ -229,16 +236,23 @@ async def get_effective_physical_base_for_date(verification_date: str):
     return result
 
 
-async def get_current_inventory():
+async def get_current_inventory(as_of_date: str = None):
     """Calculate current inventory: Opening Stock + Purchases - Sales.
     If an item has a physical stock baseline (from approved physical stock upload),
     that baseline replaces opening stock and only transactions AFTER the baseline date count.
     Merges item group members into their leader for consolidated view.
-    Returns per-member breakdowns for expandable UI."""
+    Returns per-member breakdowns for expandable UI.
+
+    Args:
+        as_of_date: Optional YYYY-MM-DD string. When set, only transactions and
+                    polythene adjustments on or before this date are included, and
+                    only baselines with baseline_date <= as_of_date are used.
+    """
     EXCLUDED_ITEMS = ["SILVER ORNAMENTS"]
 
     opening = await db.opening_stock.find({}, {"_id": 0}).to_list(None)
-    transactions = await db.transactions.find({}, {"_id": 0}).to_list(None)
+    tx_filter = {'date': {'$lte': as_of_date}} if as_of_date else {}
+    transactions = await db.transactions.find(tx_filter, {"_id": 0}).to_list(None)
 
     mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
     master_items = await db.master_items.find({}, {"_id": 0}).to_list(None)
@@ -248,7 +262,8 @@ async def get_current_inventory():
     ledger_items = await db.purchase_ledger.find({}, {"_id": 0}).to_list(None)
 
     # Load inventory baselines (physical stock overrides)
-    baselines_raw = await db.inventory_baselines.find({}, {"_id": 0}).to_list(None)
+    bl_filter = {'baseline_date': {'$lte': as_of_date}} if as_of_date else {}
+    baselines_raw = await db.inventory_baselines.find(bl_filter, {"_id": 0}).to_list(None)
     baselines = {b['item_key']: b for b in baselines_raw}
 
     mapping_dict, member_to_leader, group_members = build_group_maps(groups, mappings)
@@ -430,7 +445,8 @@ async def get_current_inventory():
             member_data[key][m_key]['labor'] -= trans.get('labor', 0)
 
     # --- Polythene adjustments ---
-    polythene_adjustments = await db.polythene_adjustments.find({}, {"_id": 0}).to_list(None)
+    poly_filter = {'date': {'$lte': as_of_date}} if as_of_date else {}
+    polythene_adjustments = await db.polythene_adjustments.find(poly_filter, {"_id": 0}).to_list(None)
     poly_map = defaultdict(float)
     for adj in polythene_adjustments:
         adj_item_name = adj['item_name']

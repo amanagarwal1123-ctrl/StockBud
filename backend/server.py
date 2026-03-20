@@ -41,7 +41,7 @@ from services.helpers import (
     normalize_stamp, get_column_value, parse_labor_value,
     normalize_date, stamp_sort_key, save_action, auto_normalize_stamps
 )
-from services.stock_service import get_current_inventory, get_stamp_closing_stock, get_book_closing_stock_as_of_date, get_effective_physical_base_for_date
+from services.stock_service import get_current_inventory, get_stamp_closing_stock, get_effective_physical_base_for_date, _flat_base_from_inventory
 from services.group_utils import build_group_maps, build_group_ledger, resolve_to_leader
 
 app = FastAPI()
@@ -2888,8 +2888,8 @@ async def compare_physical_with_book(verification_date: str, current_user: dict 
     if not verification_date:
         raise HTTPException(status_code=400, detail="verification_date is required")
     
-    # Get date-scoped book stock
-    book_base = await get_book_closing_stock_as_of_date(verification_date)
+    # Get date-scoped book stock using same identity model as current stock page
+    book_base = await _flat_base_from_inventory(verification_date)
     book_items = book_base  # already keyed by normalized name
     
     # Get physical stock snapshot for this date
