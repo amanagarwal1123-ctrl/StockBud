@@ -2425,9 +2425,23 @@ async def upload_physical_stock_preview(
     base = await get_effective_physical_base_for_date(verification_date)
     has_existing_snapshot = await db.physical_stock.count_documents({'verification_date': verification_date}) > 0
 
+    # Build mapping+group resolution for matching uploaded names to base
+    all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    ps_mapping_dict, ps_member_to_leader, _ = build_group_maps(all_groups, all_mappings)
+
     preview_rows = []
     for item_key, upl in uploaded.items():
         base_item = base.get(item_key)
+
+        # If not found by raw name, resolve through mappings+groups
+        if not base_item:
+            raw_name = upl['item_name'].strip()
+            master = ps_mapping_dict.get(raw_name, raw_name)
+            leader = ps_member_to_leader.get(master, master)
+            resolved_key = leader.strip().lower()
+            if resolved_key != item_key:
+                base_item = base.get(resolved_key)
 
         if not base_item:
             preview_rows.append({
