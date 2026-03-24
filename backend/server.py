@@ -119,11 +119,11 @@ async def create_upload_indexes():
 # Health check endpoints
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "stockbud-backend"}
+    return {"status": "healthy", "service": "stockbud-backend", "version": "2.1-individual-stock"}
 
 @app.get("/api/health")
 async def api_health_check():
-    return {"status": "healthy", "service": "stockbud-backend"}
+    return {"status": "healthy", "service": "stockbud-backend", "version": "2.1-individual-stock"}
 
 api_router = APIRouter(prefix="/api")
 
