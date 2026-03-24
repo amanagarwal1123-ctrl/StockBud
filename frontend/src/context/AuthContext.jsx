@@ -115,10 +115,11 @@ export const AuthProvider = ({ children }) => {
     }
   }, [token, API]);
 
-  // Set up notification polling interval
+  // Set up notification polling interval (only when tab is visible)
   useEffect(() => {
     if (!user || !token) return;
-    const interval = setInterval(pollNotifications, 60000);
+    const poll = () => { if (!document.hidden) pollNotifications(); };
+    const interval = setInterval(poll, 120000);
     return () => clearInterval(interval);
   }, [user, token, pollNotifications]);
 

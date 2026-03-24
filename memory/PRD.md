@@ -8,80 +8,51 @@ StockBud is an intelligent inventory management system for jewelry businesses.
 - **Physical Stock Baseline**: When physical stock is approved, it becomes the new starting point for that item. Current Stock = Baseline + Post-Baseline Transactions.
 - **Reverse**: Undoing a physical stock session removes the baseline and reverts to book calculation.
 
-## Physical Stock Baseline Feature (Mar 19, 2026)
-When a user uploads physical stock and approves items:
-1. Approved values are stored in `inventory_baselines` collection
-2. `get_current_inventory()` uses baseline as starting point (replaces opening stock)
-3. Only transactions AFTER baseline_date are counted for baseline items
-4. Non-baseline items retain normal book calculation
-5. Polythene adjustments also respect baseline dates
-6. Reverse removes baselines -> current stock reverts to book values
-
-### Collection: `inventory_baselines`
-Fields: item_key, item_name, baseline_date, gr_wt, net_wt, stamp, updated_at, session_id
-
 ## Unified Stock Computation (Mar 20, 2026)
-All stock-dependent features now use `get_current_inventory(as_of_date)` as the single source of truth:
+All stock-dependent features use `get_current_inventory(as_of_date)` as the single source of truth:
 - **Current Stock page**: `get_current_inventory()` (no date filter)
-- **Upload Preview base**: `get_current_inventory(as_of_date=verification_date)` via `_flat_base_from_inventory()`
-- **Compare page**: `_flat_base_from_inventory(verification_date)`
-- **Stamp Approvals**: `get_current_inventory(as_of_date=verification_date)` via `by_stamp`
+- **Upload Preview base**: `_flat_base_from_inventory(verification_date)` — member-level for groups
+- **Compare page**: `_flat_base_from_inventory(verification_date)` — member-level for groups
+- **Stamp Approvals**: `get_current_inventory(as_of_date).by_stamp[stamp]`
 - **Apply Updates snapshot**: `get_effective_physical_base_for_date(verification_date)`
 
-`get_book_closing_stock_as_of_date()` and `get_stamp_closing_stock()` are retained in stock_service.py but no longer called from server.py.
+## Member-Level Baselines (FIXED Mar 24, 2026)
+### The Bug
+When a physical file had both leader (TULSI 70 -264) and member (TULSI 70 BELT) items:
+1. Upload-preview MERGED them into one row under the leader
+2. Approval created ONE baseline for the leader with combined weight
+3. `get_current_inventory()` attributed all baseline weight to the leader member
+4. TULSI 70 BELT got zero baseline → post-baseline sales made it go negative (-4.644 kg)
 
-## Session Lifecycle
+### The Fix
+1. `_flat_base_from_inventory()` now decomposes groups with 2+ members into individual member entries
+2. Upload-preview NO LONGER merges group members — each uploaded item stays as its own row
+3. Each approved item creates its own baseline at the member level
+4. This prevents negative stock for group members after reconciliation
 
-### 1. One Upload = One Session
-- Preview creates a draft session with `preview_session_id`
-- Apply updates the SAME session (no new session per click)
-- Session tracks full row list: applied, rejected, unmatched, skipped, pending
-
-### 2. Effective Base for Preview
-- `get_effective_physical_base_for_date()` checks for ACTIVE sessions before using physical_stock records
-- If ALL sessions for a date are reversed, falls back to date-filtered `get_current_inventory()`
-- Base uses `get_current_inventory(as_of_date=verification_date)`
-
-### 3. Upload Preview Item Matching
-- Comprehensive `name_to_base_key` reverse lookup from ALL groups, mappings, and their chains
-- Group members resolve automatically; mapped items resolve via mapping definitions
-- Multiple uploaded items resolving to same base key are MERGED before delta computation
-
-### 4. Compare Screen
-- Uses `_flat_base_from_inventory(verification_date)` — same identity model as current stock
-- Includes both net and gross weight comparison with `gross_difference` fields
-- Gross difference used for classification when net is negligible (gross-only files)
-
-### 5. Stamp Approvals Book Values (FIXED Mar 20, 2026)
-- Was using `get_stamp_closing_stock()` which ignored baselines
-- Now uses `get_current_inventory(as_of_date=verification_date).by_stamp[stamp]`
-- After physical stock reconciliation, stamp approval book values reflect updated stock
+### Impact
+- TULSI 70 -264 and TULSI 70 BELT each get their own baseline
+- MADRASI YASH -186 and MADRASI YASH SHOLDER -186 are handled separately
+- SNT 40-256 and SNT-40 PREMIUM are handled separately
 
 ## Key Endpoints
-- `POST /api/physical-stock/upload-preview` -- comprehensive resolver, date-scoped base
-- `POST /api/physical-stock/apply-updates` -- creates inventory_baselines
-- `POST /api/physical-stock/finalize-session` -- finalize draft
-- `POST /api/physical-stock/update-history/{id}/reverse` -- reverse, removes baselines
-- `GET /api/inventory/current` -- baseline-aware, full inventory
-- `GET /api/physical-stock/compare` -- date-filtered, unified identity, gross+net
-- `GET /api/manager/approval-details/{stamp}` -- baseline-aware stamp book values
-- `GET /api/manager/pending-approvals` -- pending stock entries
-- `GET /api/stamp-verification/history` -- all stamps with verification status
+- `POST /api/physical-stock/upload-preview` — member-level comparison, no group merging
+- `POST /api/physical-stock/apply-updates` — member-level baselines
+- `GET /api/physical-stock/compare` — member-level comparison
+- `GET /api/inventory/current` — baseline-aware, group member breakdowns
+- `GET /api/manager/approval-details/{stamp}` — baseline-aware stamp book values
 
-## Files Changed
-- `backend/server.py` -- upload-preview resolver; compare uses _flat_base_from_inventory; approval-details uses get_current_inventory(as_of_date).by_stamp
-- `backend/services/stock_service.py` -- get_current_inventory(as_of_date), _flat_base_from_inventory(), get_effective_physical_base_for_date
-- `frontend/src/pages/Dashboard.jsx` -- Reconciliation History with expand/reverse
-- `frontend/src/pages/PhysicalStockComparison.jsx` -- Calendar date picker, DD-MM-YYYY
+## Files Changed (Mar 24, 2026)
+- `backend/services/stock_service.py` — `_flat_base_from_inventory()` decomposes groups into members
+- `backend/server.py` — upload-preview resolver prefers member-level matching over leader
+- `frontend/src/context/AuthContext.jsx` — notification polling reduced to 120s with visibility check
 
 ## Tests
-- 18/18 date-filtering and compare tests pass (iteration 25)
-- 9/9 upload-preview fix tests pass (iteration 24)
-- All regression tests pass: inventory, compare, approvals, health
+- All 5 key endpoints tested and passing
+- Upload preview confirmed: 4 separate rows for 4 items (no merging)
+- Compare endpoint: correctly shows member-level discrepancies
 
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
-- P1: User to verify delta and stamp approval values on production
-- P2: Fix pre-existing dashboard test file
+- P1: User to verify member-level baselines on production
 - P2: Mobile responsiveness
-- Investigate: +17g gross weight change on production after file rejection

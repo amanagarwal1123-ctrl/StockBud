@@ -212,7 +212,9 @@ async def get_effective_physical_base_for_date(verification_date: str):
 
 async def _flat_base_from_inventory(as_of_date: str = None):
     """Build a flat base dict from get_current_inventory() output.
-    Reused by get_effective_physical_base_for_date and compare endpoint.
+    For groups with 2+ members, returns MEMBER-level entries (not leader-level).
+    This ensures baselines are created at the member level during apply-updates,
+    preventing negative stock for group members after reconciliation.
     Returns: { "item_key": { item_name, stamp, gr_wt, net_wt, is_negative_grouped } }
     """
     current = await get_current_inventory(as_of_date=as_of_date)
@@ -223,16 +225,33 @@ async def _flat_base_from_inventory(as_of_date: str = None):
 
     result = {}
     for item in all_items:
-        key = item['item_name'].strip().lower()
-        is_neg = item.get('gr_wt', 0) < -0.01 or item.get('net_wt', 0) < -0.01
-        is_group = item['item_name'] in group_names_set
-        result[key] = {
-            'item_name': item['item_name'],
-            'stamp': item.get('stamp', 'Unassigned'),
-            'gr_wt': item.get('gr_wt', 0),
-            'net_wt': item.get('net_wt', 0),
-            'is_negative_grouped': is_neg or is_group,
-        }
+        item_name = item['item_name']
+        is_group = item_name in group_names_set
+        members = item.get('members', [])
+
+        if is_group and len(members) > 1:
+            # Decompose group into member-level entries so each member
+            # gets its own baseline when physical stock is approved.
+            for member in members:
+                m_key = member['item_name'].strip().lower()
+                m_is_neg = member.get('gr_wt', 0) < -0.01 or member.get('net_wt', 0) < -0.01
+                result[m_key] = {
+                    'item_name': member['item_name'],
+                    'stamp': member.get('stamp', 'Unassigned'),
+                    'gr_wt': member.get('gr_wt', 0),
+                    'net_wt': member.get('net_wt', 0),
+                    'is_negative_grouped': True,
+                }
+        else:
+            key = item_name.strip().lower()
+            is_neg = item.get('gr_wt', 0) < -0.01 or item.get('net_wt', 0) < -0.01
+            result[key] = {
+                'item_name': item_name,
+                'stamp': item.get('stamp', 'Unassigned'),
+                'gr_wt': item.get('gr_wt', 0),
+                'net_wt': item.get('net_wt', 0),
+                'is_negative_grouped': is_neg or is_group,
+            }
     return result
 
 

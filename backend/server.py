@@ -2438,37 +2438,38 @@ async def upload_physical_stock_preview(
     # Step 1: direct base key lookup
     name_to_base_key = {k: k for k in base}
 
-    # Step 2: group members → leader base key
+    # Step 2: group members → base key (prefer member's own key over leader)
     for g in all_groups:
         leader_key = g['group_name'].strip().lower()
-        if leader_key in base:
-            for member in g.get('members', []):
-                name_to_base_key[member.strip().lower()] = leader_key
+        for member in g.get('members', []):
+            member_key = member.strip().lower()
+            # Only fall back to leader if member doesn't have its own base entry
+            if member_key not in base and leader_key in base:
+                name_to_base_key[member_key] = leader_key
 
-    # Step 3: mapping transaction_name → master_name → leader → base key
+    # Step 3: mapping transaction_name → master_name → base key
     for m in all_mappings:
         txn_key = m['transaction_name'].strip().lower()
         master_name = m['master_name'].strip()
-        leader = ps_member_to_leader.get(master_name, master_name)
-        leader_key = leader.strip().lower()
-        if leader_key in base:
-            name_to_base_key[txn_key] = leader_key
-        # Also map the master_name itself (it might be a member or standalone)
         master_key = master_name.strip().lower()
-        if master_key not in name_to_base_key and leader_key in base:
-            name_to_base_key[master_key] = leader_key
-
-    # Step 4: mapping targets (master_names) that are group members
-    for m in all_mappings:
-        master_name = m['master_name'].strip()
-        master_key = master_name.strip().lower()
-        if master_key not in name_to_base_key:
+        # Try master_name directly first (member-level)
+        if master_key in base:
+            if txn_key not in name_to_base_key:
+                name_to_base_key[txn_key] = master_key
+            if master_key not in name_to_base_key:
+                name_to_base_key[master_key] = master_key
+        else:
+            # Fall back to leader key
             leader = ps_member_to_leader.get(master_name, master_name)
             leader_key = leader.strip().lower()
             if leader_key in base:
-                name_to_base_key[master_key] = leader_key
+                if txn_key not in name_to_base_key:
+                    name_to_base_key[txn_key] = leader_key
+                if master_key not in name_to_base_key:
+                    name_to_base_key[master_key] = leader_key
 
     # Resolve uploaded items to base keys using the comprehensive lookup
+    # No longer merges group members — each uploaded item stays as its own row
     resolved_uploads = {}  # base_key -> {base_item, gr_wt, net_wt}
     unmatched_uploads = []
     for item_key, upl in uploaded.items():
