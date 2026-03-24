@@ -120,8 +120,19 @@ export default function CurrentStock() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-muted-foreground">Loading stock...</div>
+      <div className="p-4 sm:p-6 md:p-8 space-y-6" data-testid="current-stock-page">
+        <div>
+          <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight">Current Stock</h1>
+          <p className="text-sm sm:text-base md:text-lg text-muted-foreground mt-2">Loading inventory data...</p>
+        </div>
+        <div className="grid gap-4 sm:gap-6 grid-cols-2 md:grid-cols-4">
+          {[1,2,3,4].map(i => (
+            <Card key={i} className="border-border/40 shadow-sm animate-pulse">
+              <CardHeader className="pb-2"><div className="h-3 w-20 bg-muted rounded" /></CardHeader>
+              <CardContent><div className="h-8 w-24 bg-muted rounded" /></CardContent>
+            </Card>
+          ))}
+        </div>
       </div>
     );
   }

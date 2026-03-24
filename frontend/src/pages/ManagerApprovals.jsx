@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
-import { CheckSquare, XSquare, Download, Calendar, Pencil } from 'lucide-react';
+import { CheckSquare, XSquare, Download, Calendar, Pencil, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -35,6 +35,7 @@ export default function ManagerApprovals() {
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [approvalDetails, setApprovalDetails] = useState(null);
   const [allDetails, setAllDetails] = useState({});
+  const [badgeLoading, setBadgeLoading] = useState({});
   const [rejectionMessage, setRejectionMessage] = useState('');
   const [editingDate, setEditingDate] = useState({});
   const [loading, setLoading] = useState(true);
@@ -49,35 +50,47 @@ export default function ManagerApprovals() {
     try {
       const response = await axios.get(`${API}/manager/all-entries`);
       setAllEntries(response.data);
+      setLoading(false);
+      // Fire badge details in parallel (non-blocking) after entries are rendered
       const pending = response.data.filter(e => e.status === 'pending');
-      for (const entry of pending) fetchDetailsForBadge(entry.stamp, entry.verification_date || entry.entry_day);
+      pending.forEach(entry => fetchDetailsForBadge(entry.stamp, entry.verification_date || entry.entry_day));
     } catch (error) {
       console.error('Error fetching entries:', error);
-    } finally {
       setLoading(false);
     }
   };
 
   const fetchDetailsForBadge = async (stamp, verificationDate) => {
+    const key = verificationDate ? `${stamp}__${verificationDate}` : stamp;
     try {
+      setBadgeLoading(prev => ({ ...prev, [key]: true }));
       const params = verificationDate ? `?verification_date=${verificationDate}` : '';
       const response = await axios.get(`${API}/manager/approval-details/${stamp}${params}`);
-      const key = verificationDate ? `${stamp}__${verificationDate}` : stamp;
       setAllDetails(prev => ({ ...prev, [key]: response.data }));
     } catch (error) {
       console.error('Failed to load details:', error);
+    } finally {
+      setBadgeLoading(prev => ({ ...prev, [key]: false }));
     }
   };
 
-  const fetchApprovalDetails = async (stamp, verificationDate) => {
+  const toggleApprovalDetails = async (stamp, verificationDate) => {
+    const detailKey = `${stamp}__${verificationDate || ''}`;
+    // Collapse if already expanded
+    if (selectedEntry === detailKey) {
+      setSelectedEntry(null);
+      setApprovalDetails(null);
+      return;
+    }
     try {
+      setSelectedEntry(detailKey);
       setDetailsLoading(true);
       const params = verificationDate ? `?verification_date=${verificationDate}` : '';
       const response = await axios.get(`${API}/manager/approval-details/${stamp}${params}`);
       setApprovalDetails(response.data);
-      setSelectedEntry(`${stamp}__${verificationDate || ''}`);
     } catch (error) {
       toast.error('Failed to load details');
+      setSelectedEntry(null);
     } finally {
       setDetailsLoading(false);
     }
@@ -150,6 +163,21 @@ export default function ManagerApprovals() {
     );
   }
 
+  if (loading) {
+    return (
+      <div className="p-3 sm:p-6 md:p-8 space-y-4 sm:space-y-6" data-testid="approvals-page">
+        <div>
+          <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight">Stamp Approvals</h1>
+          <p className="text-sm sm:text-lg text-muted-foreground mt-1">Review and approve stock entries</p>
+        </div>
+        <div className="flex items-center justify-center py-12 gap-2">
+          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          <span className="text-muted-foreground">Loading entries...</span>
+        </div>
+      </div>
+    );
+  }
+
   const pendingEntries = allEntries.filter(e => e.status === 'pending');
   const approvedEntries = allEntries.filter(e => e.status === 'approved');
   const rejectedEntries = allEntries.filter(e => e.status === 'rejected');
@@ -179,12 +207,13 @@ export default function ManagerApprovals() {
               entry={entry}
               status="pending"
               details={allDetails[detailKey]}
+              badgeLoading={!!badgeLoading[detailKey]}
               isExpanded={selectedEntry === detailKey}
               approvalDetails={selectedEntry === detailKey ? approvalDetails : null}
               detailsLoading={selectedEntry === detailKey && detailsLoading}
               editingDate={editingDate}
               setEditingDate={setEditingDate}
-              onViewDetails={() => fetchApprovalDetails(entry.stamp, vd)}
+              onViewDetails={() => toggleApprovalDetails(entry.stamp, vd)}
               onApprove={() => handleApproval(entry.stamp, true, vd)}
               onReject={() => handleApproval(entry.stamp, false, vd)}
               onDateUpdate={updateVerificationDate}
@@ -208,12 +237,13 @@ export default function ManagerApprovals() {
               entry={entry}
               status="approved"
               details={allDetails[detailKey]}
+              badgeLoading={!!badgeLoading[detailKey]}
               isExpanded={selectedEntry === detailKey}
               approvalDetails={selectedEntry === detailKey ? approvalDetails : null}
               detailsLoading={selectedEntry === detailKey && detailsLoading}
               editingDate={editingDate}
               setEditingDate={setEditingDate}
-              onViewDetails={() => fetchApprovalDetails(entry.stamp, vd)}
+              onViewDetails={() => toggleApprovalDetails(entry.stamp, vd)}
               onReject={() => handleApproval(entry.stamp, false, vd)}
               onDateUpdate={updateVerificationDate}
               onExport={() => exportStampDifferences(entry.stamp, vd)}
@@ -258,7 +288,7 @@ export default function ManagerApprovals() {
 
 /** Reusable entry card for pending & approved tabs */
 function EntryCard({
-  entry, status, details, isExpanded, approvalDetails, detailsLoading,
+  entry, status, details, badgeLoading, isExpanded, approvalDetails, detailsLoading,
   editingDate, setEditingDate, onViewDetails, onApprove, onReject,
   onDateUpdate, onExport, rejectionMessage, setRejectionMessage
 }) {
@@ -278,11 +308,13 @@ function EntryCard({
           <Badge variant="outline" className={isPending ? 'text-orange-600 text-[10px] sm:text-xs' : 'text-green-600 text-[10px] sm:text-xs'}>
             {status.toUpperCase()}
           </Badge>
-          {details && (
+          {badgeLoading ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+          ) : details ? (
             <Badge className={`${diffBadgeCls(details.total_difference)} text-[10px] sm:text-xs px-1.5`}>
               {details.total_difference >= 0 ? '+' : ''}{details.total_difference?.toFixed(3)} kg
             </Badge>
-          )}
+          ) : null}
         </div>
 
         {/* Row 2: Date info + edit */}

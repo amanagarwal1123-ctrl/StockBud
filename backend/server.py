@@ -44,6 +44,34 @@ from services.helpers import (
 from services.stock_service import get_current_inventory, get_effective_physical_base_for_date, _flat_base_from_inventory
 from services.group_utils import build_group_maps, build_group_ledger, resolve_to_leader
 
+# Simple TTL cache for heavy inventory computations
+import time
+
+class InventoryCache:
+    """In-memory cache with TTL for expensive inventory computations."""
+    def __init__(self, ttl_seconds=30):
+        self._cache = {}
+        self._ttl = ttl_seconds
+
+    def get(self, key):
+        entry = self._cache.get(key)
+        if entry and (time.time() - entry['ts']) < self._ttl:
+            return entry['data']
+        if entry:
+            del self._cache[key]
+        return None
+
+    def set(self, key, data):
+        self._cache[key] = {'data': data, 'ts': time.time()}
+
+    def invalidate(self, key=None):
+        if key:
+            self._cache.pop(key, None)
+        else:
+            self._cache.clear()
+
+_inv_cache = InventoryCache(ttl_seconds=30)
+
 app = FastAPI()
 
 @app.on_event("startup")
@@ -56,6 +84,30 @@ async def create_upload_indexes():
     await db.historical_transactions.create_index([("type", 1), ("item_name", 1)])
     await db.historical_transactions.create_index("batch_id")
     await db.transactions.create_index([("type", 1), ("item_name", 1)])
+
+    # Performance indexes for inventory computation (critical at 17K+ transactions)
+    await db.transactions.create_index("date")
+    await db.transactions.create_index([("date", 1), ("type", 1)])
+    await db.inventory_baselines.create_index("item_key")
+    await db.inventory_baselines.create_index("baseline_date")
+    await db.inventory_baselines.create_index([("item_key", 1), ("baseline_date", -1)])
+    await db.physical_stock.create_index("verification_date")
+    await db.physical_stock.create_index([("verification_date", 1), ("item_name", 1)])
+    await db.stock_entries.create_index([("stamp", 1), ("status", 1)])
+    await db.stock_entries.create_index([("stamp", 1), ("entry_day", 1)])
+    await db.stock_entries.create_index([("stamp", 1), ("verification_date", 1), ("status", 1)])
+    await db.stock_entries.create_index([("entered_by", 1), ("status", 1)])
+    await db.stock_entries.create_index("entry_date")
+    await db.polythene_adjustments.create_index("date")
+    await db.polythene_adjustments.create_index("item_name")
+    await db.master_items.create_index("stamp")
+    await db.master_items.create_index("item_name", unique=True)
+    await db.notifications.create_index([("target_user", 1), ("read", 1)])
+    await db.notifications.create_index("timestamp")
+    await db.physical_stock_update_sessions.create_index("verification_date")
+    await db.activity_log.create_index("timestamp")
+    await db.stamp_approvals.create_index([("stamp", 1), ("approval_day", 1)])
+
     # Mark any orphaned "processing" tasks as failed (from OOM/crash during previous run)
     stale = await db.upload_sessions.update_many(
         {"status": "processing"},
@@ -2023,6 +2075,7 @@ async def approve_stamp(
         'timestamp': datetime.now(timezone.utc).isoformat()
     })
     
+    _inv_cache.invalidate()
     return {'success': True, 'message': f'{stamp} {"approved" if approve else "rejected"}', 'iterations': iteration}
 
 @api_router.get("/stamp-verification/history")
@@ -2225,6 +2278,7 @@ async def adjust_polythene_batch(
             'read': False
         })
     
+    _inv_cache.invalidate()
     return {'success': True, 'message': f'{len(saved_entries)} polythene adjustments saved', 'count': len(saved_entries)}
 
 @api_router.get("/polythene/today/{username}")
@@ -2258,6 +2312,7 @@ async def delete_polythene_entry(entry_id: str, current_user: dict = Depends(get
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Entry not found")
     
+    _inv_cache.invalidate()
     return {'success': True}
 
 # ==================== ADMIN ACCOUNTABILITY ====================
@@ -2330,8 +2385,13 @@ async def get_transactions(type: Optional[str] = None, limit: int = 5000, curren
 
 @api_router.get("/inventory/current")
 async def get_current_inventory_endpoint(current_user: dict = Depends(get_current_user)):
-    """Calculate current inventory: Opening Stock + Purchases - Sales"""
-    return await get_current_inventory()
+    """Calculate current inventory: Opening Stock + Purchases - Sales (cached 30s)"""
+    cached = _inv_cache.get('current_inventory')
+    if cached:
+        return cached
+    result = await get_current_inventory()
+    _inv_cache.set('current_inventory', result)
+    return result
 
 
 async def _replace_physical_stock_for_date(records: list, verification_date: str):
@@ -2773,6 +2833,7 @@ async def finalize_physical_stock_session(
             'rejected_count': rejected_count,
         }}
     )
+    _inv_cache.invalidate()
     return {"success": True, "message": f"Session finalized: {applied_count} applied, {rejected_count} rejected"}
 
 @api_router.post("/physical-stock/update-history/{session_id}/reverse")
@@ -2841,6 +2902,7 @@ async def reverse_physical_stock_session(
         {'session_id': session_id, 'verification_date': v_date, 'restored': restored, 'by': current_user['username']}
     )
 
+    _inv_cache.invalidate()
     return {"success": True, "restored_count": restored, "message": f"Reversed: {restored} items restored to previous values"}
 
 @api_router.post("/physical-stock/fix-group-baselines")
