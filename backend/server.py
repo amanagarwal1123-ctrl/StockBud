@@ -2505,40 +2505,30 @@ async def upload_physical_stock_preview(
     # Build comprehensive name→base_key reverse lookup
     all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
     all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
-    ps_mapping_dict, ps_member_to_leader, ps_group_members = build_group_maps(all_groups, all_mappings)
+    ps_mapping_dict, _, _ = build_group_maps(all_groups, all_mappings)
 
     # Step 1: direct base key lookup
     name_to_base_key = {k: k for k in base}
 
-    # Step 2: group members → base key (prefer member's own key over leader)
+    # Step 2: group members → base key (prefer member's own key; NO leader fallback)
+    # Groups are for display only. Each member must resolve to its own base entry.
     for g in all_groups:
-        leader_key = g['group_name'].strip().lower()
         for member in g.get('members', []):
             member_key = member.strip().lower()
-            # Only fall back to leader if member doesn't have its own base entry
-            if member_key not in base and leader_key in base:
-                name_to_base_key[member_key] = leader_key
+            if member_key in base and member_key not in name_to_base_key:
+                name_to_base_key[member_key] = member_key
 
-    # Step 3: mapping transaction_name → master_name → base key
+    # Step 3: mapping transaction_name → master_name → base key (individual level only)
     for m in all_mappings:
         txn_key = m['transaction_name'].strip().lower()
         master_name = m['master_name'].strip()
         master_key = master_name.strip().lower()
-        # Try master_name directly first (member-level)
+        # Resolve to the master_name's own base entry (NOT group leader)
         if master_key in base:
             if txn_key not in name_to_base_key:
                 name_to_base_key[txn_key] = master_key
             if master_key not in name_to_base_key:
                 name_to_base_key[master_key] = master_key
-        else:
-            # Fall back to leader key
-            leader = ps_member_to_leader.get(master_name, master_name)
-            leader_key = leader.strip().lower()
-            if leader_key in base:
-                if txn_key not in name_to_base_key:
-                    name_to_base_key[txn_key] = leader_key
-                if master_key not in name_to_base_key:
-                    name_to_base_key[master_key] = leader_key
 
     # Resolve uploaded items to base keys using the comprehensive lookup
     # No longer merges group members — each uploaded item stays as its own row
@@ -2548,13 +2538,12 @@ async def upload_physical_stock_preview(
         resolved_base_key = name_to_base_key.get(item_key)
 
         if not resolved_base_key:
-            # Fallback: try chain resolution (case-sensitive, then case-insensitive)
+            # Fallback: try mapping resolution to master_name (individual level, no leader merge)
             raw_name = upl['item_name'].strip()
             master = ps_mapping_dict.get(raw_name, raw_name)
-            leader = ps_member_to_leader.get(master, master)
-            candidate_key = leader.strip().lower()
-            if candidate_key in base:
-                resolved_base_key = candidate_key
+            master_key = master.strip().lower()
+            if master_key in base:
+                resolved_base_key = master_key
 
         if not resolved_base_key:
             unmatched_uploads.append(upl)
@@ -2920,12 +2909,25 @@ async def fix_group_baselines(current_user: dict = Depends(get_current_user)):
     group_leaders = {g['group_name'] for g in all_groups}
     group_members_map = {g['group_name']: g.get('members', []) for g in all_groups}
 
-    # Find group-level baselines that need splitting
+    # Index all baselines by item_key for quick lookup
+    baseline_keys = {bl['item_key'] for bl in all_baselines}
+
+    # Find group-level baselines that need splitting.
+    # A baseline is "group-level" ONLY if the leader has a baseline but NOT all members
+    # have their own separate baselines. If every member already has its own baseline,
+    # the leader's baseline is just its individual entry — skip it.
     to_fix = []
     for bl in all_baselines:
         bl_name = bl['item_name']
         if bl_name in group_leaders and len(group_members_map.get(bl_name, [])) >= 2:
-            to_fix.append(bl)
+            members = group_members_map[bl_name]
+            # Check if all OTHER members (non-leader) already have their own baselines
+            non_leader_members = [m for m in members if m != bl_name]
+            all_members_have_baselines = all(
+                m.strip().lower() in baseline_keys for m in non_leader_members
+            )
+            if not all_members_have_baselines:
+                to_fix.append(bl)
 
     if not to_fix:
         return {"success": True, "fixed_count": 0, "details": [], "message": "No group-level baselines found"}
@@ -3010,6 +3012,114 @@ async def fix_group_baselines(current_user: dict = Depends(get_current_user)):
         "details": fixed,
         "message": f"Split {len(fixed)} group-level baseline(s) into member-level baselines"
     }
+
+
+@api_router.post("/physical-stock/restore-group-baselines")
+async def restore_group_baselines(current_user: dict = Depends(get_current_user)):
+    """One-time fix: Delete all member baselines for groups, restore the original
+    group-level baseline from the physical_stock session, then run the split once.
+    This fixes double-split corruption."""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    group_members_map = {g['group_name']: g.get('members', []) for g in all_groups}
+    master_items = await db.master_items.find({}, {"_id": 0}).to_list(None)
+    master_stamp_dict = {m['item_name']: m['stamp'] for m in master_items}
+
+    results = []
+    for gname, members in group_members_map.items():
+        if len(members) < 2:
+            continue
+
+        # Delete ALL baselines for this group's members
+        deleted = 0
+        for m in members:
+            m_key = m.strip().lower()
+            r = await db.inventory_baselines.delete_many({'item_key': m_key})
+            deleted += r.deleted_count
+
+        if deleted == 0:
+            continue
+
+        # Find the original physical stock session that created these baselines
+        # Look for sessions with verification_date, find any that applied this group's leader
+        sessions = await db.physical_stock_update_sessions.find(
+            {'session_state': 'finalized', 'is_reversed': {'$ne': True}},
+            {'_id': 0}
+        ).sort('applied_at', -1).to_list(50)
+
+        # Find the session that has data for this group
+        orig_session = None
+        orig_gr = 0
+        orig_net = 0
+        for sess in sessions:
+            for item in sess.get('items', []):
+                item_name = item.get('item_name', '').strip()
+                if item_name == gname and item.get('status') == 'applied':
+                    orig_session = sess
+                    orig_gr = item.get('final_gr_wt', 0)
+                    orig_net = item.get('final_net_wt', 0)
+                    break
+            if orig_session:
+                break
+
+        if not orig_session or (orig_gr == 0 and orig_net == 0):
+            results.append({'group': gname, 'status': 'no_session_found', 'deleted': deleted})
+            continue
+
+        baseline_date = orig_session['verification_date']
+
+        # Now compute book stock as of baseline_date WITHOUT any baselines
+        _inv_cache.invalidate()
+        inv = await get_current_inventory(as_of_date=baseline_date)
+
+        # Get member-level book stock from by_stamp (individual level)
+        member_book = {}
+        for stamp_items in inv.get('by_stamp', {}).values():
+            for si in stamp_items:
+                if si['item_name'] in members:
+                    member_book[si['item_name']] = si.get('gr_wt', 0)
+
+        # Split the original physical stock value proportionally
+        total_book = sum(abs(v) for v in member_book.values()) or 1
+        member_baselines = {}
+        for m_name in members:
+            m_book = member_book.get(m_name, 0)
+            ratio = abs(m_book) / total_book if total_book > 0 else 1.0 / len(members)
+            m_baseline_gr = round(orig_gr * ratio, 3)
+
+            # Net weight: proportional too
+            m_baseline_net = round(orig_net * ratio, 3)
+
+            m_key = m_name.strip().lower()
+            await db.inventory_baselines.update_one(
+                {'item_key': m_key},
+                {'$set': {
+                    'item_key': m_key,
+                    'item_name': m_name,
+                    'baseline_date': baseline_date,
+                    'gr_wt': m_baseline_gr,
+                    'net_wt': m_baseline_net,
+                    'stamp': master_stamp_dict.get(m_name, ''),
+                    'updated_at': datetime.now(timezone.utc).isoformat(),
+                    'session_id': orig_session.get('session_id', ''),
+                    'is_member_baseline': True,
+                }},
+                upsert=True
+            )
+            member_baselines[m_name] = m_baseline_gr
+
+        results.append({
+            'group': gname,
+            'original_physical_gr': orig_gr,
+            'baseline_date': baseline_date,
+            'member_baselines': member_baselines,
+            'book_at_date': member_book,
+        })
+
+    _inv_cache.invalidate()
+    return {"success": True, "results": results}
 
 @api_router.get("/physical-stock/dates")
 async def get_physical_stock_dates(current_user: dict = Depends(get_current_user)):
