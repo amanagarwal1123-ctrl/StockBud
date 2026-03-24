@@ -1,0 +1,101 @@
+{
+  "summary": "Verified critical fix: Items in groups are now computed INDIVIDUALLY, not merged into group leaders. The by_stamp dict correctly distributes items to their OWN stamps. Group display (is_group=True, members[]) works for Current Stock UI. All 8 backend tests passed, all frontend tests passed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_individual_stock_computation.py",
+    "/app/test_reports/pytest/individual_stock_computation.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "stock_service.py _resolve() function correctly returns master_name only (NO group leader merging)",
+    "inventory_map is keyed by INDIVIDUAL item keys, not group leader keys",
+    "by_stamp dict built from all_computed items at INDIVIDUAL level - verified TULSI 70 -264 and TULSI 70 BELT both appear in STAMP 3",
+    "Group display entries (is_group=True) built in second pass AFTER individual computation - totals correctly sum members",
+    "approval-details endpoint uses by_stamp which now has individual items - book values are correct per item"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_individual_stock_computation.py"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 passed)",
+    "frontend": "100% (all UI tests passed)"
+  },
+  "test_credentials": {
+    "admin": {"username": "admin", "password": "admin123"},
+    "manager": {"username": "SMANAGER", "password": "manager123"}
+  },
+  "seed_data_creation": "None - used existing groups: SNT 40-256 (members: SNT 40-256, SNT-40 PREMIUM), TULSI 70 -264 (members: TULSI 70 -264, TULSI 70 BELT)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Critical fix verified: Items are computed individually, not merged into groups. Groups are ONLY for display (expandable rows in Current Stock). Each item retains its own stamp assignment. STAMP 3 has both TULSI items as separate entries in by_stamp. Two STAMP 3 pending entries exist for testing approval workflow.",
+  "features_verified": {
+    "individual_stock_computation": {
+      "status": "VERIFIED",
+      "description": "Items computed at INDIVIDUAL level, not merged into group leaders",
+      "evidence": "by_stamp['STAMP 3'] contains both 'TULSI 70 -264' and 'TULSI 70 BELT' as separate items with different weights",
+      "code_location": "stock_service.py lines 43-46 _resolve(), lines 530-545 by_stamp building"
+    },
+    "by_stamp_individual_items": {
+      "status": "VERIFIED",
+      "description": "by_stamp distributes items to their OWN stamp (not group leader's stamp)",
+      "evidence": "API test confirmed SNT 40-256 and SNT-40 PREMIUM both appear in by_stamp['Unassigned']",
+      "code_location": "stock_service.py lines 530-545"
+    },
+    "group_display_with_members": {
+      "status": "VERIFIED",
+      "description": "inventory list shows grouped display with is_group=True and members[]",
+      "evidence": "API returns groups with members array, UI shows expandable rows with group badge",
+      "code_location": "stock_service.py lines 469-514"
+    },
+    "group_totals_correct": {
+      "status": "VERIFIED",
+      "description": "Group display has correct totals (sum of individual members)",
+      "evidence": "TULSI group gr_wt = sum of member gr_wt values",
+      "code_location": "stock_service.py lines 477-481"
+    },
+    "approval_details_individual_values": {
+      "status": "VERIFIED",
+      "description": "approval-details uses individual item book values from by_stamp",
+      "evidence": "Comparison table shows individual items with their own book values",
+      "code_location": "server.py lines 1828-1832"
+    },
+    "details_toggle": {
+      "status": "VERIFIED",
+      "description": "Details button toggles comparison table visibility (expand/collapse)",
+      "evidence": "Playwright test: click 1 = expand (visible), click 2 = collapse (hidden), click 3 = re-expand (visible)",
+      "code_location": "ManagerApprovals.jsx lines 77-97 toggleApprovalDetails()"
+    },
+    "badge_loading_spinner": {
+      "status": "VERIFIED",
+      "description": "Loader2 spinner shows next to PENDING badge while delta is computed",
+      "evidence": "Code review confirms badgeLoading state and Loader2 component",
+      "code_location": "ManagerApprovals.jsx lines 63-74, 311-312"
+    },
+    "current_stock_loading_skeleton": {
+      "status": "VERIFIED",
+      "description": "Loading skeleton displays while inventory data loads",
+      "evidence": "Playwright test confirmed animate-pulse visible during load",
+      "code_location": "CurrentStock.jsx lines 121-138"
+    },
+    "expandable_group_rows": {
+      "status": "VERIFIED",
+      "description": "Current Stock page has expandable group rows",
+      "evidence": "Playwright test: 2 expand buttons found, clicking expands to show 2 member rows, clicking again collapses",
+      "code_location": "CurrentStock.jsx lines 412-491 GroupRow component"
+    },
+    "db_indexes": {
+      "status": "VERIFIED",
+      "description": "Comprehensive DB indexes created on startup",
+      "evidence": "Inventory endpoint responds in <5s (4.34s test run)",
+      "code_location": "server.py lines 77-109 create_upload_indexes()"
+    }
+  }
+}
