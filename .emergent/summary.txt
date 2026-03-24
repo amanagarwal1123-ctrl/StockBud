@@ -1,146 +1,175 @@
-<analysis>**original_problem_statement:**
-The user reported a series of UI bugs, data inconsistencies, and missing features after a major refactor in a previous session.
+<analysis>**original_problem_statement**: 
+The user reported multiple issues across the inventory reconciliation flow:
+1. Missing matched items in the Physical Stock Update Preview due to string resolver failures, resulting in incorrect total deltas (-3.050 kg discrepancy).
+2. Identity model mismatches where past-date previews were using today's stock instead of the historical date's stock, and group members were incorrectly merged into group leaders.
+3. Stale book values shown in the Stamp Approvals screen, ignoring recent physical stock baselines.
+4. Negative stock anomalies for specific items (e.g., ) caused by merged baselines.
+5. Performance issues causing excessive  polling.
+6. When a manager rejected an old-dated stock entry and the executive re-entered it, it incorrectly matched against the current date's book stock rather than the original entry date.
+7. Missing loading indicators on the Manager Approvals expansion.
+8. A previously reported +17g gross weight anomaly on production after a file rejection.
 
-1.  **UI Cleanup**: The Physical vs. Book page needed UI cleanup. The user requested the removal of the session history section (as it was moved to the dashboard), replacement of a discrete date dropdown with a continuous calendar, and formatting all dates to .
-2.  **Missing Functionality**: After the session history was moved to the Dashboard, the user pointed out that the features to expand a session to see item-wise changes and the Reverse button were lost. They needed to be re-implemented on the Dashboard.
-3.  **Data Integrity Bugs**:
-    *   The Physical vs. Book page defaulted to a future date from test data instead of the current date.
-    *   The Stamp Verification Status on the Dashboard only showed a subset of stamps, not all of them.
-    *   The current stock value appeared to fluctuate or be inconsistent between the Current Stock page and the Approval page after a physical stock update.
-    *   After reversing all reconciliation sessions for a date, uploading a new file showed incorrect Old stock values, pulling from stale, previously uploaded data instead of the live book stock.
-4.  **Item Matching & Delta Calculation Bugs**:
-    *   In the physical stock upload preview, items that were members of a group (e.g., ) were showing as unmatched because the matching logic didn't account for group relationships.
-    *   A follow-up bug occurred where uploading a file containing both a group leader and its member (e.g.,  and ) created duplicate rows in the preview, leading to incorrect delta calculations.
-5.  **Stale Data on Dashboard**: The Dashboard did not automatically refresh after a new reconciliation session was created on another page, requiring a manual page reload to see the new entry.
-6.  **Production Anomaly**: The user reported a small, unexplained increase (+17 grams) in gross weight on the production environment after rejecting a file, which the agent could not reproduce locally.
+**PRODUCT REQUIREMENTS**: 
+- Ensure absolute precision in stock reconciliation: Date-scoped stock baselines must be used.
+- Maintain member-level item identity through the entire physical stock process (do not merge distinct members like  into a leader ).
+- Prevent destructive backend polling to safeguard DB performance.
 
 **User's preferred language**: English
+*(Note for next agent: You MUST respond in English)*
 
-**what currently exists?**
-The application has undergone significant bug fixing and UI improvements.
-- The Physical vs. Book page has a cleaner UI with a proper calendar date picker, DD-MM-YYYY date formatting, and no longer contains the redundant session history. It correctly defaults to the current date.
-- The Stock Reconciliation History on the Dashboard is now fully functional, featuring clickable rows that expand to show detailed item-wise changes and a Reverse button for active sessions.
-- The Dashboard's Stamp Verification Status now correctly displays all stamps from the system, with accurate status indicators for Matched, Mismatched, Overdue, and Not Verified.
-- A  event listener has been added to the Dashboard, ensuring that session history and other stats automatically refresh when the user navigates back to it.
-- Several critical backend data integrity bugs have been fixed:
-    - The physical stock upload preview now correctly uses live book stock as the baseline when all previous sessions for a date have been reversed.
-    - The item matching logic in the upload preview now resolves group members and aliases to their leader items, preventing unmatched errors.
-    - The preview now correctly merges uploaded items that resolve to the same base key, preventing duplicate rows and ensuring accurate delta calculations.
+**what currently exists?** 
+A React + FastAPI + MongoDB inventory application. The app now accurately resolves complex group-member item strings during physical stock uploads. It computes date-scoped baselines dynamically via  to ensure past-date uploads compare against historically accurate book stock. It preserves member-level identity during physical uploads and approvals to prevent negative stock. The frontend includes visibility-based notification polling and robust loading states for manager approvals. 
 
 **Last working item**:
--   **Last item agent was working**: Fixing a bug in the physical stock upload preview where having both a group leader and its member in the uploaded file created duplicate rows with incorrect deltas.
--   **Status**: USER VERIFICATION PENDING
--   **Agent Testing Done**: Y (Agent simulated the exact scenario with a Python script and confirmed that weights for items resolving to the same base key are now correctly merged into a single row before delta calculation.)
--   **Which testing method agent to use?**: manual testing by curl
--   **User Testing Done**: N
+- **Last item agent was working**: Fixing the rejected stock re-entry date bug. When an executive re-enters a rejected stock entry from a previous date, the frontend now auto-populates the original , and the backend POST/PUT endpoints correctly inherit this date so it compares against the historical book stock.
+- **Status**: USER VERIFICATION PENDING
+- **Agent Testing Done**: Y
+- **Which testing method agent to use?**: manual testing by curl / python -c
+- **User Testing Done**: N
 
 **All Pending/In progress Issue list**:
--   **Issue 1**: **(P0)** User needs to verify the fix for duplicate rows in the physical stock preview by re-uploading a file containing both a group leader and its member.
+Issue 1: Investigate +17g gross weight anomaly on production (P1)
+Issue 2: Run data-fix endpoint on production to correct legacy baselines (P0)
+
+Issues Detail:
+- Issue 1: Investigate +17g gross weight anomaly on production
+   - Attempted fixes: Investigated code paths, but found no logic that modifies stock during a preview/abandon/reject cycle.
+   - Next debug checklist: Check production database logs for , , or  collections around the exact timestamp of a file rejection to see what document mutated.
+   - Why fix this issue and what will be achieved with the fix?: Ensures complete data integrity and trust in the system.
+   - Status: NOT STARTED
+   - Is recurring issue?: N
+   - Should Test frontend/backend/both after fix?: backend
+   - Blocked on other issue: Needs production DB access/logs from the user.
+   
+- Issue 2: Fix legacy group-level baselines on production
+   - Attempted fixes: Built a new admin endpoint  to split existing legacy group baselines into member-level baselines proportionally. Tested locally successfully. 
+   - Next debug checklist: Instruct user to call  on their production environment, then verify if  is no longer negative.
+   - Why fix this issue and what will be achieved with the fix?: Resolves active data corruption (negative stock) for users.
+   - Status: USER VERIFICATION PENDING
+   - Is recurring issue?: N
+   - Should Test frontend/backend/both after fix?: both
+   - Blocked on other issue: None
 
 **In progress Task List**:
-None.
+Task 1: Refactor monolithic  (P1)
+Task 2: Fix pre-existing  (P2)
+
+Task Detail:
+- Task 1: Refactor 
+   - Where to resume:  (6000+ lines). Break down into modular FastAPI routers (e.g., , , etc.).
+   - What will be achieved with this?: Code maintainability and adherence to FastAPI best practices.
+   - Status: NOT STARTED
+   - Should Test frontend/backend/both after fix?: both
+   - Blocked on something: None
+
+- Task 2: Fix pre-existing 
+   - Where to resume: Identify why the test suite fails and update assertions based on recent schema/UI changes.
+   - What will be achieved with this?: Reliable CI/CD test suite.
+   - Status: NOT STARTED
+   - Should Test frontend/backend/both after fix?: backend
+   - Blocked on something: None
 
 **Upcoming and Future Tasks**
--   **Upcoming Tasks**:
-    -   **P0: User Verification**: The user needs to perform end-to-end testing on all the fixes implemented in this session, especially the final fix for the duplicate rows/delta calculation.
-    -   **P1: Investigate Production Gross Weight Anomaly**: The user reported a +17g gross weight increase on production after a file rejection. This was not reproducible by the agent and requires further investigation, possibly with access to the production database and logs.
+Upcoming Tasks:
+- P0: Instruct user to run  on production and verify  weights.
+- P0: Request user end-to-end verification for the re-entry date fix.
 
--   **Future Tasks**:
-    -   **P1: Refactor **: Break down the monolithic backend file into a modular FastAPI project structure (e.g., using routers).
-    -   **P2: Mobile Responsiveness**: Improve the application's usability on mobile devices.
-    -   **P2: Fix **: Address the known issue in the dashboard test file that causes test runs to fail.
+Future Tasks:
+- P1: Refactor  into a modular FastAPI project structure.
+- P2: Improve Mobile Responsiveness across the application.
+- P2: Fix .
 
 **Completed work in this session**
--   **UI Cleanup (Physical vs Book)**: Removed session history, replaced date dropdown with a calendar, and standardized date format to DD-MM-YYYY in .
--   **Feature (Dashboard History)**: Re-implemented session detail expansion and the Reverse button on the Dashboard in .
--   **Bug Fix (Default Date)**: Modified  to default to the current date.
--   **Bug Fix (Stale Dashboard)**: Added a  event listener in  to automatically refresh data.
--   **Bug Fix (All Stamps)**: Modified  in  to gather stamps from all relevant collections (, , etc.), not just .
--   **Bug Fix (Stale Old Values)**: Corrected the logic in  in  to use current book stock if no active reconciliation sessions exist for a date.
--   **Bug Fix (Unmatched Group Members)**: Enhanced the  endpoint in  to use  logic, correctly matching group members to their base items.
--   **Bug Fix (Duplicate Rows/Wrong Deltas)**: Refactored the  logic in  to first merge uploaded items that resolve to the same base key, then calculate deltas, preventing duplicates.
+- Physical Stock delta precise string matching fixed ()
+- Compare endpoint migrated to gross weight comparison ()
+- Date-scoped stock computation via  parameter added ()
+- Stamp Approvals API updated to use baseline-aware current inventory ()
+- Identity model mismatch resolved: upload preview no longer merges group members (, )
+- Added loading state to Manager Approvals expansion ()
+- Reduced notification polling by relying on document visibility (, )
+- Created  to rectify legacy DB data.
+- Fixed Executive Stock Entry date inheritance on rejection (, )
 
 **Earlier issues found/mentioned but not fixed**
--   **Issue 1**: **(P1) Session History UI Placement**: The user pointed out that the session history was moved to the Dashboard, but their initial (and potentially ongoing) expectation might have been for it to be on the Physical vs. Book page. The agent offered to move it but was directed to fix another issue ( stale data) instead. This requirement needs clarification.
--   **Issue 2**: RBAC on 30+ GET endpoints was skipped as it was deemed high-risk for breaking frontend functionality.
--   **Issue 3**:  behavior mismatch was skipped as fixing it was considered a major feature and a design decision, not a bug.
--   **Issue 4**: Deduplication of executive entries with empty stamps was skipped due to the risk of altering intended business logic.
+Issue 1: Production anomaly +17g gross weight change after file rejection
+- Debug checklist: Trace DB logs on production for the exact time of rejection. Review  and  rollback behaviors.
+- Why to solve this issue and what will be achieved with this?: Unexplained weight additions compromise core inventory integrity.
+- Should Test frontend/backend/both after fix: backend
+- Is recurring issue?: Y
 
 **Known issue recurrence from previous fork**
-None.
+- Issue recurrence in previous fork: None
+- Recurrence count: 0
+- Status: NA
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
--   **Data Integrity on Frontend**: Addressed stale data on the dashboard by implementing a  event listener to trigger data refetching, ensuring the UI reflects the latest backend state without requiring a manual refresh.
--   **Complex Backend Data Aggregation**: The item matching logic for physical stock uploads was significantly enhanced. It now involves a multi-step process:
-    1.  Fetch all group and mapping definitions.
-    2.  For each uploaded item, resolve its raw name to a canonical leader item name.
-    3.  Aggregate weights of all uploaded items that resolve to the *same* leader.
-    4.  Compare the aggregated uploaded weight against the single base stock entry for that leader to calculate the correct delta.
--   **State-Dependent Logic**: The logic for determining the Old Stock baseline was made state-dependent. It now checks if any *active* reconciliation sessions exist for a given date before deciding whether to use stale  data or fall back to the live .
+- React frontend, FastAPI backend, MongoDB database.
+- **Stock Computation Engine**: Driven by . It relies on Opening Stock + Purchases - Sales + Polythene Adjustments. Physical stock overrides () establish a new starting point.
+- **Identity Model Rule**: Reconciliations must be performed on member-level distinct strings (e.g.,  is separate from ). Legacy merging caused negative stock anomalies.
 
 **key DB schema**
-No changes were made to the database schema in this session.
+- : physical counts by verification date.
+- : definitive stock overrides inserted upon physical stock finalization.
+- : ledger of historical additions/deductions.
+- : holds records pending manager approval.
 
 **changes in tech stack**
-None.
+- None
 
 **All files of reference**
--   : The main file where most bug fixes occurred, particularly in the  and  endpoints.
--   : Contains the fix for the stale Old values logic.
--   : Contains the enhanced reconciliation history UI and the auto-refresh logic.
--   : Contains the UI cleanup and new calendar component.
+- : Heavily edited to fix previews, compare endpoints, rejection dates, and the new baseline-fix admin endpoint.
+- : Heavily edited for date-scoping, group decomposition, and .
+- : Updated with  state.
+- : Updated to inherit  of rejected items.
+-  & : Visibility API added to control polling.
 
 **Areas that need refactoring**:
--    remains a monolithic file and is the highest priority for refactoring into a modular structure with FastAPI routers and services.
+-  is bloated (>6,000 lines). High priority backlog task to separate out routing layers into a standard FastAPI directory structure.
 
 **key api endpoints**
--   **MODIFIED**: : Completely refactored to handle group/alias resolution and merge duplicate-resolving items before calculating deltas.
--   **MODIFIED**: : Logic updated to query multiple collections to return a comprehensive list of all stamps in the system.
--   The underlying services for  and  were impacted by the fix in .
+- : Main resolver for physical stock.
+- : Now uses  to handle gross weight discrepancies properly.
+- : Now baseline-aware.
+-  & : Now respects historic verification dates.
+- : Crucial one-off endpoint to split merged legacy baselines on production.
 
 **Critical Info for New Agent**
-1.  **Item Matching is Complex**: The physical stock upload logic () is now robust but complex. It merges items before comparison. Be aware of this aggregation step if debugging deltas in the future. Any item name must be resolved to its leader before its stock is looked up.
-2.  **Dashboard Auto-Refreshes**: The Dashboard now uses a  event listener to stay up-to-date. Changes made on other pages (like approving a physical stock session) should now appear automatically when the user returns to the Dashboard tab.
-3.  **Production Anomaly**: A +17g gross weight change was reported on production after a file *rejection*. The agent could not find a code path for this and could not reproduce it. This may be a production-specific data issue or an edge case not covered in the local environment. It needs to be investigated carefully.
-4.  **Requirement Ambiguity**: The user has not given a final decision on where the Stock Reconciliation History should live ( vs. ). The current implementation places it on the . Clarify this with the user before making further changes.
+1. **Always Date-Scope Stock**: When calculating book stock for a reconciliation or approval, you MUST pass  (usually the ) into . Omitting it calculates today's stock and leads to comparison bugs.
+2. **Member-Level Tracking**: Avoid combining items that belong to the same group into a single sum. Track and baseline them individually to prevent the negative stock math error.
+3. The user needs to manually trigger  on their production instance. Ensure you remind them.
 
 **documents and test reports created in this job**
--    (Updated multiple times)
+- 
+- 
+- 
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **User**: Remove the session section from the Physical vs Book page, fix the date (shows 2026-03-26 and random dates), and format dates as DD-MM-YYYY.
-2.  **User**: Pointed out that after the UI cleanup, the expand/reverse functionality was missing from the new session history on the dashboard.
-3.  **User**: Reported multiple data bugs: default date is wrong, stock fluctuates, deltas are wrong, and not all stamps are shown on the dashboard.
-4.  **User**: Reported that current stock values differ between the Current Stock page and the Approval page. (Agent found this was likely a caching/hot-reload issue).
-5.  **User**: Reported that after reversing all sessions, the Old Gross in the upload preview was showing stale data instead of the current book stock.
-6.  **User**: Clarified the user's two concerns: [P1] the session history UI is on the wrong page, and [P2] the dashboard data is stale until a manual refresh.
-7.  **User**: Instructed the agent to fix P2 (stale dashboard data).
-8.  **User**: Reported two new issues from production: 1) a small gross weight change after a file *rejection*, and 2) certain grouped items were showing as unmatched in the upload preview.
-9.  **User**: Confirmed the agent should proceed with the proposed fix for the unmatched items.
-10. **User**: Reported a follow-up bug where fixing the unmatched issue led to duplicate rows and incorrect deltas for grouped items.
+1. **User**: Provided problem context, CSV/XLSX files, and pointed out a -3.050 kg discrepancy on physical stock preview. Shared a Codex summary pointing out string resolver failures and identity model mismatch. *(Completed)*
+2. **User**: Pointed out that  ignores , and compare page still collapses items. *(Completed)*
+3. **User**: Reported that Stamp Approvals still show old book values, ignoring recent reconciliations. *(Completed)*
+4. **User**: Requested check on deployment performance/logs. Noticed TULSI 70 BELT went into negative stock after reconciliation. Requested explanation. *(Completed - fixed member-level merging bug & visibility polling)*
+5. **User**: Problem persisted on production. Requested a loading indicator for the approvals tab. *(Completed - added fix-group-baselines script endpoint to rectify production DB, added loading UI)*
+6. **User**: Pointed out that when a manager rejects an old-dated stamp, executive re-entry matches against today's book stock instead of the previous date's stock. *(Completed - fixed date inheritance)*
+*(No pending messages)*
 
 **Project Health Check:**
--   **Broken**: None.
--   **Mocked**: None.
+- Broken: None
+- Mocked: None
 
 **3rd Party Integrations**
--   **SheetJS ()**: Used on the frontend for parsing Excel files.
--   **ReportLab**: Backend dependency for PDF generation.
--   **Playwright**: Backend dependency for browser automation to capture screenshots.
+- OpenAI GPT/Emergent LLM Key — uses Emergent LLM Key (Not actively modified, but present in env).
 
 **Testing status**
--   **Testing agent used after significant changes**: NO
--   **Troubleshoot agent used after agent stuck in loop**: NO
--   **Test files created**: None.
--   **Known regressions**: None identified in this session.
+- Testing agent used after significant changes: YES
+- Troubleshoot agent used after agent stuck in loop: NO
+- Test files created: None
+- Known regressions: None
 
 **Credentials to test flow:**
--   **Username**: 
--   **Password**: 
+- N/A (Standard session authentication)
 
 **What agent forgot to execute**
--   Initially, when moving the session history UI from Physical vs. Book to Dashboard, the agent forgot to also move the expand/collapse and Reverse functionality. The user pointed this out, and the agent then corrected it.
--   The user raised two points:  session history UI on wrong page and  stale dashboard data. The agent was instructed to fix , but  was never resolved or clarified. The requirement of where the session history should ultimately reside is still pending clarification.</analysis>
+- Did not actively investigate the P1 gross weight anomaly (+17g change upon file rejection on production) mentioned in the original problem statement due to prioritizing other explicit P0 bugs reported by the user in subsequent prompts.</analysis>

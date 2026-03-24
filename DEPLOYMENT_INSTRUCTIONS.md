@@ -12,7 +12,7 @@
 After deployment completes, you MUST run stamp normalization to fix duplicate stamps:
 
 #### Option A: From Stamp Management Page (Recommended)
-1. Go to your deployed app: https://upload-preview-qa.preview.emergentagent.com
+1. Go to your deployed app: https://date-scoped-stock.preview.emergentagent.com
 2. Login as **admin** (username: `admin`, password: `admin123`)
 3. Navigate to **Stamp Management** from the sidebar
 4. Click the **"Normalize All Stamps"** button (top right, next to Save button)
