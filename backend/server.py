@@ -1590,14 +1590,17 @@ async def update_stock_entry(
     
     if result.modified_count == 0:
         # Fallback: update the latest pending/rejected entry for this stamp
+        fallback_fields = {
+            'entries': entries,
+            'entry_date': datetime.now(timezone.utc).isoformat(),
+            'entry_day': today,
+            'status': 'pending'
+        }
+        if verification_date:
+            fallback_fields['verification_date'] = verification_date
         await db.stock_entries.update_one(
             {'stamp': stamp, 'entered_by': current_user['username'], 'status': {'$in': ['pending', 'rejected']}},
-            {'$set': {
-                'entries': entries,
-                'entry_date': datetime.now(timezone.utc).isoformat(),
-                'entry_day': today,
-                'status': 'pending'
-            }},
+            {'$set': fallback_fields},
             upsert=False
         )
     
@@ -1654,7 +1657,16 @@ async def save_executive_stock_entry(
     verification_date = request.get('verification_date')  # Date for which stock is being entered
     today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
     if not verification_date:
-        verification_date = today
+        # Check if there's a rejected entry for this stamp — inherit its verification_date
+        rejected = await db.stock_entries.find_one(
+            {'stamp': stamp, 'entered_by': entered_by, 'status': 'rejected'},
+            {"_id": 0},
+            sort=[('entry_date', -1)]
+        )
+        if rejected and rejected.get('verification_date'):
+            verification_date = rejected['verification_date']
+        else:
+            verification_date = today
     
     # Save stock entry keyed by stamp + user + today's date
     entry_record = {

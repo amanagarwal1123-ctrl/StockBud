@@ -98,6 +98,12 @@ export default function ExecutiveStockEntry() {
     if (!editingEntry) {
       setSelectedStamp(stamp);
       loadStampItems(stamp);
+      // Check if there's a rejected entry for this stamp — use its verification_date
+      const rejected = myEntries.find(e => e.stamp === stamp && e.status === 'rejected');
+      if (rejected && rejected.verification_date) {
+        setVerificationDate(rejected.verification_date);
+        toast.info(`Using original date ${rejected.verification_date} from rejected entry`);
+      }
     }
   };
 
