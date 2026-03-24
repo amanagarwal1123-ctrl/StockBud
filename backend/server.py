@@ -2831,6 +2831,112 @@ async def reverse_physical_stock_session(
 
     return {"success": True, "restored_count": restored, "message": f"Reversed: {restored} items restored to previous values"}
 
+@api_router.post("/physical-stock/fix-group-baselines")
+async def fix_group_baselines(current_user: dict = Depends(get_current_user)):
+    """Fix existing group-level baselines by splitting them into member-level baselines.
+    Uses get_current_inventory (without baselines) to compute each member's actual
+    stock as of the baseline date, then assigns each member its share of the combined
+    baseline based on those proportions."""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    all_baselines = await db.inventory_baselines.find({}, {"_id": 0}).to_list(None)
+
+    group_leaders = {g['group_name'] for g in all_groups}
+    group_members_map = {g['group_name']: g.get('members', []) for g in all_groups}
+
+    # Find group-level baselines that need splitting
+    to_fix = []
+    for bl in all_baselines:
+        bl_name = bl['item_name']
+        if bl_name in group_leaders and len(group_members_map.get(bl_name, [])) >= 2:
+            to_fix.append(bl)
+
+    if not to_fix:
+        return {"success": True, "fixed_count": 0, "details": [], "message": "No group-level baselines found"}
+
+    fixed = []
+    master_items = await db.master_items.find({}, {"_id": 0}).to_list(None)
+    master_stamp_dict = {m['item_name']: m['stamp'] for m in master_items}
+
+    for bl in to_fix:
+        bl_name = bl['item_name']
+        bl_key = bl['item_key']
+        members = group_members_map[bl_name]
+        baseline_date = bl['baseline_date']
+        session_id = bl.get('session_id', '')
+
+        # Temporarily remove this baseline so we can compute raw book stock
+        await db.inventory_baselines.delete_one({'item_key': bl_key})
+
+        # Compute inventory as of baseline_date WITHOUT the baseline
+        inv = await get_current_inventory(as_of_date=baseline_date)
+        all_inv_items = inv.get('inventory', []) + inv.get('negative_items', [])
+
+        # Find the group item and get member-level breakdown
+        group_item = next((it for it in all_inv_items if it['item_name'] == bl_name), None)
+        member_book = {}
+        if group_item and group_item.get('members'):
+            for m in group_item['members']:
+                member_book[m['item_name']] = {'gr_wt': m['gr_wt'], 'net_wt': m['net_wt']}
+        else:
+            # Group item exists but no member breakdown — assign all to leader
+            if group_item:
+                member_book[bl_name] = {'gr_wt': group_item['gr_wt'], 'net_wt': group_item['net_wt']}
+
+        # Compute what the baseline should be for each member:
+        # baseline_member = book_member + (baseline_total - book_total) * (book_member / book_total)
+        # Simplified: each member's baseline = baseline_total * (book_member / book_total)
+        # But better: use book value + proportional delta
+        total_book_gr = sum(m['gr_wt'] for m in member_book.values()) or 1
+        total_book_net = sum(m['net_wt'] for m in member_book.values()) or 1
+        baseline_total_gr = bl['gr_wt']
+        baseline_total_net = bl['net_wt']
+        delta_gr = baseline_total_gr - total_book_gr
+        delta_net = baseline_total_net - total_book_net
+
+        member_baselines = {}
+        for m_name in members:
+            m_data = member_book.get(m_name, {'gr_wt': 0, 'net_wt': 0})
+            # Distribute delta proportionally based on absolute book values
+            abs_total = sum(abs(m['gr_wt']) for m in member_book.values()) or 1
+            ratio = abs(m_data['gr_wt']) / abs_total if abs_total > 0 else (1.0 / len(members))
+            m_baseline_gr = round(m_data['gr_wt'] + delta_gr * ratio, 3)
+            m_baseline_net = round(m_data['net_wt'] + delta_net * ratio, 3)
+
+            m_key = m_name.strip().lower()
+            await db.inventory_baselines.update_one(
+                {'item_key': m_key},
+                {'$set': {
+                    'item_key': m_key,
+                    'item_name': m_name,
+                    'baseline_date': baseline_date,
+                    'gr_wt': m_baseline_gr,
+                    'net_wt': m_baseline_net,
+                    'stamp': master_stamp_dict.get(m_name, bl.get('stamp', '')),
+                    'updated_at': datetime.now(timezone.utc).isoformat(),
+                    'session_id': session_id,
+                }},
+                upsert=True
+            )
+            member_baselines[m_name] = m_baseline_gr
+
+        fixed.append({
+            'leader': bl_name,
+            'members_created': list(member_baselines.keys()),
+            'original_gr': bl['gr_wt'],
+            'book_at_date': {m: d['gr_wt'] for m, d in member_book.items()},
+            'new_baselines': member_baselines,
+        })
+
+    return {
+        "success": True,
+        "fixed_count": len(fixed),
+        "details": fixed,
+        "message": f"Split {len(fixed)} group-level baseline(s) into member-level baselines"
+    }
+
 @api_router.get("/physical-stock/dates")
 async def get_physical_stock_dates(current_user: dict = Depends(get_current_user)):
     """Return distinct physical stock verification_date values sorted descending."""

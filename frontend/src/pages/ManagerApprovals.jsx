@@ -38,6 +38,7 @@ export default function ManagerApprovals() {
   const [rejectionMessage, setRejectionMessage] = useState('');
   const [editingDate, setEditingDate] = useState({});
   const [loading, setLoading] = useState(true);
+  const [detailsLoading, setDetailsLoading] = useState(false);
   const { isManager, isAdmin } = useAuth();
 
   useEffect(() => {
@@ -70,12 +71,15 @@ export default function ManagerApprovals() {
 
   const fetchApprovalDetails = async (stamp, verificationDate) => {
     try {
+      setDetailsLoading(true);
       const params = verificationDate ? `?verification_date=${verificationDate}` : '';
       const response = await axios.get(`${API}/manager/approval-details/${stamp}${params}`);
       setApprovalDetails(response.data);
       setSelectedEntry(`${stamp}__${verificationDate || ''}`);
     } catch (error) {
       toast.error('Failed to load details');
+    } finally {
+      setDetailsLoading(false);
     }
   };
 
@@ -177,6 +181,7 @@ export default function ManagerApprovals() {
               details={allDetails[detailKey]}
               isExpanded={selectedEntry === detailKey}
               approvalDetails={selectedEntry === detailKey ? approvalDetails : null}
+              detailsLoading={selectedEntry === detailKey && detailsLoading}
               editingDate={editingDate}
               setEditingDate={setEditingDate}
               onViewDetails={() => fetchApprovalDetails(entry.stamp, vd)}
@@ -205,6 +210,7 @@ export default function ManagerApprovals() {
               details={allDetails[detailKey]}
               isExpanded={selectedEntry === detailKey}
               approvalDetails={selectedEntry === detailKey ? approvalDetails : null}
+              detailsLoading={selectedEntry === detailKey && detailsLoading}
               editingDate={editingDate}
               setEditingDate={setEditingDate}
               onViewDetails={() => fetchApprovalDetails(entry.stamp, vd)}
@@ -252,7 +258,7 @@ export default function ManagerApprovals() {
 
 /** Reusable entry card for pending & approved tabs */
 function EntryCard({
-  entry, status, details, isExpanded, approvalDetails,
+  entry, status, details, isExpanded, approvalDetails, detailsLoading,
   editingDate, setEditingDate, onViewDetails, onApprove, onReject,
   onDateUpdate, onExport, rejectionMessage, setRejectionMessage
 }) {
@@ -339,7 +345,17 @@ function EntryCard({
       </CardHeader>
 
       {/* Expanded comparison */}
-      {isExpanded && approvalDetails && (
+      {isExpanded && detailsLoading && (
+        <CardContent className="p-2 sm:p-6 pt-0">
+          <div className="flex items-center justify-center py-8 gap-2">
+            <div className="h-2 w-2 bg-primary rounded-full animate-bounce [animation-delay:-0.3s]" />
+            <div className="h-2 w-2 bg-primary rounded-full animate-bounce [animation-delay:-0.15s]" />
+            <div className="h-2 w-2 bg-primary rounded-full animate-bounce" />
+            <span className="ml-2 text-sm text-muted-foreground">Loading comparison data...</span>
+          </div>
+        </CardContent>
+      )}
+      {isExpanded && !detailsLoading && approvalDetails && (
         <CardContent className="p-2 sm:p-6 pt-0">
           <ComparisonTable details={approvalDetails} />
           {/* Rejection message */}
