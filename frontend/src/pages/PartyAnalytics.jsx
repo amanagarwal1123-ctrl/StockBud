@@ -232,7 +232,7 @@ export default function PartyAnalytics() {
             </CardHeader>
             <CardContent className="p-2 sm:p-6 pt-0">
               <div className="overflow-x-auto">
-                <Table>
+                <Table className="min-w-[640px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="text-xs w-8">#</TableHead>
@@ -280,7 +280,7 @@ export default function PartyAnalytics() {
             </CardHeader>
             <CardContent className="p-2 sm:p-6 pt-0">
               <div className="overflow-x-auto">
-                <Table>
+                <Table className="min-w-[640px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="text-xs w-8">#</TableHead>
@@ -321,7 +321,7 @@ export default function PartyAnalytics() {
             </CardHeader>
             <CardContent className="p-2 sm:p-6 pt-0">
               <div className="overflow-x-auto">
-                <Table>
+                <Table className="min-w-[640px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="text-xs w-8">#</TableHead>
@@ -362,7 +362,7 @@ export default function PartyAnalytics() {
             </CardHeader>
             <CardContent className="p-2 sm:p-6 pt-0">
               <div className="overflow-x-auto">
-                <Table>
+                <Table className="min-w-[640px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="text-xs w-8">#</TableHead>

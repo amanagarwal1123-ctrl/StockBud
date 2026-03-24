@@ -556,7 +556,7 @@ export default function PhysicalStockComparison() {
               </div>
             </CardHeader>
             <CardContent>
-              <Table>
+              <Table className="min-w-[640px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Item Name</TableHead>
@@ -606,7 +606,7 @@ export default function PhysicalStockComparison() {
               <CardDescription>Items where physical count matches book stock (within 10g tolerance)</CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
+              <Table className="min-w-[640px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Item Name</TableHead>
@@ -658,7 +658,7 @@ export default function PhysicalStockComparison() {
               </div>
             </CardHeader>
             <CardContent>
-              <Table>
+              <Table className="min-w-[640px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Item Name</TableHead>
@@ -708,7 +708,7 @@ export default function PhysicalStockComparison() {
               </div>
             </CardHeader>
             <CardContent>
-              <Table>
+              <Table className="min-w-[640px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Item Name</TableHead>
@@ -767,7 +767,7 @@ export default function PhysicalStockComparison() {
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
-              <Table>
+              <Table className="min-w-[640px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Stamp</TableHead>

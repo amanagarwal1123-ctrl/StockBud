@@ -444,7 +444,7 @@ export default function DataVisualization() {
                       </CardHeader>
                       <CardContent>
                         <div className="overflow-x-auto max-h-72">
-                          <Table>
+                          <Table className="min-w-[640px]">
                             <TableHeader>
                               <TableRow>
                                 <TableHead className="text-xs">Item</TableHead>
@@ -554,7 +554,7 @@ export default function DataVisualization() {
                     <CardTitle className="text-sm">Uploaded Historical Data</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <Table>
+                    <Table className="min-w-[640px]">
                       <TableHeader>
                         <TableRow>
                           <TableHead>Year</TableHead>

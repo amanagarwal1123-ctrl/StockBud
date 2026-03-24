@@ -255,7 +255,7 @@ export default function ItemBufferManagement() {
             <CardContent>
               <div className="overflow-x-auto">
                 <TooltipProvider>
-                  <Table>
+                  <Table className="min-w-[640px]">
                     <TableHeader>
                       <TableRow>
                         <TableHead className="w-8">St</TableHead>

@@ -233,7 +233,7 @@ export default function PolytheneManagement() {
             <div className="text-center py-8 text-muted-foreground">Loading...</div>
           ) : (
             <div className="overflow-x-auto">
-              <Table>
+              <Table className="min-w-[640px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Date & Time</TableHead>

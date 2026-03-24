@@ -51,7 +51,7 @@ export default function StampVerificationHistory() {
           <CardDescription>Red stamps need verification (>15 days)</CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
+          <Table className="min-w-[640px]">
             <TableHeader>
               <TableRow>
                 <TableHead>Stamp</TableHead>

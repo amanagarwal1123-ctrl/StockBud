@@ -237,7 +237,7 @@ export default function PolytheneEntry() {
             </div>
           </CardHeader>
           <CardContent>
-            <Table>
+            <Table className="min-w-[640px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Item Name</TableHead>
@@ -281,7 +281,7 @@ export default function PolytheneEntry() {
           {savedEntries.length === 0 ? (
             <p className="text-center py-8 text-muted-foreground">No adjustments saved today</p>
           ) : (
-            <Table>
+            <Table className="min-w-[640px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Item Name</TableHead>

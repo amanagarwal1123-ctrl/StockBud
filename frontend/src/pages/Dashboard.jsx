@@ -302,7 +302,7 @@ export default function Dashboard() {
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto max-h-[40rem]">
-            <Table>
+            <Table className="min-w-[640px]">
               <TableHeader>
                 <TableRow className="bg-muted/30">
                   <TableHead className="font-semibold text-xs w-6"></TableHead>
@@ -383,7 +383,7 @@ export default function Dashboard() {
                             <div className="bg-muted/10 px-4 py-3">
                               <p className="text-xs font-semibold text-muted-foreground mb-2">Item-wise Changes</p>
                               <div className="rounded border overflow-hidden">
-                                <Table>
+                                <Table className="min-w-[640px]">
                                   <TableHeader>
                                     <TableRow className="text-xs bg-muted/40">
                                       <TableHead className="text-xs py-1.5">Status</TableHead>
@@ -463,7 +463,7 @@ export default function Dashboard() {
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto max-h-96">
-            <Table>
+            <Table className="min-w-[640px]">
               <TableHeader>
                 <TableRow className="bg-muted/30">
                   <TableHead className="font-semibold">Stamp</TableHead>

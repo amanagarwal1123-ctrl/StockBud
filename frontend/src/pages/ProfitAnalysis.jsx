@@ -187,16 +187,16 @@ export default function ProfitAnalysis() {
         </CardHeader>
         <CardContent className="p-2 sm:p-6 pt-0">
           <div className="overflow-x-auto">
-            <Table className="table-fixed">
+            <Table className="min-w-[700px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-xs w-10">#</TableHead>
-                  <SortableHeader label="Item" sortKey="item_name" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-xs w-[180px]" />
-                  <SortableHeader label="Sold (kg)" sortKey="net_wt_sold_kg" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs" />
-                  <SortableHeader label="Buy Tunch" sortKey="avg_purchase_tunch" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs" />
-                  <SortableHeader label="Sell Tunch" sortKey="avg_sale_tunch" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs" />
-                  <SortableHeader label="Silver" sortKey="silver_profit_kg" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs" />
-                  <SortableHeader label="Labour" sortKey="labor_profit_inr" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs" />
+                  <TableHead className="text-xs w-8">#</TableHead>
+                  <SortableHeader label="Item" sortKey="item_name" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-xs min-w-[120px]" />
+                  <SortableHeader label="Sold (kg)" sortKey="net_wt_sold_kg" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs whitespace-nowrap" />
+                  <SortableHeader label="Buy T%" sortKey="avg_purchase_tunch" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs whitespace-nowrap" />
+                  <SortableHeader label="Sell T%" sortKey="avg_sale_tunch" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs whitespace-nowrap" />
+                  <SortableHeader label="Silver (kg)" sortKey="silver_profit_kg" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs whitespace-nowrap" />
+                  <SortableHeader label="Labour" sortKey="labor_profit_inr" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs whitespace-nowrap" />
                 </TableRow>
               </TableHeader>
               <TableBody>

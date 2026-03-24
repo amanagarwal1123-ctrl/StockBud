@@ -133,7 +133,7 @@ export default function StampAssignments() {
           <CardDescription>{stamps.length} stamps, {assignments.length} assigned</CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
+          <Table className="min-w-[640px]">
             <TableHeader>
               <TableRow>
                 <TableHead>Stamp</TableHead>

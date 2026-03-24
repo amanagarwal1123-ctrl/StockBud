@@ -95,7 +95,7 @@ export default function History() {
             </div>
           </CardHeader>
           <CardContent>
-            <Table>
+            <Table className="min-w-[640px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-12">#</TableHead>
