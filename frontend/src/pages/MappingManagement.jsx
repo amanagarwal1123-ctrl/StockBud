@@ -77,7 +77,7 @@ export default function MappingManagement() {
               No mappings created yet
             </div>
           ) : (
-            <Table className="min-w-[640px]">
+            <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Transaction Name</TableHead>

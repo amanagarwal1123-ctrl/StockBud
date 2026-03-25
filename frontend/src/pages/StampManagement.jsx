@@ -228,7 +228,7 @@ export default function StampManagement() {
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            <Table className="min-w-[640px]">
+            <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Item Name</TableHead>

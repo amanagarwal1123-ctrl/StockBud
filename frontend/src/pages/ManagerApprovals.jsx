@@ -416,7 +416,7 @@ function ComparisonTable({ details }) {
         Book vs Entered{details.verification_date ? ` (as of ${details.verification_date})` : ''}
       </p>
       <div className="max-h-64 overflow-auto">
-        <Table className="min-w-[640px]">
+        <Table>
           <TableHeader>
             <TableRow>
               <TableHead className="text-xs">Item</TableHead>

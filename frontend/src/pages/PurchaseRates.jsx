@@ -109,7 +109,7 @@ export default function PurchaseRates() {
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            <Table className="min-w-[640px]">
+            <Table>
               <TableHeader>
                 <TableRow>
                   <SortableHeader label="Item Name" sortKey="item_name" sortConfig={ledgerSortConfig} onSort={ledgerRequestSort} className="text-xs" />

@@ -251,7 +251,7 @@ export default function HistoricalUpload() {
         </CardHeader>
         <CardContent>
           {summary?.years?.length > 0 ? (
-            <Table className="min-w-[640px]">
+            <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Year</TableHead>
