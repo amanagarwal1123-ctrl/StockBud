@@ -4633,60 +4633,111 @@ async def clear_all_transactions(current_user: dict = Depends(get_current_user))
 async def get_item_detail(item_name: str, current_user: dict = Depends(get_current_user)):
     """Get detailed information about a specific item"""
     
-    # Get all transactions for this item
+    # Get all transactions for this item (and mapped names)
+    all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
+    mapping_dict = {m['transaction_name']: m['master_name'] for m in all_mappings}
+    reverse_map = defaultdict(list)
+    for txn, master in mapping_dict.items():
+        reverse_map[master].append(txn)
+    
+    # Collect all names that map to this item
+    search_names = [item_name] + reverse_map.get(item_name, [])
+    
     transactions = await db.transactions.find(
-        {"item_name": item_name}, 
+        {"item_name": {"$in": search_names}}, 
         {"_id": 0}
     ).sort("date", -1).to_list(1000)
     
-    # Get opening stock
-    opening = await db.opening_stock.find_one(
-        {"item_name": item_name},
-        {"_id": 0}
-    )
-    
-    # Calculate statistics — separate lists for display, but use ALL types for math
+    # Calculate statistics
     purchases = [t for t in transactions if t['type'] in ['purchase', 'purchase_return']]
     sales = [t for t in transactions if t['type'] in ['sale', 'sale_return']]
-    issues = [t for t in transactions if t['type'] == 'issue']
-    receives = [t for t in transactions if t['type'] == 'receive']
     
-    # Weight totals include returns (purchase_return has negative wt, sale_return has negative wt)
-    total_purchase_wt = sum(t.get('net_wt', 0) for t in purchases)
-    total_sale_wt = sum(t.get('net_wt', 0) for t in sales)
-    total_issue_wt = sum(t.get('net_wt', 0) for t in issues)
-    total_receive_wt = sum(t.get('net_wt', 0) for t in receives)
-    
-    # Weighted average tunch — use absolute weights to handle negative returns correctly
+    # Weighted average tunch
     abs_purchase_wt = sum(abs(t.get('net_wt', 0)) for t in purchases)
     abs_sale_wt = sum(abs(t.get('net_wt', 0)) for t in sales)
     avg_purchase_tunch = (sum(float(t.get('tunch', 0) or 0) * abs(t.get('net_wt', 0)) for t in purchases) / abs_purchase_wt) if abs_purchase_wt > 0 else 0
     avg_sale_tunch = (sum(float(t.get('tunch', 0) or 0) * abs(t.get('net_wt', 0)) for t in sales) / abs_sale_wt) if abs_sale_wt > 0 else 0
     
-    # Current stock: opening + purchases (incl returns) - sales (incl returns) - issues + receives
-    current_stock = (opening.get('net_wt', 0) if opening else 0) + total_purchase_wt - total_sale_wt - total_issue_wt + total_receive_wt
+    # Weighted average labour per kg
+    avg_purchase_labour = (sum(float(t.get('labor', 0) or 0) for t in purchases) / (abs_purchase_wt / 1000)) if abs_purchase_wt > 0 else 0
+    avg_sale_labour = (sum(float(t.get('labor', 0) or 0) for t in sales) / (abs_sale_wt / 1000)) if abs_sale_wt > 0 else 0
     
-    # Get current stamp (latest from transactions or opening stock)
-    current_stamp = None
-    for t in transactions:
-        if t.get('stamp'):
-            current_stamp = t['stamp']
-            break
-    if not current_stamp and opening:
-        current_stamp = opening.get('stamp')
+    # Get ACCURATE current stock from get_current_inventory() (matches Current Stock page)
+    inv_response = await get_current_inventory()
+    current_stock_kg = 0
+    current_gr_wt_kg = 0
+    item_fine = 0
+    item_labor = 0
+    # Search in individual items (by_stamp)
+    for stamp_items in inv_response.get('by_stamp', {}).values():
+        for si in stamp_items:
+            if si['item_name'] == item_name:
+                current_stock_kg = round(si.get('net_wt', 0) / 1000, 3)
+                current_gr_wt_kg = round(si.get('gr_wt', 0) / 1000, 3)
+                item_fine = round(si.get('fine', 0) / 1000, 3)
+                item_labor = si.get('labor', 0)
+                break
+    
+    # Get purchase ledger info
+    ledger = await db.purchase_ledger.find_one({"item_name": item_name}, {"_id": 0})
+    has_purchase_rate = ledger is not None
+    purchase_tunch_ledger = ledger.get('purchase_tunch', 0) if ledger else 0
+    labour_per_kg_ledger = ledger.get('labour_per_kg', 0) if ledger else 0
+    
+    # Get current stamp from master_items
+    master = await db.master_items.find_one({"item_name": item_name}, {"_id": 0})
+    current_stamp = master.get('stamp', 'Unassigned') if master else 'Unassigned'
     
     return {
         "item_name": item_name,
-        "current_stamp": current_stamp or "Unassigned",
-        "current_stock_kg": round(current_stock / 1000, 3),
+        "current_stamp": current_stamp,
+        "current_stock_kg": current_stock_kg,
+        "current_gr_wt_kg": current_gr_wt_kg,
+        "fine_kg": item_fine,
+        "labor_value": item_labor,
         "total_purchases": len(purchases),
         "total_sales": len(sales),
         "avg_purchase_tunch": round(avg_purchase_tunch, 2),
         "avg_sale_tunch": round(avg_sale_tunch, 2),
         "tunch_margin": round(avg_sale_tunch - avg_purchase_tunch, 2),
+        "avg_purchase_labour": round(avg_purchase_labour, 2),
+        "avg_sale_labour": round(avg_sale_labour, 2),
+        "labour_margin": round(avg_sale_labour - avg_purchase_labour, 2),
+        "has_purchase_rate": has_purchase_rate,
+        "purchase_tunch_ledger": purchase_tunch_ledger,
+        "labour_per_kg_ledger": labour_per_kg_ledger,
         "recent_transactions": transactions[:20],
-        "opening_stock": opening
     }
+
+
+@api_router.post("/item/{item_name}/set-purchase-rate")
+async def set_purchase_rate(item_name: str, request: Dict, current_user: dict = Depends(get_current_user)):
+    """Set or update purchase tunch and labour rate for an item in the purchase ledger.
+    Used for items that have no purchase transactions but need fine/labour calculations."""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    
+    purchase_tunch = request.get('purchase_tunch')
+    labour_per_kg = request.get('labour_per_kg')
+    
+    if purchase_tunch is None and labour_per_kg is None:
+        raise HTTPException(status_code=400, detail="Provide purchase_tunch and/or labour_per_kg")
+    
+    update_fields = {'item_name': item_name, 'updated_at': datetime.now(timezone.utc).isoformat()}
+    if purchase_tunch is not None:
+        update_fields['purchase_tunch'] = float(purchase_tunch)
+    if labour_per_kg is not None:
+        update_fields['labour_per_kg'] = float(labour_per_kg)
+    
+    await db.purchase_ledger.update_one(
+        {'item_name': item_name},
+        {'$set': update_fields},
+        upsert=True
+    )
+    
+    _inv_cache.invalidate()
+    return {'success': True, 'message': f'Purchase rate updated for {item_name}'}
+
 
 @api_router.post("/item/{item_name}/assign-stamp")
 async def assign_stamp_to_item(item_name: str, stamp: str = Query(...), current_user: dict = Depends(get_current_user)):
@@ -4965,10 +5016,17 @@ async def get_item_buffers(
     
     items = await db.item_buffers.find(query, {"_id": 0}).sort("tier_num", 1).to_list(None)
     
-    # Refresh current stock and status
+    # Refresh current stock and status using INDIVIDUAL item data (not group totals)
     inv_response = await get_current_inventory()
-    inv_dict = {item['item_name']: item for item in inv_response['inventory']}
-    inv_dict.update({item['item_name']: item for item in inv_response.get('negative_items', [])})
+    # Build dict from by_stamp (individual level) for accurate per-item stock
+    inv_dict = {}
+    for stamp_items in inv_response.get('by_stamp', {}).values():
+        for si in stamp_items:
+            inv_dict[si['item_name']] = si
+    # Also include group-level entries for items that are group leaders
+    for item in inv_response.get('inventory', []) + inv_response.get('negative_items', []):
+        if item['item_name'] not in inv_dict:
+            inv_dict[item['item_name']] = item
     
     for item in items:
         inv_item = inv_dict.get(item['item_name'])
