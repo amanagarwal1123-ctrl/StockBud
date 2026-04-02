@@ -4658,9 +4658,13 @@ async def get_item_detail(item_name: str, current_user: dict = Depends(get_curre
     avg_purchase_tunch = (sum(float(t.get('tunch', 0) or 0) * abs(t.get('net_wt', 0)) for t in purchases) / abs_purchase_wt) if abs_purchase_wt > 0 else 0
     avg_sale_tunch = (sum(float(t.get('tunch', 0) or 0) * abs(t.get('net_wt', 0)) for t in sales) / abs_sale_wt) if abs_sale_wt > 0 else 0
     
-    # Weighted average labour per kg
-    avg_purchase_labour = (sum(float(t.get('labor', 0) or 0) for t in purchases) / (abs_purchase_wt / 1000)) if abs_purchase_wt > 0 else 0
-    avg_sale_labour = (sum(float(t.get('labor', 0) or 0) for t in sales) / (abs_sale_wt / 1000)) if abs_sale_wt > 0 else 0
+    # Weighted average labour per kg — labour charge is in total_amount, not labor field
+    def _get_labour(t):
+        """Get labour charge from transaction. Uses total_amount (actual labour Rs) not labor field."""
+        return float(t.get('total_amount', 0) or t.get('labor', 0) or 0)
+    
+    avg_purchase_labour = (sum(_get_labour(t) for t in purchases) / (abs_purchase_wt / 1000)) if abs_purchase_wt > 0 else 0
+    avg_sale_labour = (sum(_get_labour(t) for t in sales) / (abs_sale_wt / 1000)) if abs_sale_wt > 0 else 0
     
     # Get ACCURATE current stock from get_current_inventory() (matches Current Stock page)
     inv_response = await get_current_inventory()

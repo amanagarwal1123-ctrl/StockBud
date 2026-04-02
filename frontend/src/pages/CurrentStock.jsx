@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { Search, Package, Filter, AlertTriangle, Download, ChevronRight, ChevronDown, Layers } from 'lucide-react';
+import { Search, Package, Filter, AlertTriangle, Download, ChevronRight, ChevronDown, Layers, CircleAlert } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -442,6 +442,9 @@ function GroupRow({ item, idx, hasMembers, isExpanded, onToggle, onNavigate }) {
                 {item.members.length}
               </Badge>
             )}
+            {item.has_purchase_rate === false && !hasMembers && (
+              <CircleAlert className="h-3.5 w-3.5 text-orange-500 shrink-0" title="No purchase rate" />
+            )}
           </span>
         </TableCell>
         <TableCell>
@@ -451,8 +454,8 @@ function GroupRow({ item, idx, hasMembers, isExpanded, onToggle, onNavigate }) {
         </TableCell>
         <TableCell className="text-right font-mono font-semibold text-primary">{(item.net_wt / 1000).toFixed(3)}</TableCell>
         <TableCell className="text-right font-mono text-muted-foreground">{(item.gr_wt / 1000).toFixed(3)}</TableCell>
-        <TableCell className="text-right font-mono">{(item.fine / 1000).toFixed(3)}</TableCell>
-        <TableCell className="text-right font-mono">{formatIndianCurrency(item.labor || 0)}</TableCell>
+        <TableCell className={`text-right font-mono ${item.fine === 0 && item.has_purchase_rate === false ? 'text-orange-400' : ''}`}>{(item.fine / 1000).toFixed(3)}</TableCell>
+        <TableCell className={`text-right font-mono ${item.labor === 0 && item.has_purchase_rate === false ? 'text-orange-400' : ''}`}>{formatIndianCurrency(item.labor || 0)}</TableCell>
       </TableRow>
 
       {/* Expanded member rows */}

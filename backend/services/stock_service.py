@@ -440,11 +440,13 @@ async def get_current_inventory(as_of_date: str = None):
 
         # Use GROUP-AWARE ledger for fine/labor calculation (groups DO affect profit)
         ledger_item = group_ledger.get(item_name)
+        has_rate = ledger_item is not None
         if ledger_item:
             tunch = ledger_item.get('purchase_tunch', 0)
             labour_per_kg = ledger_item.get('labour_per_kg', 0)
             item['fine'] = net_wt_grams * tunch / 100
             item['labor'] = (net_wt_grams / 1000) * labour_per_kg
+        item['has_purchase_rate'] = has_rate
 
         # Polythene adjustment
         if item_name in poly_map:
@@ -540,6 +542,7 @@ async def get_current_inventory(as_of_date: str = None):
             'net_wt': item['net_wt'],
             'fine': item.get('fine', 0),
             'labor': item.get('labor', 0),
+            'has_purchase_rate': item.get('has_purchase_rate', True),
         }
         stamp_groups.setdefault(stamp, []).append(entry)
         stamp_items_flat.append(entry)
