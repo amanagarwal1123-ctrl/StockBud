@@ -45,6 +45,25 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - Item Name and Stamp Name filters are searchable dropdowns showing only values present in polythene entries
 - 30-Day Polythene Trend bar chart (admin only) showing daily add/subtract activity via recharts
 
+## Seasonal ML Analysis Module (Apr 4, 2026)
+- **Replaced** old LLM-based `/ai/seasonal-analysis` with deterministic ML-based module
+- **Sidebar**: Renamed "Analytics & AI" to "Analytics & ML"
+- **New page**: `/seasonal-analysis` with 8 sub-tabs:
+  - PMS Final (balanced profit-margin score penalising one-sided distortion)
+  - PMS Silver (silver-margin weighted demand)
+  - PMS Labour (labour-margin weighted demand)
+  - Demand Forecast (14d/30d segmented forecasting via LightGBM)
+  - Seasonality (month-over-month patterns from historical data)
+  - Procurement Planner (buy/hold recommendations with reason codes)
+  - Supplier View (supplier-wise PMS and recency)
+  - Dead Stock (dead stock + slow mover detection)
+- **Segmentation**: dense_daily, medium_daily, weekly_sparse, cold_start
+- **PMS formula**: balanced_score = 0.5*(s+l) + 0.5*min(s,l) — penalises imbalance
+- **Silver MCX**: Free API (metals.live), demand-side features only, non-blocking
+- **Profit Analysis**: Completely untouched (tunch-spread + labour margin)
+- Backend: 8 new endpoints under `/api/seasonal/*`
+- Tests: 23 unit tests + 32 integration tests, all passing
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P2: Transaction archiving / materialized views for 200K+ scale
