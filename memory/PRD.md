@@ -35,9 +35,14 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - `POST /api/physical-stock/fix-group-baselines` — idempotent, splits group baselines
 - `POST /api/physical-stock/restore-group-baselines` — one-time fix for corrupted baselines
 
+## Polythene Management for Executives (Apr 4, 2026)
+- Executive (SEE) role can now access /polythene-management as read-only (no edit/delete)
+- Added filters: Item Name, Stamp Name, Date From, Date To (combinable)
+- Summary totals (Total Add, Total Subtract, Net Polythene) always visible at top, update with filters
+- Admin retains full access (delete buttons, user filter dropdown)
+- Sidebar: Polythene Mgmt visible under Inventory group for executive role
+- Backend: GET /api/polythene/all now accepts admin + executive roles
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
-- P1: +17g gross weight anomaly investigation
 - P2: Transaction archiving / materialized views for 200K+ scale
-- P2: Mobile responsiveness improvements
-- P2: KADA-AS 70 negative stock (-4.925 kg) investigation
