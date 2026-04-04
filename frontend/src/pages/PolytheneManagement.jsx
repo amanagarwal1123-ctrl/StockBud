@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
-import { Box, Download, Trash2, Search, X } from 'lucide-react';
+import { Box, Download, Trash2, Search, X, Check, ChevronsUpDown, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,11 +9,62 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { exportToCSV } from '@/utils/exportCSV';
 import { toast } from 'sonner';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { cn } from '@/lib/utils';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
+
+function ComboFilter({ value, onSelect, options, placeholder, testId }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between font-normal"
+          data-testid={testId}
+        >
+          <span className="truncate">{value || placeholder}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+        <Command>
+          <CommandInput placeholder={`Search...`} />
+          <CommandList>
+            <CommandEmpty>No results.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                onSelect={() => { onSelect(''); setOpen(false); }}
+                data-testid={`${testId}-all`}
+              >
+                <Check className={cn("mr-2 h-4 w-4", !value ? "opacity-100" : "opacity-0")} />
+                All
+              </CommandItem>
+              {options.map((opt) => (
+                <CommandItem
+                  key={opt}
+                  value={opt}
+                  onSelect={() => { onSelect(opt); setOpen(false); }}
+                >
+                  <Check className={cn("mr-2 h-4 w-4", value === opt ? "opacity-100" : "opacity-0")} />
+                  {opt}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export default function PolytheneManagement() {
   const [entries, setEntries] = useState([]);
@@ -68,11 +119,22 @@ export default function PolytheneManagement() {
     }
   };
 
+  // Derive unique item names and stamps from actual entries
+  const availableItems = useMemo(() => {
+    const items = new Set(entries.map(e => e.item_name).filter(Boolean));
+    return [...items].sort();
+  }, [entries]);
+
+  const availableStamps = useMemo(() => {
+    const stamps = new Set(entries.map(e => e.stamp).filter(Boolean));
+    return [...stamps].sort();
+  }, [entries]);
+
   const filteredEntries = useMemo(() => {
     return entries.filter(entry => {
       const matchesUser = filterUser === 'all' || entry.adjusted_by === filterUser;
-      const matchesItem = !filterItem || entry.item_name?.toLowerCase().includes(filterItem.toLowerCase());
-      const matchesStamp = !filterStamp || (entry.stamp || '').toLowerCase().includes(filterStamp.toLowerCase());
+      const matchesItem = !filterItem || entry.item_name === filterItem;
+      const matchesStamp = !filterStamp || entry.stamp === filterStamp;
 
       let matchesDate = true;
       if (filterDateFrom || filterDateTo) {
@@ -95,6 +157,36 @@ export default function PolytheneManagement() {
       .reduce((sum, e) => sum + (e.poly_weight || 0), 0);
     return { totalAdd, totalSubtract, net: totalAdd - totalSubtract };
   }, [filteredEntries]);
+
+  // 30-day trend data for admin
+  const trendData = useMemo(() => {
+    if (!isAdmin || entries.length === 0) return [];
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const dayMap = {};
+    for (let i = 0; i <= 30; i++) {
+      const d = new Date(thirtyDaysAgo);
+      d.setDate(d.getDate() + i);
+      const key = d.toISOString().split('T')[0];
+      dayMap[key] = { date: key, label: `${d.getDate()}/${d.getMonth() + 1}`, add: 0, subtract: 0 };
+    }
+
+    entries.forEach(e => {
+      const d = new Date(e.created_at).toISOString().split('T')[0];
+      if (dayMap[d]) {
+        if (e.operation === 'add') dayMap[d].add += e.poly_weight || 0;
+        else dayMap[d].subtract += e.poly_weight || 0;
+      }
+    });
+
+    return Object.values(dayMap).map(d => ({
+      ...d,
+      add: parseFloat(d.add.toFixed(4)),
+      subtract: parseFloat(d.subtract.toFixed(4)),
+    }));
+  }, [entries, isAdmin]);
 
   const hasActiveFilters = filterItem || filterStamp || filterDateFrom || filterDateTo || filterUser !== 'all';
 
@@ -141,7 +233,7 @@ export default function PolytheneManagement() {
         </p>
       </div>
 
-      {/* Summary Totals — always visible */}
+      {/* Summary Totals */}
       <div className="grid grid-cols-3 gap-3" data-testid="polythene-summary">
         <Card className="border-green-200 bg-green-50/50">
           <CardContent className="p-4 text-center">
@@ -168,6 +260,43 @@ export default function PolytheneManagement() {
         </Card>
       </div>
 
+      {/* 30-Day Trend Chart — Admin Only */}
+      {isAdmin && trendData.length > 0 && (
+        <Card data-testid="polythene-trend-chart">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-primary" />
+              30-Day Polythene Trend
+            </CardTitle>
+            <CardDescription>Daily polythene additions and subtractions over the last 30 days</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[260px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={trendData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fontSize: 11 }}
+                    interval="preserveStartEnd"
+                    className="text-muted-foreground"
+                  />
+                  <YAxis tick={{ fontSize: 11 }} className="text-muted-foreground" unit=" kg" />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '12px' }}
+                    formatter={(val, name) => [`${val.toFixed(4)} kg`, name === 'add' ? 'Added' : 'Subtracted']}
+                    labelFormatter={(label) => `Date: ${label}`}
+                  />
+                  <Legend formatter={(val) => val === 'add' ? 'Added' : 'Subtracted'} />
+                  <Bar dataKey="add" fill="#16a34a" radius={[3, 3, 0, 0]} name="add" />
+                  <Bar dataKey="subtract" fill="#dc2626" radius={[3, 3, 0, 0]} name="subtract" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Filters */}
       <Card>
         <CardHeader>
@@ -193,26 +322,28 @@ export default function PolytheneManagement() {
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
-              <Label className="text-sm mb-2">Item Name</Label>
-              <Input
-                placeholder="Search item name..."
+              <Label className="text-sm mb-2 block">Item Name</Label>
+              <ComboFilter
                 value={filterItem}
-                onChange={(e) => setFilterItem(e.target.value)}
-                data-testid="filter-item-name"
+                onSelect={setFilterItem}
+                options={availableItems}
+                placeholder="All Items"
+                testId="filter-item-name"
               />
             </div>
             <div>
-              <Label className="text-sm mb-2">Stamp Name</Label>
-              <Input
-                placeholder="Search stamp..."
+              <Label className="text-sm mb-2 block">Stamp Name</Label>
+              <ComboFilter
                 value={filterStamp}
-                onChange={(e) => setFilterStamp(e.target.value)}
-                data-testid="filter-stamp-name"
+                onSelect={setFilterStamp}
+                options={availableStamps}
+                placeholder="All Stamps"
+                testId="filter-stamp-name"
               />
             </div>
             {isAdmin && (
               <div>
-                <Label className="text-sm mb-2">User</Label>
+                <Label className="text-sm mb-2 block">User</Label>
                 <Select value={filterUser} onValueChange={setFilterUser}>
                   <SelectTrigger data-testid="filter-user-select">
                     <SelectValue />
@@ -229,7 +360,7 @@ export default function PolytheneManagement() {
               </div>
             )}
             <div>
-              <Label className="text-sm mb-2">Date From</Label>
+              <Label className="text-sm mb-2 block">Date From</Label>
               <Input
                 type="date"
                 value={filterDateFrom}
@@ -238,7 +369,7 @@ export default function PolytheneManagement() {
               />
             </div>
             <div>
-              <Label className="text-sm mb-2">Date To</Label>
+              <Label className="text-sm mb-2 block">Date To</Label>
               <Input
                 type="date"
                 value={filterDateTo}

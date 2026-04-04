@@ -42,6 +42,8 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - Admin retains full access (delete buttons, user filter dropdown)
 - Sidebar: Polythene Mgmt visible under Inventory group for executive role
 - Backend: GET /api/polythene/all now accepts admin + executive roles
+- Item Name and Stamp Name filters are searchable dropdowns showing only values present in polythene entries
+- 30-Day Polythene Trend bar chart (admin only) showing daily add/subtract activity via recharts
 
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
