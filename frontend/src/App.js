@@ -25,6 +25,7 @@ import ActivityLog from './pages/ActivityLog';
 import ItemBufferManagement from './pages/ItemBufferManagement';
 import OrderManagement from './pages/OrderManagement';
 import DataVisualization from './pages/DataVisualization';
+import SeasonalAnalysis from './pages/SeasonalAnalysis';
 import StampAssignments from './pages/StampAssignments';
 import StampDetail from './pages/StampDetail';
 import ItemGroupManagement from './pages/ItemGroupManagement';
@@ -97,6 +98,7 @@ function App() {
                       <Route path="/item-buffers" element={<ItemBufferManagement />} />
                       <Route path="/orders" element={<OrderManagement />} />
                       <Route path="/visualization" element={<DataVisualization />} />
+                      <Route path="/seasonal-analysis" element={<SeasonalAnalysis />} />
                       <Route path="/stamp-assignments" element={<StampAssignments />} />
                       <Route path="/stamp/:stampName" element={<StampDetail />} />
                       <Route path="/item-groups" element={<ItemGroupManagement />} />

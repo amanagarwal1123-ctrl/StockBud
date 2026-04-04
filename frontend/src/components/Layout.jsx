@@ -95,11 +95,12 @@ export default function Layout({ children }) {
     },
     {
       id: 'analytics',
-      label: 'Analytics & AI',
+      label: 'Analytics & ML',
       icon: BarChart3,
       roles: ['admin'],
       items: [
         { name: 'Visualization', href: '/visualization', icon: BarChart3, roles: ['admin'] },
+        { name: 'Seasonal Analysis', href: '/seasonal-analysis', icon: TrendingUp, roles: ['admin'] },
         { name: 'Item Buffers', href: '/item-buffers', icon: Layers, roles: ['admin'] },
         { name: 'Item Groups', href: '/item-groups', icon: Combine, roles: ['admin'] },
         { name: 'Orders', href: '/orders', icon: ShoppingCart, roles: ['admin', 'executive'] },
