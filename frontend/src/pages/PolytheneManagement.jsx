@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
-import { Box, Filter, Download, Edit, Trash2 } from 'lucide-react';
+import { Box, Download, Trash2, Search, X } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,42 +17,23 @@ const API = `${BACKEND_URL}/api`;
 
 export default function PolytheneManagement() {
   const [entries, setEntries] = useState([]);
-  const [allItems, setAllItems] = useState([]);
   const [users, setUsers] = useState([]);
   const [filterUser, setFilterUser] = useState('all');
   const [filterItem, setFilterItem] = useState('');
-  const [filteredSuggestions, setFilteredSuggestions] = useState([]);
+  const [filterStamp, setFilterStamp] = useState('');
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
   const [loading, setLoading] = useState(true);
-  
-  const { isAdmin } = useAuth();
+
+  const { isAdmin, user } = useAuth();
+  const canAccess = user?.role === 'admin' || user?.role === 'executive';
 
   useEffect(() => {
-    if (isAdmin) {
+    if (canAccess) {
       fetchAllEntries();
-      fetchUsers();
-      fetchAllItems();
+      if (isAdmin) fetchUsers();
     }
-  }, [isAdmin]);
-
-  useEffect(() => {
-    if (filterItem.length > 1) {
-      const suggestions = allItems.filter(item =>
-        item.item_name.toLowerCase().includes(filterItem.toLowerCase())
-      ).slice(0, 10);
-      setFilteredSuggestions(suggestions);
-    } else {
-      setFilteredSuggestions([]);
-    }
-  }, [filterItem, allItems]);
-
-  const fetchAllItems = async () => {
-    try {
-      const response = await axios.get(`${API}/inventory/current`);
-      setAllItems(response.data.inventory);
-    } catch (error) {
-      console.error('Failed to fetch items:', error);
-    }
-  };
+  }, [canAccess, isAdmin]);
 
   const fetchAllEntries = async () => {
     try {
@@ -78,7 +59,6 @@ export default function PolytheneManagement() {
   const deleteEntry = async (entryId) => {
     const confirmed = window.confirm('Delete this polythene entry?');
     if (!confirmed) return;
-
     try {
       await axios.delete(`${API}/polythene/${entryId}`);
       toast.success('Entry deleted');
@@ -88,11 +68,43 @@ export default function PolytheneManagement() {
     }
   };
 
-  const filteredEntries = entries.filter(entry => {
-    const matchesUser = filterUser === 'all' || entry.adjusted_by === filterUser;
-    const matchesItem = !filterItem || entry.item_name.toLowerCase().includes(filterItem.toLowerCase());
-    return matchesUser && matchesItem;
-  });
+  const filteredEntries = useMemo(() => {
+    return entries.filter(entry => {
+      const matchesUser = filterUser === 'all' || entry.adjusted_by === filterUser;
+      const matchesItem = !filterItem || entry.item_name?.toLowerCase().includes(filterItem.toLowerCase());
+      const matchesStamp = !filterStamp || (entry.stamp || '').toLowerCase().includes(filterStamp.toLowerCase());
+
+      let matchesDate = true;
+      if (filterDateFrom || filterDateTo) {
+        const entryDate = new Date(entry.created_at);
+        const entryDateStr = entryDate.toISOString().split('T')[0];
+        if (filterDateFrom && entryDateStr < filterDateFrom) matchesDate = false;
+        if (filterDateTo && entryDateStr > filterDateTo) matchesDate = false;
+      }
+
+      return matchesUser && matchesItem && matchesStamp && matchesDate;
+    });
+  }, [entries, filterUser, filterItem, filterStamp, filterDateFrom, filterDateTo]);
+
+  const totals = useMemo(() => {
+    const totalAdd = filteredEntries
+      .filter(e => e.operation === 'add')
+      .reduce((sum, e) => sum + (e.poly_weight || 0), 0);
+    const totalSubtract = filteredEntries
+      .filter(e => e.operation === 'subtract')
+      .reduce((sum, e) => sum + (e.poly_weight || 0), 0);
+    return { totalAdd, totalSubtract, net: totalAdd - totalSubtract };
+  }, [filteredEntries]);
+
+  const hasActiveFilters = filterItem || filterStamp || filterDateFrom || filterDateTo || filterUser !== 'all';
+
+  const clearFilters = () => {
+    setFilterItem('');
+    setFilterStamp('');
+    setFilterDateFrom('');
+    setFilterDateTo('');
+    setFilterUser('all');
+  };
 
   const handleExport = () => {
     const exportData = filteredEntries.map(entry => ({
@@ -106,12 +118,12 @@ export default function PolytheneManagement() {
     exportToCSV(exportData, 'polythene_adjustments');
   };
 
-  if (!isAdmin) {
+  if (!canAccess) {
     return (
       <div className="p-3 sm:p-6 md:p-8">
         <Card className="border-destructive/50">
           <CardContent className="pt-6">
-            <p className="text-center text-destructive">Access Denied. Admin privileges required.</p>
+            <p className="text-center text-destructive" data-testid="access-denied-msg">Access Denied.</p>
           </CardContent>
         </Card>
       </div>
@@ -121,105 +133,124 @@ export default function PolytheneManagement() {
   return (
     <div className="p-3 sm:p-6 md:p-8 space-y-6">
       <div>
-        <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight">
+        <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight" data-testid="polythene-mgmt-title">
           Polythene Management
         </h1>
         <p className="text-xs sm:text-base md:text-lg text-muted-foreground mt-2">
-          View and manage all polythene adjustments
+          {isAdmin ? 'View and manage all polythene adjustments' : 'View all polythene adjustments (read-only)'}
         </p>
       </div>
 
+      {/* Summary Totals — always visible */}
+      <div className="grid grid-cols-3 gap-3" data-testid="polythene-summary">
+        <Card className="border-green-200 bg-green-50/50">
+          <CardContent className="p-4 text-center">
+            <p className="text-xs font-medium text-green-700 mb-1">Total Add</p>
+            <p className="text-xl font-bold text-green-700 font-mono" data-testid="poly-total-add">+{totals.totalAdd.toFixed(3)} kg</p>
+            <p className="text-[10px] text-green-600 mt-1">{filteredEntries.filter(e => e.operation === 'add').length} entries</p>
+          </CardContent>
+        </Card>
+        <Card className="border-red-200 bg-red-50/50">
+          <CardContent className="p-4 text-center">
+            <p className="text-xs font-medium text-red-700 mb-1">Total Subtract</p>
+            <p className="text-xl font-bold text-red-700 font-mono" data-testid="poly-total-subtract">-{totals.totalSubtract.toFixed(3)} kg</p>
+            <p className="text-[10px] text-red-600 mt-1">{filteredEntries.filter(e => e.operation === 'subtract').length} entries</p>
+          </CardContent>
+        </Card>
+        <Card className={`${totals.net >= 0 ? 'border-blue-200 bg-blue-50/50' : 'border-orange-200 bg-orange-50/50'}`}>
+          <CardContent className="p-4 text-center">
+            <p className="text-xs font-medium text-muted-foreground mb-1">Net Polythene</p>
+            <p className={`text-xl font-bold font-mono ${totals.net >= 0 ? 'text-blue-700' : 'text-orange-700'}`} data-testid="poly-net-total">
+              {totals.net >= 0 ? '+' : ''}{totals.net.toFixed(3)} kg
+            </p>
+            <p className="text-[10px] text-muted-foreground mt-1">{filteredEntries.length} total entries</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filters */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Filters</CardTitle>
-            <Button onClick={handleExport} variant="outline" size="sm">
-              <Download className="h-4 w-4 mr-2" />
-              Export CSV
-            </Button>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <CardTitle className="flex items-center gap-2">
+              <Search className="h-4 w-4" />
+              Search & Filter
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              {hasActiveFilters && (
+                <Button onClick={clearFilters} variant="ghost" size="sm" data-testid="clear-filters-btn">
+                  <X className="h-4 w-4 mr-1" />
+                  Clear
+                </Button>
+              )}
+              <Button onClick={handleExport} variant="outline" size="sm" data-testid="export-csv-btn">
+                <Download className="h-4 w-4 mr-2" />
+                Export CSV
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
-              <Label className="text-sm mb-2">Filter by User</Label>
-              <Select value={filterUser} onValueChange={setFilterUser}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Users</SelectItem>
-                  {users.map(u => (
-                    <SelectItem key={u.username} value={u.username}>
-                      {u.full_name} ({u.username})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label className="text-sm mb-2">Item Name</Label>
+              <Input
+                placeholder="Search item name..."
+                value={filterItem}
+                onChange={(e) => setFilterItem(e.target.value)}
+                data-testid="filter-item-name"
+              />
             </div>
             <div>
-              <Label className="text-sm mb-2">Filter by Item Name</Label>
-              <div className="relative">
-                <Input
-                  placeholder="Search item name..."
-                  value={filterItem}
-                  onChange={(e) => setFilterItem(e.target.value)}
-                />
-                {filteredSuggestions.length > 0 && (
-                  <div className="absolute z-10 w-full mt-1 bg-background border rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                    {filteredSuggestions.map((item, idx) => (
-                      <div
-                        key={idx}
-                        onClick={() => {
-                          setFilterItem(item.item_name);
-                          setFilteredSuggestions([]);
-                        }}
-                        className="p-2 hover:bg-muted cursor-pointer text-sm"
-                      >
-                        {item.item_name} <span className="text-xs text-muted-foreground">({item.stamp})</span>
-                      </div>
+              <Label className="text-sm mb-2">Stamp Name</Label>
+              <Input
+                placeholder="Search stamp..."
+                value={filterStamp}
+                onChange={(e) => setFilterStamp(e.target.value)}
+                data-testid="filter-stamp-name"
+              />
+            </div>
+            {isAdmin && (
+              <div>
+                <Label className="text-sm mb-2">User</Label>
+                <Select value={filterUser} onValueChange={setFilterUser}>
+                  <SelectTrigger data-testid="filter-user-select">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Users</SelectItem>
+                    {users.map(u => (
+                      <SelectItem key={u.username} value={u.username}>
+                        {u.full_name} ({u.username})
+                      </SelectItem>
                     ))}
-                  </div>
-                )}
+                  </SelectContent>
+                </Select>
               </div>
+            )}
+            <div>
+              <Label className="text-sm mb-2">Date From</Label>
+              <Input
+                type="date"
+                value={filterDateFrom}
+                onChange={(e) => setFilterDateFrom(e.target.value)}
+                data-testid="filter-date-from"
+              />
+            </div>
+            <div>
+              <Label className="text-sm mb-2">Date To</Label>
+              <Input
+                type="date"
+                value={filterDateTo}
+                onChange={(e) => setFilterDateTo(e.target.value)}
+                data-testid="filter-date-to"
+              />
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Polythene Summary - shown when filtered by item */}
-      {filterItem && filteredEntries.length > 0 && (() => {
-        const totalAdd = filteredEntries
-          .filter(e => e.operation === 'add')
-          .reduce((sum, e) => sum + (e.poly_weight || 0), 0);
-        const totalSubtract = filteredEntries
-          .filter(e => e.operation === 'subtract')
-          .reduce((sum, e) => sum + (e.poly_weight || 0), 0);
-        const net = totalAdd - totalSubtract;
-        return (
-          <div className="grid grid-cols-3 gap-3" data-testid="polythene-summary">
-            <Card className="border-green-200 bg-green-50/50">
-              <CardContent className="p-4 text-center">
-                <p className="text-xs font-medium text-green-700 mb-1">Total Add</p>
-                <p className="text-xl font-bold text-green-700 font-mono" data-testid="poly-total-add">+{totalAdd.toFixed(3)} kg</p>
-              </CardContent>
-            </Card>
-            <Card className="border-red-200 bg-red-50/50">
-              <CardContent className="p-4 text-center">
-                <p className="text-xs font-medium text-red-700 mb-1">Total Subtract</p>
-                <p className="text-xl font-bold text-red-700 font-mono" data-testid="poly-total-subtract">-{totalSubtract.toFixed(3)} kg</p>
-              </CardContent>
-            </Card>
-            <Card className={`${net >= 0 ? 'border-blue-200 bg-blue-50/50' : 'border-orange-200 bg-orange-50/50'}`}>
-              <CardContent className="p-4 text-center">
-                <p className="text-xs font-medium text-muted-foreground mb-1">Net Polythene</p>
-                <p className={`text-xl font-bold font-mono ${net >= 0 ? 'text-blue-700' : 'text-orange-700'}`} data-testid="poly-net-total">{net >= 0 ? '+' : ''}{net.toFixed(3)} kg</p>
-              </CardContent>
-            </Card>
-          </div>
-        );
-      })()}
-
+      {/* Entries Table */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -230,7 +261,7 @@ export default function PolytheneManagement() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="text-center py-8 text-muted-foreground">Loading...</div>
+            <div className="text-center py-8 text-muted-foreground" data-testid="loading-indicator">Loading...</div>
           ) : (
             <div className="overflow-x-auto">
               <Table className="min-w-[640px]">
@@ -242,19 +273,19 @@ export default function PolytheneManagement() {
                     <TableHead>Stamp</TableHead>
                     <TableHead className="text-right">Polythene (kg)</TableHead>
                     <TableHead>Operation</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    {isAdmin && <TableHead className="text-right">Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredEntries.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={isAdmin ? 7 : 6} className="text-center py-8 text-muted-foreground" data-testid="no-entries-msg">
                         No polythene adjustments found
                       </TableCell>
                     </TableRow>
                   ) : (
                     filteredEntries.map((entry, idx) => (
-                      <TableRow key={idx}>
+                      <TableRow key={entry.id || idx} data-testid={`poly-entry-row-${idx}`}>
                         <TableCell className="font-mono text-sm">
                           {new Date(entry.created_at).toLocaleString()}
                         </TableCell>
@@ -271,15 +302,18 @@ export default function PolytheneManagement() {
                             {entry.operation?.toUpperCase()}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => deleteEntry(entry.id)}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </TableCell>
+                        {isAdmin && (
+                          <TableCell className="text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => deleteEntry(entry.id)}
+                              data-testid={`delete-entry-btn-${idx}`}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))
                   )}

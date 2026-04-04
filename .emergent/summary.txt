@@ -1,175 +1,167 @@
 <analysis>**original_problem_statement**: 
-The user reported multiple issues across the inventory reconciliation flow:
-1. Missing matched items in the Physical Stock Update Preview due to string resolver failures, resulting in incorrect total deltas (-3.050 kg discrepancy).
-2. Identity model mismatches where past-date previews were using today's stock instead of the historical date's stock, and group members were incorrectly merged into group leaders.
-3. Stale book values shown in the Stamp Approvals screen, ignoring recent physical stock baselines.
-4. Negative stock anomalies for specific items (e.g., ) caused by merged baselines.
-5. Performance issues causing excessive  polling.
-6. When a manager rejected an old-dated stock entry and the executive re-entered it, it incorrectly matched against the current date's book stock rather than the original entry date.
-7. Missing loading indicators on the Manager Approvals expansion.
-8. A previously reported +17g gross weight anomaly on production after a file rejection.
-
-**PRODUCT REQUIREMENTS**: 
-- Ensure absolute precision in stock reconciliation: Date-scoped stock baselines must be used.
-- Maintain member-level item identity through the entire physical stock process (do not merge distinct members like  into a leader ).
-- Prevent destructive backend polling to safeguard DB performance.
+The user requested a massive architectural feature shift: Replace the current AI-generated seasonal analysis functionality with a deterministic **Profitability & Procurement Planner**. 
+**PRODUCT REQUIREMENTS**:
+- Compute item-level profitability, demand ranking, and dead-stock/slow-mover detection based on actual historical data (Sales, Purchases, Ledger).
+- Create robust backend analytics layers (e.g., , , , ).
+- Produce bi-weekly and monthly procurement recommendations (what to buy, from whom, how much, and why) with confidence labels (, , etc.).
+- Isolate exogenous market-price ingestion (e.g., gold/silver prices) via API or admin upload, with scraper fallback.
+- Build a technical handoff document outlining schema mappings for future PySpark/SQL/Databricks data engineering pipelines.
+- Existing core functionalities (physical stock, approvals, current stock) must remain intact.
 
 **User's preferred language**: English
-*(Note for next agent: You MUST respond in English)*
+*(INSTRUCT next agent to respond in English only)*
 
 **what currently exists?** 
-A React + FastAPI + MongoDB inventory application. The app now accurately resolves complex group-member item strings during physical stock uploads. It computes date-scoped baselines dynamically via  to ensure past-date uploads compare against historically accurate book stock. It preserves member-level identity during physical uploads and approvals to prevent negative stock. The frontend includes visibility-based notification polling and robust loading states for manager approvals. 
+A React + FastAPI + MongoDB inventory application. Core inventory reconciliation is stable, calculating stock precisely at the individual item level (preventing legacy group-merging bugs). The frontend includes responsive tables with pinch-to-zoom enabled, real-time Item Buffers, and an Item Detail page showing current stock, labour margin, and manual purchase rate inputs. Analytics currently rely on an LLM-based seasonal analysis endpoint which needs to be replaced.
 
 **Last working item**:
-- **Last item agent was working**: Fixing the rejected stock re-entry date bug. When an executive re-enters a rejected stock entry from a previous date, the frontend now auto-populates the original , and the backend POST/PUT endpoints correctly inherit this date so it compares against the historical book stock.
-- **Status**: USER VERIFICATION PENDING
-- **Agent Testing Done**: Y
-- **Which testing method agent to use?**: manual testing by curl / python -c
-- **User Testing Done**: N
+    - **Last item agent was working**: Formulating an execution plan to replace the AI seasonal analysis with the deterministic . The agent gathered context on  analytics routes and  and sent the plan to the user for approval via .
+    - **Status**: USER VERIFICATION PENDING
+    - **Agent Testing Done**: N
+    - **Which testing method agent to use?**: both (use  extensively after building the backend facts and frontend planner)
+    - **User Testing Done**: N
 
 **All Pending/In progress Issue list**:
-Issue 1: Investigate +17g gross weight anomaly on production (P1)
-Issue 2: Run data-fix endpoint on production to correct legacy baselines (P0)
-
-Issues Detail:
-- Issue 1: Investigate +17g gross weight anomaly on production
-   - Attempted fixes: Investigated code paths, but found no logic that modifies stock during a preview/abandon/reject cycle.
-   - Next debug checklist: Check production database logs for , , or  collections around the exact timestamp of a file rejection to see what document mutated.
-   - Why fix this issue and what will be achieved with the fix?: Ensures complete data integrity and trust in the system.
-   - Status: NOT STARTED
-   - Is recurring issue?: N
-   - Should Test frontend/backend/both after fix?: backend
-   - Blocked on other issue: Needs production DB access/logs from the user.
-   
-- Issue 2: Fix legacy group-level baselines on production
-   - Attempted fixes: Built a new admin endpoint  to split existing legacy group baselines into member-level baselines proportionally. Tested locally successfully. 
-   - Next debug checklist: Instruct user to call  on their production environment, then verify if  is no longer negative.
-   - Why fix this issue and what will be achieved with the fix?: Resolves active data corruption (negative stock) for users.
-   - Status: USER VERIFICATION PENDING
-   - Is recurring issue?: N
-   - Should Test frontend/backend/both after fix?: both
-   - Blocked on other issue: None
+  Issue 1: Investigate +17g gross weight anomaly on production (P1)
+  Issue 2: KADA-AS 70 negative stock investigation (-4.925 kg) (P2)
+  
+  Issues Detail:
+  - Issue 1: Investigate +17g gross weight anomaly on production
+     - Attempted fixes: Investigated code paths in earlier sessions, found no logic modifying stock during preview/abandon/reject cycles.
+     - Next debug checklist: Trace DB logs on production (, , ) around the exact timestamp of a file rejection.
+     - Why fix this issue and what will be achieved with the fix?: Ensures complete data integrity and trust in the system.
+     - Status: NOT STARTED
+     - Is recurring issue?: Y
+     - Should Test frontend/backend/both after fix?: backend
+     - Blocked on other issue: None
+  - Issue 2: KADA-AS 70 negative stock investigation
+     - Attempted fixes: Restored  for other grouped items, but KADA-AS 70 lacks a physical stock baseline.
+     - Next debug checklist: Check  and  mapping for KADA-AS 70 to see if missing purchases or mismatched item names are driving it negative.
+     - Why fix this issue and what will be achieved with the fix?: Fixes incorrect negative stock display.
+     - Status: NOT STARTED
+     - Is recurring issue?: N
+     - Should Test frontend/backend/both after fix?: backend
+     - Blocked on other issue: None
 
 **In progress Task List**:
-Task 1: Refactor monolithic  (P1)
-Task 2: Fix pre-existing  (P2)
+  Task 1: Build Deterministic Profitability & Procurement Planner (P0)
 
-Task Detail:
-- Task 1: Refactor 
-   - Where to resume:  (6000+ lines). Break down into modular FastAPI routers (e.g., , , etc.).
-   - What will be achieved with this?: Code maintainability and adherence to FastAPI best practices.
-   - Status: NOT STARTED
-   - Should Test frontend/backend/both after fix?: both
-   - Blocked on something: None
-
-- Task 2: Fix pre-existing 
-   - Where to resume: Identify why the test suite fails and update assertions based on recent schema/UI changes.
-   - What will be achieved with this?: Reliable CI/CD test suite.
-   - Status: NOT STARTED
-   - Should Test frontend/backend/both after fix?: backend
-   - Blocked on something: None
+ Task Detail:
+  - Task 1: Build Deterministic Profitability & Procurement Planner
+     - Where to resume: Wait for the user's response to the  plan. Then begin replacing endpoints in  (e.g., ) and frontend views (e.g., , ). 
+     - What will be achieved with this?: Moves the application from generating LLM narrative insights to computing actionable, data-driven procurement plans, resolving the user's primary business objective.
+     - Status: NOT STARTED (Planning phase complete, waiting on user)
+     - Should Test frontend/backend/both after fix?: both
+     - Blocked on something: Pending user approval of the implementation plan.
 
 **Upcoming and Future Tasks**
-Upcoming Tasks:
-- P0: Instruct user to run  on production and verify  weights.
-- P0: Request user end-to-end verification for the re-entry date fix.
-
-Future Tasks:
-- P1: Refactor  into a modular FastAPI project structure.
-- P2: Improve Mobile Responsiveness across the application.
-- P2: Fix .
+    Upcoming Tasks:
+    - P0: Execute the Procurement Planner phases (Backend fact generation, UI mapping, Databricks handoff doc).
+    - P1: Refactor  (>6500 lines) into modular FastAPI routers (e.g., , ).
+    Future Tasks:
+    - P2: Implement transaction archiving / materialized views for 200K+ scale.
+    - P2: Fix pre-existing test suite failures in .
 
 **Completed work in this session**
-- Physical Stock delta precise string matching fixed ()
-- Compare endpoint migrated to gross weight comparison ()
-- Date-scoped stock computation via  parameter added ()
-- Stamp Approvals API updated to use baseline-aware current inventory ()
-- Identity model mismatch resolved: upload preview no longer merges group members (, )
-- Added loading state to Manager Approvals expansion ()
-- Reduced notification polling by relying on document visibility (, )
-- Created  to rectify legacy DB data.
-- Fixed Executive Stock Entry date inheritance on rejection (, )
+- Details toggle collapse and badge loading spinners on Manager Approvals (DONE)
+- Backend performance: added DB indexes and  with invalidation rules (DONE)
+- Critical Bug Fix: Refactored  to prevent group members from merging into group leaders during physical stock computation (DONE)
+- Restored legacy merged group baselines to individual item baselines on production (DONE)
+- Fixed mobile table overlapping/truncation on all frontend pages by removing  (DONE)
+- Re-enabled global pinch-to-zoom in  (DONE)
+- Rewrote  to use accurate  data, including fixed labour margin calculations and manual purchase rate assignments (DONE)
+- Item Buffers page updated to display real-time  (DONE)
 
 **Earlier issues found/mentioned but not fixed**
-Issue 1: Production anomaly +17g gross weight change after file rejection
-- Debug checklist: Trace DB logs on production for the exact time of rejection. Review  and  rollback behaviors.
-- Why to solve this issue and what will be achieved with this?: Unexplained weight additions compromise core inventory integrity.
-- Should Test frontend/backend/both after fix: backend
-- Is recurring issue?: Y
+   - Issue 1: Production anomaly +17g gross weight change after file rejection.
+   - Issue 2: KADA-AS 70 negative stock (-4.925 kg).
 
 **Known issue recurrence from previous fork**
-- Issue recurrence in previous fork: None
-- Recurrence count: 0
-- Status: NA
+  - Issue recurrence in previous fork: Group merging bugs causing negative stock (TULSI 70 BELT).
+  - Recurrence count: 3
+  - Status: RESOLVED (Fixed in this session both in code and production DB data).
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
 - React frontend, FastAPI backend, MongoDB database.
-- **Stock Computation Engine**: Driven by . It relies on Opening Stock + Purchases - Sales + Polythene Adjustments. Physical stock overrides () establish a new starting point.
-- **Identity Model Rule**: Reconciliations must be performed on member-level distinct strings (e.g.,  is separate from ). Legacy merging caused negative stock anomalies.
+- **Stock Computation**: Strictly individual item level.  utilizes  (30s TTL, invalidated on mutations). Groups are strictly for frontend display and profit grouping.
+- **Procurement Analytics (Upcoming)**: Will rely heavily on MongoDB aggregation pipelines (, ) and robust margin logic (exact tag match vs weighted avg cost).
 
 **key DB schema**
-- : physical counts by verification date.
-- : definitive stock overrides inserted upon physical stock finalization.
-- : ledger of historical additions/deductions.
-- : holds records pending manager approval.
+  - : {type, item_name, stamp, net_wt, total_amount, labor, tunch, tag_no}
+  - : physical counts by verification date.
+  - : individual definitive stock overrides.
+  - : {item_name, current_stock_kg, minimum_stock_kg, monthly_velocity_kg}
 
 **changes in tech stack**
-- None
+  - None
 
-**All files of reference**
-- : Heavily edited to fix previews, compare endpoints, rejection dates, and the new baseline-fix admin endpoint.
-- : Heavily edited for date-scoping, group decomposition, and .
-- : Updated with  state.
-- : Updated to inherit  of rejected items.
--  & : Visibility API added to control polling.
+**All files of reference** 
+1. : Added caching, updated , fixed . Needs heavy edits for the new planner.
+2. :  logic fixed to calculate individual stock, added .
+3. : Complete UI rewrite to include Labour Margin and Purchase Rate entry form.
+4. : Target file for replacing AI analytics with deterministic tables/charts.
+5. :  updated to allow pinch-to-zoom.
 
-**Areas that need refactoring**:
--  is bloated (>6,000 lines). High priority backlog task to separate out routing layers into a standard FastAPI directory structure.
+**Areas that need refactoring**: 
+-  is critically bloated (6500+ lines). The new analytics layers (, , etc.) must ideally be separated into distinct service files or routes.
 
 **key api endpoints**
-- : Main resolver for physical stock.
-- : Now uses  to handle gross weight discrepancies properly.
-- : Now baseline-aware.
--  & : Now respects historic verification dates.
-- : Crucial one-off endpoint to split merged legacy baselines on production.
+-  (To be DEPRECATED/REPLACED by new Planner endpoints)
+-  (To be augmented)
+-  (Updated to show precise stock & margins)
+-  (Added for manual purchase rate assignment)
 
-**Critical Info for New Agent**
-1. **Always Date-Scope Stock**: When calculating book stock for a reconciliation or approval, you MUST pass  (usually the ) into . Omitting it calculates today's stock and leads to comparison bugs.
-2. **Member-Level Tracking**: Avoid combining items that belong to the same group into a single sum. Track and baseline them individually to prevent the negative stock math error.
-3. The user needs to manually trigger  on their production instance. Ensure you remind them.
+**Critical Info for New Agent** 
+- **Wait for user approval** before writing code. The session ends on an  tool call outlining the procurement planner execution steps.
+- **Technical Handoff Doc**: The user explicitly requested a markdown document outlining mappings for PySpark/SQL/Databricks. Do not forget to create this in the  root or .
+- **Margin Logic**: Do NOT overclaim exactness. You must implement fallback confidence labels ( ->  -> ) in the new planner.
 
-**documents and test reports created in this job**
-- 
-- 
-- 
+**documents and test reports created in this job** 
+  -  (Updated with completed issues and new Planner requirements)
+  - 
+  - 
 
-**Last 10 User Messages and any pending HUMAN messages**
-1. **User**: Provided problem context, CSV/XLSX files, and pointed out a -3.050 kg discrepancy on physical stock preview. Shared a Codex summary pointing out string resolver failures and identity model mismatch. *(Completed)*
-2. **User**: Pointed out that  ignores , and compare page still collapses items. *(Completed)*
-3. **User**: Reported that Stamp Approvals still show old book values, ignoring recent reconciliations. *(Completed)*
-4. **User**: Requested check on deployment performance/logs. Noticed TULSI 70 BELT went into negative stock after reconciliation. Requested explanation. *(Completed - fixed member-level merging bug & visibility polling)*
-5. **User**: Problem persisted on production. Requested a loading indicator for the approvals tab. *(Completed - added fix-group-baselines script endpoint to rectify production DB, added loading UI)*
-6. **User**: Pointed out that when a manager rejects an old-dated stamp, executive re-entry matches against today's book stock instead of the previous date's stock. *(Completed - fixed date inheritance)*
-*(No pending messages)*
+**Last 10 User Messages and any pending HUMAN messages** 
+ 1. **User**: Reported that the fix didn't reflect on production.
+ 2. **User**: Complained that deployed code was still producing errors. (Agent guided through Re-deploy).
+ 3. **User**: Asked for an explicit button to clear cache. (Agent discovered legacy merged baseline data was the actual issue).
+ 4. **User**: Confirmed fix worked, asked to fix it for all other grouped items.
+ 5. **User**: Deployed the final fix containing idempotent baseline restore logic.
+ 6. **User**: Pointed out mobile overlapping columns on the Profit page and requested formatting fixes across pages.
+ 7. **User**: Reported Polythene Entry page became too wide, requested pinch-to-zoom to be enabled.
+ 8. **User**: Reported Item Buffers show 0 stock, Item Detail shows mismatched stock, and requested Labour Margin visibility + manual purchase rate input.
+ 9. **User**: Provided a massive new requirement to replace the AI seasonal analysis with a deterministic Profitability & Procurement Planner, asking for an execution plan.
+ 10. **PENDING HUMAN MESSAGE**: User needs to respond to the agent's  execution plan for the Procurement Planner.
 
 **Project Health Check:**
 - Broken: None
 - Mocked: None
 
-**3rd Party Integrations**
-- OpenAI GPT/Emergent LLM Key — uses Emergent LLM Key (Not actively modified, but present in env).
+**3rd Party Integrations** 
+- OpenAI GPT/Emergent LLM Key — uses Emergent LLM Key (Currently used for  and . Will likely be deprecated or heavily scaled back with the new deterministic planner).
 
 **Testing status**
-- Testing agent used after significant changes: YES
-- Troubleshoot agent used after agent stuck in loop: NO
-- Test files created: None
-- Known regressions: None
+  - Testing agent used after significant changes: YES
+  - Troubleshoot agent used after agent stuck in loop: YES (Used to debug deployment discrepancy)
+  - Test files created: None
+  - Known regressions: None
 
 **Credentials to test flow:**
-- N/A (Standard session authentication)
+  - Standard user login:  /  (or check  file).
 
 **What agent forgot to execute**
-- Did not actively investigate the P1 gross weight anomaly (+17g change upon file rejection on production) mentioned in the original problem statement due to prioritizing other explicit P0 bugs reported by the user in subsequent prompts.</analysis>
+- The agent was interrupted by context limits right after proposing the plan for the Procurement Planner, so no backend/frontend code for the new deterministic planner was written yet. The PySpark/Databricks handoff document is also pending.
+
+**Debugging checklist for current issue (KADA-AS 70 negative stock)**
+    Issue: KADA-AS 70 shows negative 4.925 kg stock
+    Backend files to check:  (Current inventory engine), 
+    Database to check: Check  and  collections for . Verify if there are missing purchases or if sales were logged under this name while purchases were logged under a different naming convention. 
+    
+
+<TESTING METHOD>
+If backend/frontend minor yet recurring issue: use testing agent.
+For the new feature (Procurement Planner): use BOTH frontend and backend testing agents sequentially after the full pipeline is implemented. Ensure to test specific MongoDB aggregation outputs via curl or python -c before finalizing the UI.
+</TESTING METHOD></analysis>

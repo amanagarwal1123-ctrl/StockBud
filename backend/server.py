@@ -1881,9 +1881,9 @@ async def get_pending_approvals(current_user: dict = Depends(get_current_user)):
 
 @api_router.get("/polythene/all")
 async def get_all_polythene_adjustments(current_user: dict = Depends(get_current_user)):
-    """Get ALL polythene adjustments from all time (admin only)"""
-    if current_user['role'] != 'admin':
-        raise HTTPException(status_code=403, detail="Admin only")
+    """Get ALL polythene adjustments from all time (admin and executive)"""
+    if current_user['role'] not in ['admin', 'executive']:
+        raise HTTPException(status_code=403, detail="Access denied")
     
     entries = await db.polythene_adjustments.find({}, {"_id": 0}).sort('created_at', -1).to_list(None)
     return entries

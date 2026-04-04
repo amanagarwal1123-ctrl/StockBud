@@ -14,7 +14,7 @@ import pytest
 import httpx
 import os
 
-BASE = os.environ.get("REACT_APP_BACKEND_URL", "https://date-scoped-stock.preview.emergentagent.com")
+BASE = os.environ.get("REACT_APP_BACKEND_URL", "https://margin-analytics-7.preview.emergentagent.com")
 API = f"{BASE}/api"
 
 @pytest.fixture(scope="module")

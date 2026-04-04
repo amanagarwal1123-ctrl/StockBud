@@ -70,7 +70,7 @@ export default function Layout({ children }) {
       id: 'inventory',
       label: 'Inventory',
       icon: Package,
-      roles: ['admin'],
+      roles: ['admin', 'executive'],
       items: [
         { name: 'Upload Files', href: '/upload', icon: Upload, roles: ['admin'] },
         { name: 'Historical Upload', href: '/historical-upload', icon: FileUp, roles: ['admin'] },
@@ -78,7 +78,7 @@ export default function Layout({ children }) {
         { name: 'Item Mapping', href: '/item-mapping', icon: Link2, roles: ['admin'] },
         { name: 'Manage Mappings', href: '/mapping-management', icon: GitBranch, roles: ['admin'] },
         { name: 'Purchase Rates', href: '/purchase-rates', icon: Receipt, roles: ['admin'] },
-        { name: 'Polythene Mgmt', href: '/polythene-management', icon: Box, roles: ['admin'] },
+        { name: 'Polythene Mgmt', href: '/polythene-management', icon: Box, roles: ['admin', 'executive'] },
       ]
     },
     {
