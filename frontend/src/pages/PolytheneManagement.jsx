@@ -119,16 +119,26 @@ export default function PolytheneManagement() {
     }
   };
 
-  // Derive unique item names and stamps from actual entries
+  // Cross-filtered: item options narrow based on selected stamp (and vice versa)
   const availableItems = useMemo(() => {
-    const items = new Set(entries.map(e => e.item_name).filter(Boolean));
-    return [...items].sort();
-  }, [entries]);
+    const pool = filterStamp ? entries.filter(e => e.stamp === filterStamp) : entries;
+    return [...new Set(pool.map(e => e.item_name).filter(Boolean))].sort();
+  }, [entries, filterStamp]);
 
   const availableStamps = useMemo(() => {
-    const stamps = new Set(entries.map(e => e.stamp).filter(Boolean));
-    return [...stamps].sort();
-  }, [entries]);
+    const pool = filterItem ? entries.filter(e => e.item_name === filterItem) : entries;
+    return [...new Set(pool.map(e => e.stamp).filter(Boolean))].sort();
+  }, [entries, filterItem]);
+
+  // Auto-clear item if it's no longer valid for the selected stamp
+  useEffect(() => {
+    if (filterItem && !availableItems.includes(filterItem)) setFilterItem('');
+  }, [availableItems, filterItem]);
+
+  // Auto-clear stamp if it's no longer valid for the selected item
+  useEffect(() => {
+    if (filterStamp && !availableStamps.includes(filterStamp)) setFilterStamp('');
+  }, [availableStamps, filterStamp]);
 
   const filteredEntries = useMemo(() => {
     return entries.filter(entry => {
