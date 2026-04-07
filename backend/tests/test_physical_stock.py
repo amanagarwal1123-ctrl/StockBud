@@ -4,7 +4,7 @@ import httpx
 import openpyxl
 import io
 
-API_URL = "https://margin-analytics-7.preview.emergentagent.com/api"
+API_URL = "https://demand-ml-analytics.preview.emergentagent.com/api"
 
 DATE_A = "2026-02-17"
 DATE_B = "2026-02-18"
