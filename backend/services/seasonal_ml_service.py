@@ -105,25 +105,25 @@ class SeasonalMLService:
     async def _compute(self) -> dict:
         logger.info("SeasonalML: starting full computation")
 
-        # 1. Load data
-        sales_df, purchases_df, ledger, inventory = await self._load_data()
+        # 1. Load data (current + historical sales AND purchases)
+        sales_df, purchases_df, inventory, coverage_dates = await self._load_data()
         if sales_df.empty:
             return self._empty_results("No sales transactions found")
 
-        # 2. Segment items
+        # 2. Segment items (coverage-aware)
         segments = self._segment_items(sales_df)
 
         # 3. Build daily demand panel
         demand_panel = self._build_demand_panel(sales_df)
 
-        # 4. Compute margins per item+stamp (from existing profit logic)
-        margins = self._compute_margins(sales_df, ledger)
+        # 4. Compute margins using the SHARED profit engine (group-aware)
+        margins = await self._compute_margins_shared()
 
         # 5. Silver MCX features (optional)
         silver_features = await self._get_silver_features()
 
-        # 6. Forecast demand
-        forecasts = self._forecast_demand(demand_panel, segments, silver_features)
+        # 6. Forecast demand (coverage-aware)
+        forecasts = self._forecast_demand(demand_panel, segments, silver_features, coverage_dates)
 
         # 7. Compute PMS
         pms = self._compute_pms(forecasts, margins)
@@ -158,23 +158,19 @@ class SeasonalMLService:
         return result
 
     # ------------------------------------------------------------------
-    # Data loading
+    # Data loading (current + historical sales AND purchases)
     # ------------------------------------------------------------------
     async def _load_data(self):
-        # Sales (current + historical)
+        proj = {"_id": 0, "date": 1, "item_name": 1, "stamp": 1, "gr_wt": 1,
+                "net_wt": 1, "tunch": 1, "total_amount": 1, "labor": 1,
+                "type": 1, "party_name": 1, "tag_no": 1}
+
+        # Sales: current + historical
         sale_types = ["sale", "sale_return"]
         sales_cur = await self.db.transactions.find(
-            {"type": {"$in": sale_types}},
-            {"_id": 0, "date": 1, "item_name": 1, "stamp": 1, "gr_wt": 1,
-             "net_wt": 1, "tunch": 1, "total_amount": 1, "labor": 1,
-             "type": 1, "party_name": 1, "tag_no": 1}
-        ).to_list(None)
+            {"type": {"$in": sale_types}}, proj).to_list(None)
         sales_hist = await self.db.historical_transactions.find(
-            {"type": {"$in": sale_types}},
-            {"_id": 0, "date": 1, "item_name": 1, "stamp": 1, "gr_wt": 1,
-             "net_wt": 1, "tunch": 1, "total_amount": 1, "labor": 1,
-             "type": 1, "party_name": 1, "tag_no": 1}
-        ).to_list(None)
+            {"type": {"$in": sale_types}}, proj).to_list(None)
         all_sales = sales_cur + sales_hist
         sales_df = pd.DataFrame(all_sales) if all_sales else pd.DataFrame()
         if not sales_df.empty:
@@ -185,33 +181,36 @@ class SeasonalMLService:
                     sales_df[c] = pd.to_numeric(sales_df[c], errors="coerce").fillna(0)
             sales_df["item_family"] = sales_df["item_name"].apply(extract_item_family)
 
-        # Purchases
+        # Purchases: current + historical
         purch_types = ["purchase", "purchase_return"]
-        purchases_raw = await self.db.transactions.find(
-            {"type": {"$in": purch_types}},
-            {"_id": 0, "date": 1, "item_name": 1, "stamp": 1, "gr_wt": 1,
-             "net_wt": 1, "tunch": 1, "total_amount": 1, "labor": 1,
-             "type": 1, "party_name": 1}
-        ).to_list(None)
-        purchases_df = pd.DataFrame(purchases_raw) if purchases_raw else pd.DataFrame()
+        purch_cur = await self.db.transactions.find(
+            {"type": {"$in": purch_types}}, proj).to_list(None)
+        purch_hist = await self.db.historical_transactions.find(
+            {"type": {"$in": purch_types}}, proj).to_list(None)
+        all_purchases = purch_cur + purch_hist
+        purchases_df = pd.DataFrame(all_purchases) if all_purchases else pd.DataFrame()
         if not purchases_df.empty:
             purchases_df["date"] = pd.to_datetime(purchases_df["date"], errors="coerce")
             for c in ["gr_wt", "net_wt", "tunch", "total_amount", "labor"]:
                 if c in purchases_df.columns:
                     purchases_df[c] = pd.to_numeric(purchases_df[c], errors="coerce").fillna(0)
 
-        # Purchase ledger
-        ledger_raw = await self.db.purchase_ledger.find({}, {"_id": 0}).to_list(None)
-        ledger = {entry["item_name"]: entry for entry in ledger_raw}
-
-        # Current inventory (flat dict item→net_wt in grams)
+        # Current inventory
         from services.stock_service import get_current_inventory
         inv_resp = await get_current_inventory()
         inv = {}
         for item in inv_resp.get("inventory", []) + inv_resp.get("negative_items", []):
             inv[item["item_name"]] = item.get("net_wt", 0) / 1000  # kg
 
-        return sales_df, purchases_df, ledger, inv
+        # Build coverage dates: the set of dates where we actually have data
+        # (distinguishes real zero-demand from upload gaps)
+        coverage_dates = set()
+        if not sales_df.empty:
+            coverage_dates.update(sales_df["date"].dt.date)
+        if not purchases_df.empty:
+            coverage_dates.update(purchases_df["date"].dt.date)
+
+        return sales_df, purchases_df, inv, coverage_dates
 
     # ------------------------------------------------------------------
     # Segmentation
@@ -257,47 +256,34 @@ class SeasonalMLService:
         return daily
 
     # ------------------------------------------------------------------
-    # Margin computation (READ-ONLY from existing profit logic)
+    # Margin computation via SHARED profit engine (group-aware)
     # ------------------------------------------------------------------
-    def _compute_margins(self, sales_df: pd.DataFrame, ledger: dict) -> dict:
-        """Compute per-gram silver and labour margin for each item+stamp."""
+    async def _compute_margins_shared(self) -> dict:
+        """Compute per-item silver and labour margins using the same
+        group-aware logic as /analytics/profit.  Returns dict keyed
+        by item_name (leader) with per-gram margin components."""
+        from services.profit_helpers import compute_item_margins
+
+        # Load the same raw data the profit endpoint uses
+        all_txns = await self.db.transactions.find(
+            {}, {"_id": 0, "item_name": 1, "type": 1, "net_wt": 1,
+                 "tunch": 1, "total_amount": 1, "labor": 1}
+        ).to_list(None)
+        ledger_items = await self.db.purchase_ledger.find({}, {"_id": 0}).to_list(None)
+        groups = await self.db.item_groups.find({}, {"_id": 0}).to_list(1000)
+        mappings = await self.db.item_mappings.find({}, {"_id": 0}).to_list(None)
+
+        item_margins = compute_item_margins(all_txns, ledger_items, groups, mappings)
+
+        # Convert to dict keyed by item for PMS lookup
         margins = {}
-        if sales_df.empty:
-            return margins
-        for (item, stamp), grp in sales_df.groupby(["item_name", "stamp"]):
-            lentry = ledger.get(item, {})
-            purchase_tunch = lentry.get("purchase_tunch", 0)
-            purchase_labour_per_kg = lentry.get("labour_per_kg", 0)
-            purchase_cost_per_gram = purchase_labour_per_kg / 1000
-
-            total_silver_profit_g = 0
-            total_labour_profit = 0
-            total_net_wt = 0
-            for _, row in grp.iterrows():
-                txn_tunch = row.get("tunch", 0) or 0
-                net_wt = row.get("net_wt", 0) or 0
-                txn_total = row.get("total_amount", 0) or row.get("labor", 0) or 0
-                is_return = row["type"] == "sale_return"
-                abs_wt = abs(net_wt)
-                abs_total = abs(txn_total)
-                if is_return:
-                    silver_profit_g = (purchase_tunch - txn_tunch) * abs_wt / 100
-                    labour_profit = (purchase_cost_per_gram * abs_wt) - abs_total
-                    total_net_wt -= abs_wt
-                else:
-                    silver_profit_g = (txn_tunch - purchase_tunch) * net_wt / 100
-                    labour_profit = txn_total - (purchase_cost_per_gram * net_wt)
-                    total_net_wt += net_wt
-                total_silver_profit_g += silver_profit_g
-                total_labour_profit += labour_profit
-
-            sold_grams = max(abs(total_net_wt), 1)
-            margins[(item, stamp)] = {
-                "silver_margin_per_gram": total_silver_profit_g / sold_grams,
-                "labour_margin_per_gram": total_labour_profit / sold_grams,
-                "total_sold_grams": total_net_wt,
-                "purchase_tunch": purchase_tunch,
-                "has_ledger": bool(lentry),
+        for m in item_margins:
+            margins[m["item_name"]] = {
+                "silver_margin_per_gram": m["silver_margin_per_gram"],
+                "labour_margin_per_gram": m["labour_margin_per_gram"],
+                "total_sold_grams": m["net_wt_sold_kg"] * 1000,
+                "purchase_tunch": m["avg_purchase_tunch"],
+                "has_ledger": True,
             }
         return margins
 
@@ -317,14 +303,13 @@ class SeasonalMLService:
     # Demand forecasting
     # ------------------------------------------------------------------
     def _forecast_demand(self, demand_panel: pd.DataFrame, segments: dict,
-                         silver_features: dict) -> list[dict]:
+                         silver_features: dict, coverage_dates: set) -> list[dict]:
         if demand_panel.empty:
             return []
 
         today = pd.Timestamp.now().normalize()
         results = []
 
-        # Build full daily series per item+stamp for feature engineering
         all_keys = list(segments.keys())
         for key in all_keys:
             item, stamp = key
@@ -337,18 +322,30 @@ class SeasonalMLService:
 
             subset = subset.set_index("date").sort_index()
 
-            # Reindex to full daily range
+            # Coverage-aware reindex: only fill zeros on COVERED dates,
+            # leave uncovered dates as NaN so they are excluded from training
             min_d, max_d = subset.index.min(), max(subset.index.max(), today)
             idx = pd.date_range(min_d, max_d, freq="D")
-            series = subset["demand_gr_wt"].reindex(idx, fill_value=0)
+            series = subset["demand_gr_wt"].reindex(idx)
+            # Mark covered dates as 0 (true zero demand), leave others NaN
+            for d in idx:
+                if d.date() in coverage_dates and pd.isna(series.loc[d]):
+                    series.loc[d] = 0.0
+            # Uncovered dates remain NaN → masked from features/targets
+
+            # Compute coverage ratio for confidence adjustment
+            covered_count = series.notna().sum()
+            total_count = len(series)
+            coverage_ratio = covered_count / max(total_count, 1)
 
             if seg == SEGMENT_COLD:
                 results.append(self._cold_start_forecast(item, stamp, seg_info, demand_panel))
                 continue
 
-            # Feature engineering for this series
+            # For feature engineering, fill NaN with 0 only in feature columns
+            # (the model sees covered-zero as real zero; uncovered rows are dropped from training)
             feat_df = self._build_features(series, seg_info["item_family"], demand_panel, silver_features)
-            if feat_df.empty or len(feat_df) < 14:
+            if feat_df.empty or len(feat_df.dropna(subset=["demand"])) < 14:
                 results.append(self._cold_start_forecast(item, stamp, seg_info, demand_panel))
                 continue
 
@@ -356,6 +353,12 @@ class SeasonalMLService:
                 fc = self._forecast_weekly(feat_df, series, item, stamp, seg_info)
             else:
                 fc = self._forecast_daily(feat_df, series, item, stamp, seg_info, seg)
+
+            # Adjust confidence based on coverage
+            if coverage_ratio < 0.3:
+                fc["confidence"] = "very_low"
+            elif coverage_ratio < 0.6 and fc["confidence"] == "high":
+                fc["confidence"] = "medium"
 
             results.append(fc)
 
@@ -474,8 +477,8 @@ class SeasonalMLService:
 
     def _forecast_weekly(self, feat_df: pd.DataFrame, series: pd.Series,
                          item: str, stamp: str, seg_info: dict) -> dict:
-        """Weekly aggregation for sparse items."""
-        weekly = series.resample("W").sum()
+        """Weekly aggregation for sparse items. NaN (uncovered) dates excluded."""
+        weekly = series.dropna().resample("W").sum()
         avg_weekly = weekly.tail(8).mean() if len(weekly) >= 8 else weekly.mean()
         fc14 = avg_weekly * 2
         fc30 = avg_weekly * (30 / 7)
@@ -529,10 +532,10 @@ class SeasonalMLService:
             return {"final": [], "silver": [], "labour": []}
 
         # Collect margin arrays for robust scaling
+        # Margins are keyed by item leader name (from shared profit engine)
         silver_arr, labour_arr = [], []
         for fc in forecasts:
-            key = (fc["item_name"], fc["stamp"])
-            m = margins.get(key, {})
+            m = margins.get(fc["item_name"], {})
             silver_arr.append(m.get("silver_margin_per_gram", 0))
             labour_arr.append(m.get("labour_margin_per_gram", 0))
 
@@ -541,8 +544,7 @@ class SeasonalMLService:
 
         final_list, silver_list, labour_list = [], [], []
         for i, fc in enumerate(forecasts):
-            key = (fc["item_name"], fc["stamp"])
-            m = margins.get(key, {})
+            m = margins.get(fc["item_name"], {})
             s_score = float(silver_scores[i])
             l_score = float(labour_scores[i])
             vol_30 = fc["forecast_30d"]

@@ -35,7 +35,7 @@ from models import (
     Transaction, OpeningStock, PhysicalStock, MasterItem, ItemMapping,
     PurchaseLedger, User, LoginRequest, CreateUserRequest, Token,
     ActionHistory, ResetRequest, StampAssignment, OrderCreate,
-    SmartInsightsRequest, HistoricalUploadRequest, ItemGroup
+    HistoricalUploadRequest, ItemGroup
 )
 from services.helpers import (
     normalize_stamp, get_column_value, parse_labor_value,
@@ -5953,107 +5953,7 @@ async def get_visualization_data(
         "stock_health": status_counts
     }
 
-# ==================== AI SMART ANALYTICS ====================
-
-@api_router.post("/analytics/smart-insights")
-async def get_smart_insights(request: SmartInsightsRequest, current_user: dict = Depends(get_current_user)):
-    """Generate AI-powered analytics insights using Claude"""
-    if current_user['role'] != 'admin':
-        raise HTTPException(status_code=403, detail="Admin only")
-    
-    llm_key = os.environ.get('EMERGENT_LLM_KEY')
-    if not llm_key:
-        raise HTTPException(status_code=500, detail="LLM key not configured")
-    
-    # Gather data using aggregation (memory-efficient, no 50k docs in memory)
-    query = {}
-    if request.start_date and request.end_date:
-        query['date'] = {'$gte': request.start_date, '$lte': request.end_date + ' 23:59:59'}
-    
-    # Get counts and totals via aggregation
-    pipeline = [{"$match": query}, {"$group": {
-        "_id": "$type",
-        "count": {"$sum": 1},
-        "total_wt": {"$sum": "$net_wt"}
-    }}]
-    type_stats = {}
-    async for doc in db.transactions.aggregate(pipeline):
-        type_stats[doc['_id']] = doc
-
-    sale_count = type_stats.get('sale', {}).get('count', 0) + type_stats.get('sale_return', {}).get('count', 0)
-    purchase_count = type_stats.get('purchase', {}).get('count', 0) + type_stats.get('purchase_return', {}).get('count', 0)
-    total_sale_wt = type_stats.get('sale', {}).get('total_wt', 0) / 1000
-    total_purchase_wt = type_stats.get('purchase', {}).get('total_wt', 0) / 1000
-    
-    # Top items by sales via aggregation
-    item_pipeline = [
-        {"$match": {**query, "type": "sale"}},
-        {"$group": {"_id": "$item_name", "wt_kg": {"$sum": {"$divide": ["$net_wt", 1000]}}}},
-        {"$sort": {"wt_kg": -1}}, {"$limit": 15}
-    ]
-    top_items = [(doc['_id'], doc['wt_kg']) async for doc in db.transactions.aggregate(item_pipeline)]
-    
-    # Top customers via aggregation
-    cust_pipeline = [
-        {"$match": {**query, "type": "sale"}},
-        {"$group": {"_id": "$party_name", "wt_kg": {"$sum": {"$divide": ["$net_wt", 1000]}}}},
-        {"$sort": {"wt_kg": -1}}, {"$limit": 10}
-    ]
-    top_customers = [(doc['_id'], doc['wt_kg']) async for doc in db.transactions.aggregate(cust_pipeline)]
-    
-    # Buffer status
-    buffers = await db.item_buffers.find({}, {"_id": 0, "item_name": 1, "status": 1, "tier": 1}).to_list(None)
-    red_items = [b['item_name'] for b in buffers if b.get('status') == 'red'][:10]
-    yellow_items = [b['item_name'] for b in buffers if b.get('status') == 'yellow'][:10]
-    tier_counts = defaultdict(int)
-    for b in buffers:
-        tier_counts[b.get('tier', 'unknown')] += 1
-    
-    data_summary = f"""Silver Jewelry Wholesale Inventory Data:
-- Period: {request.start_date or 'all time'} to {request.end_date or 'present'}
-- Sales: {sale_count} transactions, {total_sale_wt:.1f} kg total
-- Purchases: {purchase_count} transactions, {total_purchase_wt:.1f} kg total
-- Top selling items: {', '.join(f'{n}({w:.1f}kg)' for n,w in top_items[:10])}
-- Top customers: {', '.join(f'{n}({w:.1f}kg)' for n,w in top_customers[:7])}
-- Movement tiers: {dict(tier_counts)}
-- Items needing restock (red): {', '.join(red_items[:5]) or 'None'}
-- Overstocked items (yellow): {', '.join(yellow_items[:5]) or 'None'}"""
-
-    user_question = request.question or "Provide key business insights, trends, recommendations for inventory optimization, and any risks you see."
-    
-    prompt = f"""{data_summary}
-
-Based on this data, {user_question}
-
-Provide your analysis in a clear, actionable format with specific numbers. Use bullet points. Keep it concise but insightful. Focus on: 1) Key trends 2) Items needing attention 3) Customer patterns 4) Actionable recommendations."""
-
-    try:
-        from emergentintegrations.llm.chat import LlmChat, UserMessage
-        chat = LlmChat(
-            api_key=llm_key,
-            session_id=f"insights-{datetime.now().strftime('%Y%m%d%H%M')}",
-            system_message="You are a silver jewelry wholesale business analyst. Provide concise, data-driven insights. Use specific numbers from the data. Be direct and actionable."
-        ).with_model("anthropic", "claude-sonnet-4-5")
-        
-        response = await chat.send_message(UserMessage(text=prompt))
-        
-        return {
-            "insights": response,
-            "data_summary": {
-                "sales_count": sale_count,
-                "purchase_count": purchase_count,
-                "total_sale_kg": round(total_sale_wt, 3),
-                "total_purchase_kg": round(total_purchase_wt, 3),
-                "tier_distribution": dict(tier_counts),
-                "red_items_count": len(red_items),
-                "yellow_items_count": len(yellow_items)
-            }
-        }
-    except Exception as e:
-        logger.error(f"Smart insights LLM failed: {e}")
-        raise HTTPException(status_code=500, detail=f"AI analysis failed: {str(e)}")
-
-# ==================== HISTORICAL DATA & SEASONAL AI ====================
+# ==================== HISTORICAL DATA & SEASONAL ====================
 
 # ---- Business Constants: Wholesale Silver Stock Rotation Model ----
 ROTATION_CYCLE_MONTHS = 2.73  # Full stock rotation period

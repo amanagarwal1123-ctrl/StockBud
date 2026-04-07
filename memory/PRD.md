@@ -64,6 +64,16 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - Backend: 8 new endpoints under `/api/seasonal/*`
 - Tests: 23 unit tests + 32 integration tests, all passing
 
+## Seasonal ML Corrective Patch (Apr 7, 2026)
+- **Fix 1**: Removed AI tab and smart-insights from Visualization page and backend
+- **Fix 2**: PMS now uses shared `profit_helpers.compute_item_margins()` — same group-aware logic as `/analytics/profit`
+- **Fix 3**: Silver price service kept as free non-blocking exogenous provider
+- **Fix 4**: Historical purchases now loaded alongside historical sales
+- **Fix 5**: Coverage-aware demand — uncovered dates are NaN (not zero), confidence adjusted by coverage ratio
+- **Fix 6**: Segmentation based on covered active history
+- **Fix 7-8**: PMS tabs and balancing formula preserved
+- Tests: 36 total (23 unit + 13 business-logic integration), all passing
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P2: Transaction archiving / materialized views for 200K+ scale

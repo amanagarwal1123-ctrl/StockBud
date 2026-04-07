@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { BarChart3, TrendingUp, Calendar, Sparkles, Loader2, Upload, Trash2, IndianRupee } from 'lucide-react';
+import { BarChart3, TrendingUp, Calendar, Loader2, Upload, Trash2, IndianRupee } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -25,9 +25,6 @@ export default function DataVisualization() {
   const [loading, setLoading] = useState(true);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [insights, setInsights] = useState('');
-  const [insightsLoading, setInsightsLoading] = useState(false);
-  const [insightQuestion, setInsightQuestion] = useState('');
   const [historicalSummary, setHistoricalSummary] = useState(null);
   const [histYear, setHistYear] = useState('2025');
   const [histType, setHistType] = useState('sale');
@@ -57,22 +54,6 @@ export default function DataVisualization() {
   const handleDateFilter = () => {
     if (startDate && endDate) fetchData(startDate, endDate);
     else { fetchData(); }
-  };
-
-  const handleSmartInsights = async () => {
-    setInsightsLoading(true);
-    try {
-      const res = await axios.post(`${API}/analytics/smart-insights`, {
-        start_date: startDate || null,
-        end_date: endDate || null,
-        question: insightQuestion || null
-      }, { timeout: 0 });
-      setInsights(res.data.insights);
-    } catch (e) {
-      toast.error(e.response?.data?.detail || 'AI insights failed');
-    } finally {
-      setInsightsLoading(false);
-    }
   };
 
   const fetchHistorical = async () => {
@@ -170,7 +151,7 @@ export default function DataVisualization() {
       </Card>
 
       <Tabs defaultValue="sales" className="space-y-4">
-        <TabsList className="grid grid-cols-4 sm:grid-cols-6 w-full">
+        <TabsList className="grid grid-cols-5 w-full">
           <TabsTrigger value="sales" data-testid="tab-sales">Sales</TabsTrigger>
           <TabsTrigger value="purchases" data-testid="tab-purchases">Purchases</TabsTrigger>
           <TabsTrigger value="health" data-testid="tab-health">Health</TabsTrigger>
@@ -180,7 +161,6 @@ export default function DataVisualization() {
           <TabsTrigger value="historical" data-testid="tab-historical">
             <Upload className="h-3.5 w-3.5 mr-1" />History
           </TabsTrigger>
-          <TabsTrigger value="ai" data-testid="tab-ai">AI</TabsTrigger>
         </TabsList>
 
         {/* Sales Tab */}
@@ -331,37 +311,6 @@ export default function DataVisualization() {
         </TabsContent>
 
         {/* AI Insights Tab */}
-        <TabsContent value="ai" className="space-y-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-purple-500" />Smart Analytics (AI)
-              </CardTitle>
-              <CardDescription>Powered by Claude - ask questions about your data</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex gap-3">
-                <Input
-                  value={insightQuestion}
-                  onChange={e => setInsightQuestion(e.target.value)}
-                  placeholder="Ask a question or leave blank for general insights..."
-                  className="flex-1"
-                  data-testid="ai-question-input"
-                />
-                <Button onClick={handleSmartInsights} disabled={insightsLoading} data-testid="ai-insights-btn">
-                  {insightsLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
-                  {insightsLoading ? 'Analyzing...' : 'Get Insights'}
-                </Button>
-              </div>
-              {insights && (
-                <div className="bg-gradient-to-br from-purple-50 to-blue-50 border border-purple-100 rounded-lg p-4 prose prose-sm max-w-none" data-testid="ai-insights-result">
-                  <pre className="whitespace-pre-wrap text-sm font-sans leading-relaxed">{insights}</pre>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
         {/* Historical Profit Analysis Tab */}
         <TabsContent value="profit" className="space-y-4">
           <Card>
@@ -387,7 +336,7 @@ export default function DataVisualization() {
                 <Upload className="h-5 w-5 text-blue-500" />Historical Data Upload
               </CardTitle>
               <CardDescription>
-                Upload previous years' sales/purchase files here for AI training. This data does NOT affect current stock calculations.
+                Upload previous years' sales/purchase files here for seasonal analysis. This data does NOT affect current stock calculations.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -472,7 +421,7 @@ export default function DataVisualization() {
                 </Card>
               ) : (
                 <div className="text-center py-8 text-muted-foreground text-sm">
-                  No historical data uploaded yet. Upload previous years' sales/purchase Excel files to enable seasonal AI analysis.
+                  No historical data uploaded yet. Upload previous years' sales/purchase Excel files to enable seasonal analysis.
                 </div>
               )}
             </CardContent>
