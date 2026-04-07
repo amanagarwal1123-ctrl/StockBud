@@ -261,8 +261,11 @@ class SeasonalMLService:
     async def _compute_margins_shared(self) -> dict:
         """Compute per-item silver and labour margins using the same
         group-aware logic as /analytics/profit.  Returns dict keyed
-        by item_name (leader) with per-gram margin components."""
+        by BOTH leader name AND all member/mapped names so that PMS
+        lookups work regardless of whether fc["item_name"] is the raw
+        transaction name, the master name, or the group leader."""
         from services.profit_helpers import compute_item_margins
+        from services.group_utils import build_group_maps
 
         # Load the same raw data the profit endpoint uses
         all_txns = await self.db.transactions.find(
@@ -275,16 +278,36 @@ class SeasonalMLService:
 
         item_margins = compute_item_margins(all_txns, ledger_items, groups, mappings)
 
-        # Convert to dict keyed by item for PMS lookup
+        # Build reverse lookups: raw/member name → leader
+        mapping_dict, member_to_leader, group_members = build_group_maps(groups, mappings)
+
+        # Convert to dict keyed by leader for PMS lookup
         margins = {}
         for m in item_margins:
-            margins[m["item_name"]] = {
+            entry = {
                 "silver_margin_per_gram": m["silver_margin_per_gram"],
                 "labour_margin_per_gram": m["labour_margin_per_gram"],
                 "total_sold_grams": m["net_wt_sold_kg"] * 1000,
                 "purchase_tunch": m["avg_purchase_tunch"],
                 "has_ledger": True,
             }
+            leader = m["item_name"]
+            margins[leader] = entry
+
+            # Also register all group members under the same margin entry
+            for member in group_members.get(leader, []):
+                if member != leader:
+                    margins[member] = entry
+
+        # Register transaction-name → master-name aliases
+        # so raw sales names resolve to their leader's margin
+        for txn_name, master_name in mapping_dict.items():
+            leader = member_to_leader.get(master_name, master_name)
+            if leader in margins and txn_name not in margins:
+                margins[txn_name] = margins[leader]
+            elif master_name in margins and txn_name not in margins:
+                margins[txn_name] = margins[master_name]
+
         return margins
 
     # ------------------------------------------------------------------

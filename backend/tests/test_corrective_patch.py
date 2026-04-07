@@ -185,6 +185,68 @@ class TestCoverageAwareDemand:
                 assert item["confidence"] in ("high", "medium", "low", "very_low")
 
 
+class TestGroupResolutionInPMS:
+    """PMS margin lookup must resolve member/mapped names to leader margins."""
+
+    def test_margins_include_mapped_names(self):
+        """Mapped transaction names must point to leader margins."""
+        from services.profit_helpers import compute_item_margins
+        from services.group_utils import build_group_maps
+
+        groups = [{"group_name": "LEADER_A", "members": ["LEADER_A", "MEMBER_B"]}]
+        mappings = [{"transaction_name": "TXN_RAW", "master_name": "MEMBER_B"}]
+        txns = [
+            {"item_name": "TXN_RAW", "type": "sale", "net_wt": 100, "tunch": 60, "total_amount": 500, "labor": 0},
+            {"item_name": "LEADER_A", "type": "purchase", "net_wt": 200, "tunch": 55, "total_amount": 400, "labor": 0},
+        ]
+        ledger = [{"item_name": "LEADER_A", "purchase_tunch": 55,
+                   "labour_per_kg": 4000, "total_purchased_kg": 1,
+                   "total_fine_kg": 0.55, "total_labour": 4}]
+
+        item_margins = compute_item_margins(txns, ledger, groups, mappings)
+        # Margins should be keyed by leader
+        assert len(item_margins) >= 1
+        leader_margin = item_margins[0]
+        assert leader_margin["item_name"] == "LEADER_A"
+
+        # Now test the reverse-lookup in _compute_margins_shared style
+        mapping_dict, member_to_leader, group_members = build_group_maps(groups, mappings)
+        margins = {}
+        for m in item_margins:
+            entry = {"silver_margin_per_gram": m["silver_margin_per_gram"],
+                     "labour_margin_per_gram": m["labour_margin_per_gram"],
+                     "has_ledger": True}
+            leader = m["item_name"]
+            margins[leader] = entry
+            for member in group_members.get(leader, []):
+                if member != leader:
+                    margins[member] = entry
+        for txn_name, master_name in mapping_dict.items():
+            resolved = member_to_leader.get(master_name, master_name)
+            if resolved in margins and txn_name not in margins:
+                margins[txn_name] = margins[resolved]
+
+        # All three names should resolve to the same margins
+        assert "LEADER_A" in margins
+        assert "MEMBER_B" in margins
+        assert "TXN_RAW" in margins
+        assert margins["TXN_RAW"]["silver_margin_per_gram"] == margins["LEADER_A"]["silver_margin_per_gram"]
+
+    def test_pms_items_have_nonzero_margins_for_grouped_items(self, admin_token):
+        """At least some PMS items with groups should have non-zero margins."""
+        r = httpx.get(f"{API_URL}/api/seasonal/pms-final",
+                      headers={"Authorization": f"Bearer {admin_token}"}, timeout=60)
+        assert r.status_code == 200
+        items = r.json()["items"]
+        if not items:
+            pytest.skip("No PMS items computed")
+        # Count items with has_ledger=True and non-zero margins
+        with_margins = [i for i in items if i.get("has_ledger") and
+                        (abs(i.get("silver_margin_per_gram", 0)) > 0.001 or
+                         abs(i.get("labour_margin_per_gram", 0)) > 0.001)]
+        assert len(with_margins) > 0, "No PMS items have non-zero margins"
+
+
 class TestNonAdminRejection:
     """All seasonal endpoints must reject non-admin."""
 
