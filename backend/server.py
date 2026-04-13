@@ -2193,6 +2193,18 @@ async def adjust_polythene(
     
     actual_user = current_user['username']  # Always use authenticated user
     
+    # Dedup: reject if identical entry by same user within 60 seconds
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=60)).isoformat()
+    existing = await db.polythene_adjustments.find_one({
+        'item_name': item_name,
+        'poly_weight': poly_weight,
+        'operation': operation,
+        'adjusted_by': actual_user,
+        'created_at': {'$gte': cutoff}
+    })
+    if existing:
+        return {'success': True, 'message': 'Duplicate skipped — identical entry within last 60s', 'duplicate': True}
+    
     # Save polythene adjustment
     adjustment = {
         'id': str(uuid.uuid4()),
@@ -2242,9 +2254,24 @@ async def adjust_polythene_batch(
     entries = request.get('entries', [])
     actual_user = current_user['username']  # Always use authenticated user
     
+    # Dedup: check for identical entries by same user within 60 seconds
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=60)).isoformat()
+    
     saved_entries = []
+    skipped = 0
     
     for entry in entries:
+        existing = await db.polythene_adjustments.find_one({
+            'item_name': entry['item_name'],
+            'poly_weight': entry['poly_weight'],
+            'operation': entry['operation'],
+            'adjusted_by': actual_user,
+            'created_at': {'$gte': cutoff}
+        })
+        if existing:
+            skipped += 1
+            continue
+
         adjustment = {
             'id': str(uuid.uuid4()),
             'item_name': entry['item_name'],
@@ -2283,7 +2310,13 @@ async def adjust_polythene_batch(
         })
     
     _inv_cache.invalidate()
-    return {'success': True, 'message': f'{len(saved_entries)} polythene adjustments saved', 'count': len(saved_entries)}
+    return {
+        'success': True,
+        'message': f'{len(saved_entries)} polythene adjustments saved',
+        'saved': len(saved_entries),
+        'skipped': skipped,
+        'count': len(saved_entries)
+    }
 
 @api_router.get("/polythene/today/{username}")
 async def get_today_polythene_entries(username: str, current_user: dict = Depends(get_current_user)):

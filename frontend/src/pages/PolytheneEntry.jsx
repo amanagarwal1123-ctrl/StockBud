@@ -19,6 +19,7 @@ export default function PolytheneEntry() {
   const [filteredItems, setFilteredItems] = useState([]);
   const [pendingEntries, setPendingEntries] = useState([]);
   const [savedEntries, setSavedEntries] = useState([]);
+  const [isSaving, setIsSaving] = useState(false);
   const [currentEntry, setCurrentEntry] = useState({
     item: null,
     polyWeight: '',
@@ -79,12 +80,26 @@ export default function PolytheneEntry() {
       return;
     }
 
-    setPendingEntries([...pendingEntries, {
+    const newEntry = {
       item_name: currentEntry.item.item_name,
       stamp: currentEntry.item.stamp,
       poly_weight: parseFloat(currentEntry.polyWeight),
       operation: currentEntry.operation
-    }]);
+    };
+
+    // Duplicate check: warn if same item+stamp+operation+weight already in pending
+    const isDuplicate = pendingEntries.some(
+      e => e.item_name === newEntry.item_name &&
+           e.stamp === newEntry.stamp &&
+           e.operation === newEntry.operation &&
+           e.poly_weight === newEntry.poly_weight
+    );
+    if (isDuplicate) {
+      toast.error('Duplicate entry — same item, weight & operation already in the list');
+      return;
+    }
+
+    setPendingEntries([...pendingEntries, newEntry]);
 
     // Reset for next entry
     setCurrentEntry({ item: null, polyWeight: '', operation: 'add' });
@@ -101,18 +116,28 @@ export default function PolytheneEntry() {
       toast.error('No entries to save');
       return;
     }
+    if (isSaving) return; // Guard against double-clicks
+    setIsSaving(true);
 
     try {
-      await axios.post(`${API}/polythene/adjust-batch`, {
+      const response = await axios.post(`${API}/polythene/adjust-batch`, {
         entries: pendingEntries,
         adjusted_by: user.username
       });
 
-      toast.success(`${pendingEntries.length} polythene adjustments saved!`);
+      const saved = response.data?.saved ?? pendingEntries.length;
+      const skipped = response.data?.skipped ?? 0;
+      if (skipped > 0) {
+        toast.warning(`Saved ${saved} entries. ${skipped} duplicate(s) skipped.`);
+      } else {
+        toast.success(`${saved} polythene adjustment(s) saved!`);
+      }
       setPendingEntries([]);
       fetchTodayEntries();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to save entries');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -230,9 +255,19 @@ export default function PolytheneEntry() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Pending Entries ({pendingEntries.length})</CardTitle>
-              <Button onClick={saveAllEntries} className="bg-primary">
-                <Save className="h-4 w-4 mr-2" />
-                Save All Entries
+              <Button onClick={saveAllEntries} className="bg-primary" disabled={isSaving}
+                data-testid="save-all-polythene-btn">
+                {isSaving ? (
+                  <>
+                    <span className="animate-spin mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full inline-block" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4 mr-2" />
+                    Save All Entries
+                  </>
+                )}
               </Button>
             </div>
           </CardHeader>
