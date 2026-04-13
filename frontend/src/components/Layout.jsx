@@ -6,6 +6,7 @@ import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '../context/AuthContext';
 import { useUpload } from '../context/UploadContext';
+import { formatDateTime } from '../utils/dateFormat';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -350,7 +351,7 @@ export default function Layout({ children }) {
                           <div>
                             <p className="font-medium text-sm">{upload.description}</p>
                             <p className="text-xs text-muted-foreground mt-1">
-                              {new Date(upload.timestamp).toLocaleString()}
+                              {formatDateTime(upload.timestamp)}
                             </p>
                             {upload.data_snapshot?.file_name && (
                               <p className="text-xs text-muted-foreground">

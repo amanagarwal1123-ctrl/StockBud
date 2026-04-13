@@ -76,4 +76,21 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
+- P1: PySpark/Databricks technical handoff document
 - P2: Transaction archiving / materialized views for 200K+ scale
+
+## PMS Group Resolution Fix (Apr 13, 2026)
+- **Bug**: `_compute_margins_shared()` returned margins keyed only by leader name; forecasts use raw item names from sales → 74 items got zero margins
+- **Fix**: Extended margins dict to register ALL group members + transaction-name aliases pointing to the same leader margins
+- **Result**: Margin coverage improved from 67% (230/343) → 87.5% (300/343). Remaining 43 are legitimately excluded items.
+- Tests: 38 total (2 new group resolution tests), all passing
+
+## Polythene Duplicate Entry Prevention (Apr 13, 2026)
+- **Problem**: Polythene executives could double/triple-submit entries by clicking Save multiple times on slow connections
+- **Frontend Fix**: Save button disables during API call (spinner + "Saving..." text); duplicate detection blocks same item+weight+operation in pending list
+- **Backend Fix**: 20-second dedup window on both `/polythene/adjust` and `/polythene/adjust-batch` — identical (item, weight, operation, user) within window is silently skipped
+- Response now returns `{saved: N, skipped: M}` for transparency
+
+## Standard DD/MM/YYYY Date Format (Apr 13, 2026)
+- Created shared `utils/dateFormat.js` with `formatDate`, `formatDateTime`, `formatDateTimeFull`, `formatTime`
+- Applied DD/MM/YYYY consistently across all pages: PolytheneEntry, PolytheneManagement, ExecutiveStockEntry, Dashboard, History, ActivityLog, Layout (Undo Upload), UserManagement, StampVerificationHistory, ManagerApprovals, PhysicalStockComparison

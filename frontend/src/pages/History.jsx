@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { exportToCSV } from '@/utils/exportCSV';
+import { formatDateTime } from '../utils/dateFormat';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -34,7 +35,7 @@ export default function History() {
       'No.': actions.length - idx,
       'Action': action.action_type,
       'Description': action.description,
-      'Date': new Date(action.timestamp).toLocaleString(),
+      'Date': formatDateTime(action.timestamp),
       'Can Undo': action.can_undo ? 'Yes' : 'No'
     }));
     exportToCSV(exportData, 'action_history');
@@ -123,7 +124,7 @@ export default function History() {
                       {action.description}
                     </TableCell>
                     <TableCell className="font-mono text-sm">
-                      {new Date(action.timestamp).toLocaleString()}
+                      {formatDateTime(action.timestamp)}
                     </TableCell>
                     <TableCell>
                       {action.can_undo ? (

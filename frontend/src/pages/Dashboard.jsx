@@ -8,15 +8,13 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
+import { formatDate, formatDateTime } from '../utils/dateFormat';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
 function formatDateDDMMYYYY(dateStr) {
-  if (!dateStr) return '—';
-  const parts = dateStr.split('-');
-  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-  return dateStr;
+  return formatDate(dateStr);
 }
 
 export default function Dashboard() {
@@ -324,7 +322,7 @@ export default function Dashboard() {
                   const appliedCount = s.applied_count || 0;
                   const rejectedCount = s.rejected_count || 0;
                   const createdAt = s.applied_at || s.created_at || '';
-                  const dateStr = createdAt ? new Date(createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+                  const dateStr = createdAt ? formatDateTime(createdAt) : '—';
                   const isExpanded = expandedSession === s.session_id;
 
                   return (

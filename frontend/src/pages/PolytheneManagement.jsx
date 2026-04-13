@@ -13,6 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { exportToCSV } from '@/utils/exportCSV';
 import { toast } from 'sonner';
+import { formatDateTimeFull, formatDate } from '../utils/dateFormat';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { cn } from '@/lib/utils';
 
@@ -210,7 +211,7 @@ export default function PolytheneManagement() {
 
   const handleExport = () => {
     const exportData = filteredEntries.map(entry => ({
-      'Date': new Date(entry.created_at).toLocaleString(),
+      'Date': formatDateTimeFull(entry.created_at),
       'User': entry.adjusted_by,
       'Item Name': entry.item_name,
       'Stamp': entry.stamp || 'N/A',
@@ -428,7 +429,7 @@ export default function PolytheneManagement() {
                     filteredEntries.map((entry, idx) => (
                       <TableRow key={entry.id || idx} data-testid={`poly-entry-row-${idx}`}>
                         <TableCell className="font-mono text-sm">
-                          {new Date(entry.created_at).toLocaleString()}
+                          {formatDateTimeFull(entry.created_at)}
                         </TableCell>
                         <TableCell className="font-medium">{entry.adjusted_by}</TableCell>
                         <TableCell>{entry.item_name}</TableCell>

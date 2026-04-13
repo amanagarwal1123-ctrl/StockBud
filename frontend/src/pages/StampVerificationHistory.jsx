@@ -4,6 +4,7 @@ import { CheckCircle2, AlertTriangle, Clock } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { formatDate } from '../utils/dateFormat';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -70,7 +71,7 @@ export default function StampVerificationHistory() {
                   <TableRow key={idx} className={isOverdue ? 'bg-red-50' : ''}>
                     <TableCell className="font-bold">{stamp.stamp}</TableCell>
                     <TableCell className="text-sm">
-                      {stamp.last_verified_date ? new Date(stamp.last_verified_date).toLocaleDateString() : 'Never'}
+                      {stamp.last_verified_date ? formatDate(stamp.last_verified_date) : 'Never'}
                     </TableCell>
                     <TableCell>
                       <Badge variant={isOverdue ? 'destructive' : 'outline'}>

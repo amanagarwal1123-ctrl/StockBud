@@ -15,11 +15,10 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { exportToCSV } from '@/utils/exportCSV';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
+import { formatDate } from '../utils/dateFormat';
 
 const formatDateDisplay = (dateStr) => {
-  if (!dateStr) return '';
-  const [y, m, d] = dateStr.split('-');
-  return `${d}-${m}-${y}`;
+  return formatDate(dateStr);
 };
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;

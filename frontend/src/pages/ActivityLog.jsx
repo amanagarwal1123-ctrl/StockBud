@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { exportToCSV } from '@/utils/exportCSV';
+import { formatDateTime } from '../utils/dateFormat';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -57,7 +58,7 @@ export default function ActivityLog() {
 
   const handleExport = () => {
     const exportData = filteredActivities.map(activity => ({
-      'Date': new Date(activity.timestamp).toLocaleString(),
+      'Date': formatDateTime(activity.timestamp),
       'User': activity.user,
       'Role': activity.user_role,
       'Action': activity.action_type,
@@ -169,7 +170,7 @@ export default function ActivityLog() {
                   filteredActivities.map((activity, idx) => (
                     <TableRow key={idx}>
                       <TableCell className="font-mono text-sm">
-                        {new Date(activity.timestamp).toLocaleString()}
+                        {formatDateTime(activity.timestamp)}
                       </TableCell>
                       <TableCell className="font-medium">{activity.user}</TableCell>
                       <TableCell>

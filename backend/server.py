@@ -2193,8 +2193,8 @@ async def adjust_polythene(
     
     actual_user = current_user['username']  # Always use authenticated user
     
-    # Dedup: reject if identical entry by same user within 60 seconds
-    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=60)).isoformat()
+    # Dedup: reject if identical entry by same user within 20 seconds
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=20)).isoformat()
     existing = await db.polythene_adjustments.find_one({
         'item_name': item_name,
         'poly_weight': poly_weight,
@@ -2203,7 +2203,7 @@ async def adjust_polythene(
         'created_at': {'$gte': cutoff}
     })
     if existing:
-        return {'success': True, 'message': 'Duplicate skipped — identical entry within last 60s', 'duplicate': True}
+        return {'success': True, 'message': 'Duplicate skipped — identical entry within last 20s', 'duplicate': True}
     
     # Save polythene adjustment
     adjustment = {
@@ -2254,8 +2254,8 @@ async def adjust_polythene_batch(
     entries = request.get('entries', [])
     actual_user = current_user['username']  # Always use authenticated user
     
-    # Dedup: check for identical entries by same user within 60 seconds
-    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=60)).isoformat()
+    # Dedup: check for identical entries by same user within 20 seconds
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=20)).isoformat()
     
     saved_entries = []
     skipped = 0

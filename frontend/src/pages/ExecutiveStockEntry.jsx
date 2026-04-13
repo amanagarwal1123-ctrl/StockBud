@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
+import { formatDateTime, formatDate } from '../utils/dateFormat';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -260,7 +261,7 @@ export default function ExecutiveStockEntry() {
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {new Date(entry.entry_date).toLocaleString()} - {entry.entries?.length || 0} items
+                      {formatDateTime(entry.entry_date)} - {entry.entries?.length || 0} items
                     </p>
                     {entry.rejection_message && (
                       <Alert className="mt-2 border-red-500/50 bg-red-50">

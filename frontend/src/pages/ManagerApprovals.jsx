@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { exportToCSV } from '@/utils/exportCSV';
 import { toast } from 'sonner';
+import { formatDate } from '../utils/dateFormat';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -352,7 +353,7 @@ function EntryCard({
 
         {/* Row 3: Metadata */}
         <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5">
-          By {entry.entered_by} on {new Date(entry.entry_date).toLocaleDateString()}
+          By {entry.entered_by} on {formatDate(entry.entry_date)}
           {entry.iteration > 1 && <span className="ml-1 text-orange-600">• Iter {entry.iteration}</span>}
           {!isPending && entry.approved_by && <span> • {status === 'approved' ? 'Approved' : 'Reviewed'} by {entry.approved_by}</span>}
         </p>
