@@ -94,3 +94,11 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 ## Standard DD/MM/YYYY Date Format (Apr 13, 2026)
 - Created shared `utils/dateFormat.js` with `formatDate`, `formatDateTime`, `formatDateTimeFull`, `formatTime`
 - Applied DD/MM/YYYY consistently across all pages: PolytheneEntry, PolytheneManagement, ExecutiveStockEntry, Dashboard, History, ActivityLog, Layout (Undo Upload), UserManagement, StampVerificationHistory, ManagerApprovals, PhysicalStockComparison
+
+## Profit Calculation Fix: Sale Return Tunch Corruption (Apr 15, 2026)
+- **Bug**: `sale_return` was treated as a pseudo-purchase, injecting SALE tunch into the purchase cost basis. BS-053 showed Buy T%=46% (from a sale_return) instead of the real purchase cost of 51%. **23 items** had >5% tunch distortion in date-filtered views.
+- **Root cause**: `server.py` line 4227 and `profit_helpers.py` line 71 both routed `sale_return` → purchases bucket
+- **Fix**: `sale_return` now goes into the **sales bucket as a negative sale** — correctly reduces sold weight and labour income without corrupting the purchase cost basis
+- **Labour fix**: Returns (negative net_wt) now reduce total sale labour income instead of adding to it
+- **Header alignment**: Profit Analysis table now uses `table-fixed` with explicit column widths for consistent alignment
+- Tests: 41 total (18 corrective + 23 ML), all passing. 3 new sale_return tests added.

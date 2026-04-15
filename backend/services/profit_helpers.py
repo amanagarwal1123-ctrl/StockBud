@@ -69,7 +69,9 @@ def compute_item_margins(transactions: list[dict], ledger_items: list[dict],
         elif t["type"] == "sale":
             item_txns[leader]["sales"].append(td)
         elif t["type"] == "sale_return":
-            item_txns[leader]["purchases"].append(td)
+            # sale_return = reversal of a sale, NOT a purchase.
+            # Treat as negative sale to avoid corrupting purchase cost basis.
+            item_txns[leader]["sales"].append(td)
 
     results = []
     for item_name, data in item_txns.items():
@@ -92,7 +94,7 @@ def compute_item_margins(transactions: list[dict], ledger_items: list[dict],
                 continue
 
         total_purchase_wt = sum(p["net_wt"] for p in purchases)
-        total_sale_wt = sum(s["net_wt"] for s in sales)
+        total_sale_wt = sum(s["net_wt"] for s in sales)  # sale_returns reduce via negative net_wt
         if abs(total_purchase_wt) < 0.001 or abs(total_sale_wt) < 0.001:
             continue
 
@@ -109,10 +111,14 @@ def compute_item_margins(transactions: list[dict], ledger_items: list[dict],
         silver_profit_g = (avg_sale_tunch - avg_purchase_tunch) * total_sale_wt / 100
         silver_profit_kg = silver_profit_g / 1000
 
-        # Labour profit (INR)
-        total_sale_labour = sum(
-            abs(s.get("total_amount", 0) or s.get("labor", 0)) for s in sales
-        )
+        # Labour profit (INR) — returns (negative net_wt) reduce labour income
+        total_sale_labour = 0
+        for s in sales:
+            amt = abs(s.get("total_amount", 0) or s.get("labor", 0))
+            if s.get("net_wt", 0) < 0:  # sale_return
+                total_sale_labour -= amt
+            else:
+                total_sale_labour += amt
         le = grp_ledger.get(item_name)
         if le and le.get("labour_per_kg", 0) > 0:
             purchase_labour_per_gram = le["labour_per_kg"] / 1000

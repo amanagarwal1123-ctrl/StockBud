@@ -4225,8 +4225,10 @@ async def calculate_profit(
         elif trans['type'] == 'sale':
             item_transactions[item_name]['sales'].append(trans_data)
         elif trans['type'] == 'sale_return':
-            # Treat sale_return as purchase (buying back from customer)
-            item_transactions[item_name]['purchases'].append(trans_data)
+            # sale_return = reversal of a sale (NOT a purchase).
+            # The tunch on a return is the SALE tunch, not the purchase cost.
+            # Treat as negative sale to correctly reduce sold weight & labour income.
+            item_transactions[item_name]['sales'].append(trans_data)
     
     # Calculate profits per user's formula
     total_silver_profit_kg = 0.0  # Silver profit in KG
@@ -4258,12 +4260,12 @@ async def calculate_profit(
         
         # Calculate total and average values
         total_purchase_wt = sum(p['net_wt'] for p in purchases)
-        total_sale_wt = sum(s['net_wt'] for s in sales)
+        total_sale_wt = sum(s['net_wt'] for s in sales)  # sale_returns have negative net_wt, reducing total
         
         if abs(total_purchase_wt) < 0.001 or abs(total_sale_wt) < 0.001:
             continue
         
-        # Average tunch weighted by ABSOLUTE net weight (to handle negative returns correctly)
+        # Average tunch weighted by ABSOLUTE net weight
         avg_purchase_tunch = sum(p['tunch'] * abs(p['net_wt']) for p in purchases) / sum(abs(p['net_wt']) for p in purchases) if purchases else 0
         avg_sale_tunch = sum(s['tunch'] * abs(s['net_wt']) for s in sales) / sum(abs(s['net_wt']) for s in sales) if sales else 0
         
@@ -4272,9 +4274,14 @@ async def calculate_profit(
         silver_profit_kg = silver_profit_grams / 1000  # Convert to kg
         
         # 2. Labour Profit (INR)
-        # In silver trading, 'total_amount' (the "Total" column) IS the labour Rs per line
-        # Sale labour = sum of total_amount across all sale transactions for this item
-        total_sale_labour = sum(abs(s.get('total_amount', 0) or s.get('labor', 0)) for s in sales)
+        # Sale labour: returns (negative net_wt) reduce labour income
+        total_sale_labour = 0
+        for s in sales:
+            amt = abs(s.get('total_amount', 0) or s.get('labor', 0))
+            if s.get('net_wt', 0) < 0:  # sale_return → reduce income
+                total_sale_labour -= amt
+            else:
+                total_sale_labour += amt
         
         # Purchase labour cost: ALWAYS prefer purchase ledger (individual txns often have labor=0)
         ledger_item = grp_ledger.get(item_name)
