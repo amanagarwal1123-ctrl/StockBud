@@ -1950,12 +1950,30 @@ async def approve_stamp(
     stamp = request.get('stamp')
     approve = request.get('approve')
     total_difference = request.get('total_difference', 0)
+    verification_date = request.get('verification_date')
     
-    # Get the LATEST pending or approved entry for this stamp
+    # Build query — use verification_date to target the correct entry when multiple exist
+    query = {'stamp': stamp, 'status': {'$in': ['pending', 'approved']}}
+    if verification_date:
+        query['verification_date'] = verification_date
+    
+    # Get the LATEST pending or approved entry for this stamp (+ verification_date)
     entry = await db.stock_entries.find_one(
-        {'stamp': stamp, 'status': {'$in': ['pending', 'approved']}},
+        query,
         sort=[('entry_date', -1)]
     )
+    
+    # Fallback: if verification_date filter returned nothing, try without it but prefer pending
+    if not entry and verification_date:
+        entry = await db.stock_entries.find_one(
+            {'stamp': stamp, 'status': 'pending'},
+            sort=[('entry_date', -1)]
+        )
+    if not entry and verification_date:
+        entry = await db.stock_entries.find_one(
+            {'stamp': stamp, 'status': {'$in': ['pending', 'approved']}},
+            sort=[('entry_date', -1)]
+        )
     
     if not entry:
         raise HTTPException(status_code=404, detail="No pending entry found for this stamp")

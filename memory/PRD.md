@@ -74,6 +74,11 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Fix 7-8**: PMS tabs and balancing formula preserved
 - Tests: 36 total (23 unit + 13 business-logic integration), all passing
 
+## Stamp Approval Bug Fix: verification_date targeting (Apr 16, 2026)
+- **Bug**: When a stamp had multiple entries (e.g., an old approved + a new pending), clicking "Approve" on the pending entry silently approved the wrong (already-approved) entry. The pending entry stayed stuck.
+- **Root cause**: Frontend `handleApproval()` received `verificationDate` but did not send it to the backend. Backend `approve_stamp` queried only by stamp name + status, sorted by `entry_date DESC` — picking the most recent entry regardless of which one the user clicked.
+- **Fix**: Frontend now sends `verification_date` in the POST payload. Backend uses it as an additional filter to target the correct entry. Includes fallback logic: if no entry found with verification_date, tries pending-only, then any pending/approved.
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document

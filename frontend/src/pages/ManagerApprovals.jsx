@@ -146,6 +146,7 @@ export default function ManagerApprovals() {
     try {
       await axios.post(`${API}/manager/approve-stamp`, {
         stamp, approve, total_difference: totalDiff,
+        verification_date: verificationDate || undefined,
         rejection_message: approve ? null : rejectionMessage
       });
       toast.success(`${stamp} ${approve ? 'approved' : 'rejected'}!`);
