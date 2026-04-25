@@ -74,6 +74,12 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Fix 7-8**: PMS tabs and balancing formula preserved
 - Tests: 36 total (23 unit + 13 business-logic integration), all passing
 
+## Stamp Management: Group Member Visibility + Stamp Assignment Fix (Apr 16, 2026)
+- **Bug 1**: Grouped items (e.g., JB-70 Kada II in JB-70 Ring group) were invisible in Stamp Management because the inventory response consolidates groups into a single leader entry. Frontend only read top-level `item_name`, missing members.
+- **Fix 1**: StampManagement.jsx now extracts individual members from `item.members[]` for grouped items, showing each member as a separate row.
+- **Bug 2**: Assigning a stamp from the item detail page for a group member failed silently because `master_items.update_many()` matched 0 documents (no master_items entry existed). Also missing `_inv_cache.invalidate()`.
+- **Fix 2**: `assign-stamp` endpoint now uses `update_one` with `upsert=True` to create a master_items entry if missing, and invalidates inventory cache after assignment.
+
 ## Stamp Approval Bug Fix: verification_date targeting (Apr 16, 2026)
 - **Bug**: When a stamp had multiple entries (e.g., an old approved + a new pending), clicking "Approve" on the pending entry silently approved the wrong (already-approved) entry. The pending entry stayed stuck.
 - **Root cause**: Frontend `handleApproval()` received `verificationDate` but did not send it to the backend. Backend `approve_stamp` queried only by stamp name + status, sorted by `entry_date DESC` — picking the most recent entry regardless of which one the user clicked.

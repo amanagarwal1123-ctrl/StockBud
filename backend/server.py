@@ -4818,10 +4818,11 @@ async def assign_stamp_to_item(item_name: str, stamp: str = Query(...), current_
         if match:
             stamp = f'STAMP {match.group(1)}'
     
-    # Update master_items (single source of truth)
-    result_master = await db.master_items.update_many(
+    # Update master_items (single source of truth) — upsert to create entry if missing
+    result_master = await db.master_items.update_one(
         {"item_name": item_name},
-        {"$set": {"stamp": stamp}}
+        {"$set": {"stamp": stamp, "item_name": item_name}},
+        upsert=True
     )
     
     # Update all transactions
@@ -4836,12 +4837,13 @@ async def assign_stamp_to_item(item_name: str, stamp: str = Query(...), current_
         {"$set": {"stamp": stamp}}
     )
     
+    _inv_cache.invalidate()
     await save_action('assign_stamp', f"Assigned stamp '{stamp}' to '{item_name}'")
     
     return {
         "success": True,
         "message": f"Stamp '{stamp}' assigned to '{item_name}'",
-        "master_items_updated": result_master.modified_count,
+        "master_items_updated": 1 if result_master.modified_count or result_master.upserted_id else 0,
         "transactions_updated": result1.modified_count,
         "opening_stock_updated": result2.modified_count
     }

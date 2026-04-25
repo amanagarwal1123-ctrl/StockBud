@@ -35,10 +35,21 @@ export default function StampManagement() {
       
       const uniqueItems = new Map();
       [...allItems, ...negItems].forEach(item => {
-        uniqueItems.set(item.item_name, {
-          item_name: item.item_name,
-          stamp: item.stamp || 'Unassigned'
-        });
+        // For grouped items, also extract individual members
+        if (item.is_group && item.members && item.members.length > 0) {
+          item.members.forEach(member => {
+            uniqueItems.set(member.item_name, {
+              item_name: member.item_name,
+              stamp: member.stamp || 'Unassigned',
+              group: item.item_name
+            });
+          });
+        } else {
+          uniqueItems.set(item.item_name, {
+            item_name: item.item_name,
+            stamp: item.stamp || 'Unassigned'
+          });
+        }
       });
       
       setInventory(Array.from(uniqueItems.values()));
