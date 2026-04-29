@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { TrendingUp, DollarSign, Package, Calendar, Download, ChevronDown, ChevronUp } from 'lucide-react';
+import { TrendingUp, DollarSign, Package, Calendar, Download, ChevronDown, ChevronUp, Users } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -189,19 +189,21 @@ export default function ProfitAnalysis() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-2 sm:p-4 pt-0">
-                <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono text-accent">
-                  {formatIndianCurrency(profitData?.total_sales_value || 0)}
+                <div className="space-y-0.5">
+                  <div className="flex justify-between"><span className="text-[10px] text-muted-foreground">Net:</span><span className="text-xs sm:text-sm font-bold font-mono text-green-600">{((profitData?.total_net_wt_sold || 0) / 1000).toFixed(3)} kg</span></div>
+                  <div className="flex justify-between"><span className="text-[10px] text-muted-foreground">Fine:</span><span className="text-xs sm:text-sm font-bold font-mono text-blue-600">{((profitData?.total_fine_wt_sold || 0) / 1000).toFixed(3)} kg</span></div>
+                  <div className="flex justify-between"><span className="text-[10px] text-muted-foreground">Labour:</span><span className="text-xs sm:text-sm font-bold font-mono text-purple-600">{formatIndianCurrency(profitData?.total_labour_sold || 0)}</span></div>
                 </div>
               </CardContent>
             </Card>
             <Card className="border-border/40 shadow-sm">
               <CardHeader className="p-2 sm:p-4 pb-1">
                 <CardTitle className="text-[10px] sm:text-sm font-medium text-muted-foreground flex items-center gap-1">
-                  <Package className="h-3 w-3 sm:h-4 sm:w-4" />Items
+                  <Users className="h-3 w-3 sm:h-4 sm:w-4" />Customers
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-2 sm:p-4 pt-0">
-                <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono">{profitData?.total_items_analyzed || 0}</div>
+                <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono">{profitData?.unique_customers || 0}</div>
                 <p className="text-[10px] text-muted-foreground mt-0.5">
                   {selectedMonth === 0 ? `Year ${selectedYear}` : `${MONTHS[selectedMonth - 1]} ${selectedYear}`}
                 </p>

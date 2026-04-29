@@ -4422,12 +4422,47 @@ async def get_monthly_profit(
     total_labor = sum(i['labor_profit_inr'] for i in items)
     total_sales = sum(i['total_sales_value'] for i in items)
     
+    # Get sales metrics and unique customers from party_customer summaries
+    if month == 0:
+        sales_pipeline = [
+            {"$match": {"year": year, "summary_type": "party_customer"}},
+            {"$group": {
+                "_id": None,
+                "total_net_wt": {"$sum": "$total_net_wt"},
+                "total_fine_wt": {"$sum": "$total_fine_wt"},
+                "total_sales_value_party": {"$sum": "$total_sales_value"},
+                "unique_customers": {"$sum": 1},
+            }}
+        ]
+    else:
+        sales_pipeline = [
+            {"$match": {"year": year, "month": month, "summary_type": "party_customer"}},
+            {"$group": {
+                "_id": None,
+                "total_net_wt": {"$sum": "$total_net_wt"},
+                "total_fine_wt": {"$sum": "$total_fine_wt"},
+                "total_sales_value_party": {"$sum": "$total_sales_value"},
+                "unique_customers": {"$sum": 1},
+            }}
+        ]
+    sales_agg = await db.monthly_summaries.aggregate(sales_pipeline).to_list(1)
+    sales_info = sales_agg[0] if sales_agg else {}
+    
+    # Total labour sold = sum of all sale labour from item profits (total_sales_value is labour)
+    total_net_wt_sold = sales_info.get('total_net_wt', 0)
+    total_fine_wt_sold = sales_info.get('total_fine_wt', 0)
+    unique_customers = sales_info.get('unique_customers', 0)
+    
     return {
         "year": year,
         "month": month,
         "silver_profit_kg": round(total_silver, 3),
         "labor_profit_inr": round(total_labor, 2),
         "total_sales_value": round(total_sales, 2),
+        "total_net_wt_sold": round(total_net_wt_sold, 3),
+        "total_fine_wt_sold": round(total_fine_wt_sold, 3),
+        "total_labour_sold": round(total_sales, 2),
+        "unique_customers": unique_customers,
         "all_items": items,
         "total_items_analyzed": len(items)
     }
