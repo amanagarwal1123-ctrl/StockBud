@@ -43,6 +43,7 @@ from services.helpers import (
 )
 from services.stock_service import get_current_inventory, get_effective_physical_base_for_date, _flat_base_from_inventory
 from services.group_utils import build_group_maps, build_group_ledger, resolve_to_leader
+from services.monthly_summary_service import recompute_monthly_summaries
 
 # Simple TTL cache for heavy inventory computations
 import time
@@ -107,6 +108,11 @@ async def create_upload_indexes():
     await db.physical_stock_update_sessions.create_index("verification_date")
     await db.activity_log.create_index("timestamp")
     await db.stamp_approvals.create_index([("stamp", 1), ("approval_day", 1)])
+    # Monthly summaries indexes for fast queries
+    await db.monthly_summaries.create_index([("year", 1), ("month", 1), ("summary_type", 1)])
+    await db.monthly_summaries.create_index([("year", 1), ("summary_type", 1), ("name", 1)])
+    # Performance index for party/date queries
+    await db.transactions.create_index([("date", 1), ("type", 1), ("party_name", 1)])
 
     # Mark any orphaned "processing" tasks as failed (from OOM/crash during previous run)
     stale = await db.upload_sessions.update_many(
@@ -1183,6 +1189,9 @@ async def _process_upload(upload_id: str, meta: dict):
                 'batch_id': batch_id, 'file_type': file_type, 'count': len(transactions)
             })
             await auto_normalize_stamps()
+            # Trigger monthly summary recomputation in background
+            import asyncio
+            asyncio.create_task(recompute_monthly_summaries(db))
             meta['status'] = 'complete'
             meta['result'] = {"success": True, "count": len(transactions), "replaced_count": deleted_count,
                               "batch_id": batch_id, "message": message}
@@ -4340,6 +4349,218 @@ async def calculate_profit(
         "all_items": item_profits,
         "total_items_analyzed": len(item_profits)
     }
+
+
+# ==================== MONTHLY SUMMARY ENDPOINTS ====================
+
+@api_router.post("/analytics/recompute-summaries")
+async def trigger_recompute_summaries(
+    request: Dict = {},
+    current_user: dict = Depends(get_current_user)
+):
+    """Manually trigger recomputation of monthly summaries."""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    year = request.get('year')
+    result = await recompute_monthly_summaries(db, year)
+    return {"success": True, **result}
+
+
+@api_router.get("/analytics/monthly-profit")
+async def get_monthly_profit(
+    year: int = Query(...),
+    month: int = Query(0),
+    current_user: dict = Depends(get_current_user)
+):
+    """Get pre-computed item profit for a specific month (0 = all year)."""
+    if month == 0:
+        # ALL: aggregate across all months of the year
+        pipeline = [
+            {"$match": {"year": year, "summary_type": "item_profit"}},
+            {"$group": {
+                "_id": "$name",
+                "silver_profit_kg": {"$sum": "$silver_profit_kg"},
+                "labor_profit_inr": {"$sum": "$labor_profit_inr"},
+                "net_wt_sold_kg": {"$sum": "$net_wt_sold_kg"},
+                "total_sales_value": {"$sum": "$total_sales_value"},
+                "avg_purchase_tunch": {"$avg": "$avg_purchase_tunch"},
+                "avg_sale_tunch": {"$avg": "$avg_sale_tunch"},
+            }}
+        ]
+        results = await db.monthly_summaries.aggregate(pipeline).to_list(None)
+        items = [{
+            "item_name": r["_id"],
+            "silver_profit_kg": round(r["silver_profit_kg"], 3),
+            "labor_profit_inr": round(r["labor_profit_inr"], 2),
+            "net_wt_sold_kg": round(r["net_wt_sold_kg"], 3),
+            "total_sales_value": round(r.get("total_sales_value", 0), 2),
+            "avg_purchase_tunch": round(r.get("avg_purchase_tunch", 0), 2),
+            "avg_sale_tunch": round(r.get("avg_sale_tunch", 0), 2),
+        } for r in results]
+    else:
+        docs = await db.monthly_summaries.find(
+            {"year": year, "month": month, "summary_type": "item_profit"},
+            {"_id": 0}
+        ).to_list(None)
+        items = [{
+            "item_name": d["name"],
+            "silver_profit_kg": d["silver_profit_kg"],
+            "labor_profit_inr": d["labor_profit_inr"],
+            "net_wt_sold_kg": d["net_wt_sold_kg"],
+            "total_sales_value": d.get("total_sales_value", 0),
+            "avg_purchase_tunch": d.get("avg_purchase_tunch", 0),
+            "avg_sale_tunch": d.get("avg_sale_tunch", 0),
+        } for d in docs]
+    
+    items.sort(key=lambda x: x['silver_profit_kg'], reverse=True)
+    total_silver = sum(i['silver_profit_kg'] for i in items)
+    total_labor = sum(i['labor_profit_inr'] for i in items)
+    total_sales = sum(i['total_sales_value'] for i in items)
+    
+    return {
+        "year": year,
+        "month": month,
+        "silver_profit_kg": round(total_silver, 3),
+        "labor_profit_inr": round(total_labor, 2),
+        "total_sales_value": round(total_sales, 2),
+        "all_items": items,
+        "total_items_analyzed": len(items)
+    }
+
+
+@api_router.get("/analytics/monthly-party")
+async def get_monthly_party(
+    year: int = Query(...),
+    month: int = Query(0),
+    current_user: dict = Depends(get_current_user)
+):
+    """Get pre-computed party analysis for a specific month (0 = all year)."""
+    if month == 0:
+        # Aggregate across all months
+        cust_pipeline = [
+            {"$match": {"year": year, "summary_type": "party_customer"}},
+            {"$group": {
+                "_id": "$name",
+                "total_net_wt": {"$sum": "$total_net_wt"},
+                "total_fine_wt": {"$sum": "$total_fine_wt"},
+                "total_gr_wt": {"$sum": "$total_gr_wt"},
+                "total_sales_value": {"$sum": "$total_sales_value"},
+                "transaction_count": {"$sum": "$transaction_count"},
+            }}
+        ]
+        supp_pipeline = [
+            {"$match": {"year": year, "summary_type": "party_supplier"}},
+            {"$group": {
+                "_id": "$name",
+                "total_net_wt": {"$sum": "$total_net_wt"},
+                "total_fine_wt": {"$sum": "$total_fine_wt"},
+                "total_gr_wt": {"$sum": "$total_gr_wt"},
+                "total_purchases_value": {"$sum": "$total_purchases_value"},
+                "transaction_count": {"$sum": "$transaction_count"},
+            }}
+        ]
+        cust_results = await db.monthly_summaries.aggregate(cust_pipeline).to_list(None)
+        supp_results = await db.monthly_summaries.aggregate(supp_pipeline).to_list(None)
+        
+        customers = [{"party_name": r["_id"], "total_net_wt": round(r["total_net_wt"], 3),
+                      "total_fine_wt": round(r["total_fine_wt"], 3), "total_gr_wt": round(r["total_gr_wt"], 3),
+                      "total_sales_value": round(r["total_sales_value"], 2),
+                      "transaction_count": r["transaction_count"]} for r in cust_results]
+        suppliers = [{"party_name": r["_id"], "total_net_wt": round(r["total_net_wt"], 3),
+                      "total_fine_wt": round(r["total_fine_wt"], 3), "total_gr_wt": round(r["total_gr_wt"], 3),
+                      "total_purchases_value": round(r["total_purchases_value"], 2),
+                      "transaction_count": r["transaction_count"]} for r in supp_results]
+    else:
+        cust_docs = await db.monthly_summaries.find(
+            {"year": year, "month": month, "summary_type": "party_customer"}, {"_id": 0}
+        ).to_list(None)
+        supp_docs = await db.monthly_summaries.find(
+            {"year": year, "month": month, "summary_type": "party_supplier"}, {"_id": 0}
+        ).to_list(None)
+        
+        customers = [{"party_name": d["name"], "total_net_wt": d["total_net_wt"],
+                      "total_fine_wt": d["total_fine_wt"], "total_gr_wt": d["total_gr_wt"],
+                      "total_sales_value": d.get("total_sales_value", 0),
+                      "transaction_count": d["transaction_count"]} for d in cust_docs]
+        suppliers = [{"party_name": d["name"], "total_net_wt": d["total_net_wt"],
+                      "total_fine_wt": d["total_fine_wt"], "total_gr_wt": d["total_gr_wt"],
+                      "total_purchases_value": d.get("total_purchases_value", 0),
+                      "transaction_count": d["transaction_count"]} for d in supp_docs]
+    
+    customers.sort(key=lambda x: x['total_net_wt'], reverse=True)
+    suppliers.sort(key=lambda x: x['total_net_wt'], reverse=True)
+    
+    return {
+        "year": year,
+        "month": month,
+        "customers": customers,
+        "suppliers": suppliers,
+        "top_customer": customers[0] if customers else None,
+        "top_supplier": suppliers[0] if suppliers else None
+    }
+
+
+@api_router.get("/analytics/item-monthly-breakdown/{item_name}")
+async def get_item_monthly_breakdown(
+    item_name: str,
+    year: int = Query(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """Get monthly breakdown for a specific item (for bar chart)."""
+    docs = await db.monthly_summaries.find(
+        {"year": year, "summary_type": "item_profit", "name": item_name},
+        {"_id": 0}
+    ).to_list(None)
+    
+    # Build 12-month array
+    months = []
+    for m in range(1, 13):
+        doc = next((d for d in docs if d['month'] == m), None)
+        months.append({
+            "month": m,
+            "silver_profit_kg": doc['silver_profit_kg'] if doc else 0,
+            "labor_profit_inr": doc['labor_profit_inr'] if doc else 0,
+            "net_wt_sold_kg": doc['net_wt_sold_kg'] if doc else 0,
+        })
+    
+    return {"item_name": item_name, "year": year, "months": months}
+
+
+@api_router.get("/analytics/party-monthly-breakdown/{party_name}")
+async def get_party_monthly_breakdown(
+    party_name: str,
+    year: int = Query(...),
+    party_type: str = Query("customer"),
+    current_user: dict = Depends(get_current_user)
+):
+    """Get monthly breakdown for a specific party (for bar chart)."""
+    stype = "party_customer" if party_type == "customer" else "party_supplier"
+    docs = await db.monthly_summaries.find(
+        {"year": year, "summary_type": stype, "name": party_name},
+        {"_id": 0}
+    ).to_list(None)
+    
+    months = []
+    for m in range(1, 13):
+        doc = next((d for d in docs if d['month'] == m), None)
+        if stype == "party_customer":
+            months.append({
+                "month": m,
+                "total_net_wt": doc['total_net_wt'] if doc else 0,
+                "total_sales_value": doc.get('total_sales_value', 0) if doc else 0,
+                "transaction_count": doc['transaction_count'] if doc else 0,
+            })
+        else:
+            months.append({
+                "month": m,
+                "total_net_wt": doc['total_net_wt'] if doc else 0,
+                "total_purchases_value": doc.get('total_purchases_value', 0) if doc else 0,
+                "transaction_count": doc['transaction_count'] if doc else 0,
+            })
+    
+    return {"party_name": party_name, "year": year, "party_type": party_type, "months": months}
+
+
 
 @api_router.get("/history/actions")
 async def get_action_history(limit: int = 20, current_user: dict = Depends(get_current_user)):

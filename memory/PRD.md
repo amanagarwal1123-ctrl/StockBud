@@ -80,6 +80,24 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Bug 2**: Assigning a stamp from the item detail page for a group member failed silently because `master_items.update_many()` matched 0 documents (no master_items entry existed). Also missing `_inv_cache.invalidate()`.
 - **Fix 2**: `assign-stamp` endpoint now uses `update_one` with `upsert=True` to create a master_items entry if missing, and invalidates inventory cache after assignment.
 
+## Monthly Analytics & Pre-computed Summaries (Apr 16, 2026)
+- **Architecture**: Pre-computed monthly summaries stored in `monthly_summaries` collection for instant retrieval at any data scale (100K+ transactions)
+- **Backend Service**: `/app/backend/services/monthly_summary_service.py` — computes item profit + party sales/purchases per month
+- **Auto-trigger**: Summaries recompute automatically after any data upload (background task)
+- **Manual trigger**: `POST /api/analytics/recompute-summaries` for admin
+- **New endpoints**:
+  - `GET /api/analytics/monthly-profit?year=2026&month=4` (item profits for month, 0=ALL year)
+  - `GET /api/analytics/monthly-party?year=2026&month=4` (party data for month)
+  - `GET /api/analytics/item-monthly-breakdown/{item_name}?year=2026` (12-month bar chart data)
+  - `GET /api/analytics/party-monthly-breakdown/{party_name}?year=2026` (12-month bar chart data)
+- **Frontend**: Both ProfitAnalysis.jsx and PartyAnalytics.jsx now feature:
+  - Year selector dropdown + 12 month buttons (Jan-Dec) + "ALL" button
+  - Default: current month auto-selected on page load
+  - Auto-fetch on month click (no Apply button needed)
+  - Expandable rows with bar charts showing monthly comparison (toggle: silver profit / labour / net wt)
+- **Performance**: Reads from pre-computed collection = instant response regardless of transaction volume
+- **Backward compat**: Old `/analytics/profit` and `/analytics/party-analysis` endpoints untouched
+
 ## Stamp Approval Bug Fix: verification_date targeting (Apr 16, 2026)
 - **Bug**: When a stamp had multiple entries (e.g., an old approved + a new pending), clicking "Approve" on the pending entry silently approved the wrong (already-approved) entry. The pending entry stayed stuck.
 - **Root cause**: Frontend `handleApproval()` received `verificationDate` but did not send it to the backend. Backend `approve_stamp` queried only by stamp name + status, sorted by `entry_date DESC` — picking the most recent entry regardless of which one the user clicked.
@@ -88,6 +106,8 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document
+- P2: Dashboard year-wise comparison cards (party-wise, item-wise, month-wise, total sales)
+- P2: Dashboard year selector to filter all data views
 - P2: Transaction archiving / materialized views for 200K+ scale
 
 ## PMS Group Resolution Fix (Apr 13, 2026)

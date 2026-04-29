@@ -1,79 +1,107 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { TrendingUp, DollarSign, ShoppingCart, Package, Calendar, Download } from 'lucide-react';
+import { TrendingUp, DollarSign, Package, Calendar, Download, ChevronDown, ChevronUp } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatIndianCurrency } from '@/utils/formatCurrency';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { exportToCSV } from '@/utils/exportCSV';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { exportToCSV } from '@/utils/exportCSV';
 import { useSortableData } from '@/hooks/useSortableData';
 import { SortableHeader } from '@/components/SortableHeader';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 export default function ProfitAnalysis() {
+  const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().getMonth() + 1;
+
   const [profitData, setProfitData] = useState(null);
-  const [salesSummary, setSalesSummary] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [selectedYear, setSelectedYear] = useState(currentYear);
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = useState(20);
+  const [expandedItem, setExpandedItem] = useState(null);
+  const [monthlyBreakdown, setMonthlyBreakdown] = useState(null);
+  const [breakdownLoading, setBreakdownLoading] = useState(false);
+  const [chartMetric, setChartMetric] = useState('silver_profit_kg');
 
-  useEffect(() => { fetchProfit(); fetchSalesSummary(); }, []);
+  useEffect(() => {
+    fetchMonthlyProfit(selectedYear, selectedMonth);
+  }, []);
 
-  const fetchProfit = async (start = '', end = '') => {
+  const fetchMonthlyProfit = async (year, month) => {
+    setLoading(true);
     try {
-      let url = `${API}/analytics/profit`;
-      if (start && end) url += `?start_date=${start}&end_date=${end}`;
-      const response = await axios.get(url);
+      const response = await axios.get(`${API}/analytics/monthly-profit?year=${year}&month=${month}`);
       setProfitData(response.data);
-    } catch (error) { console.error('Error:', error); }
-    finally { setLoading(false); }
+    } catch (error) {
+      console.error('Error:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const fetchSalesSummary = async (start = '', end = '') => {
+  const handleMonthClick = (month) => {
+    setSelectedMonth(month);
+    setCurrentPage(1);
+    setExpandedItem(null);
+    setMonthlyBreakdown(null);
+    fetchMonthlyProfit(selectedYear, month);
+  };
+
+  const handleYearChange = (year) => {
+    const yr = Number(year);
+    setSelectedYear(yr);
+    setCurrentPage(1);
+    setExpandedItem(null);
+    setMonthlyBreakdown(null);
+    fetchMonthlyProfit(yr, selectedMonth);
+  };
+
+  const handleExpandItem = async (itemName) => {
+    if (expandedItem === itemName) {
+      setExpandedItem(null);
+      setMonthlyBreakdown(null);
+      return;
+    }
+    setExpandedItem(itemName);
+    setBreakdownLoading(true);
     try {
-      let url = `${API}/analytics/sales-summary`;
-      if (start && end) url += `?start_date=${start}&end_date=${end}`;
-      const response = await axios.get(url);
-      setSalesSummary(response.data);
-    } catch (error) { console.error('Error:', error); }
-  };
-
-  const handleApplyDateRange = () => {
-    if (startDate && endDate) { fetchProfit(startDate, endDate); fetchSalesSummary(startDate, endDate); }
-  };
-  const handleClearDates = () => { setStartDate(''); setEndDate(''); fetchProfit(); fetchSalesSummary(); };
-  const setQuickRange = (days) => {
-    const end = new Date(); const start = new Date();
-    start.setDate(start.getDate() - days);
-    const s = start.toISOString().split('T')[0], e = end.toISOString().split('T')[0];
-    setStartDate(s); setEndDate(e); fetchProfit(s, e); fetchSalesSummary(s, e);
+      const response = await axios.get(`${API}/analytics/item-monthly-breakdown/${encodeURIComponent(itemName)}?year=${selectedYear}`);
+      setMonthlyBreakdown(response.data);
+    } catch (error) {
+      console.error('Error fetching breakdown:', error);
+    } finally {
+      setBreakdownLoading(false);
+    }
   };
 
   const handleExportProfit = () => {
     const exportData = (profitData?.all_items || []).map((item, idx) => ({
       'Rank': idx + 1, 'Item Name': item.item_name, 'Net Weight Sold (kg)': item.net_wt_sold_kg,
       'Avg Purchase Tunch (%)': item.avg_purchase_tunch, 'Avg Sale Tunch (%)': item.avg_sale_tunch,
-      'Silver Profit (kg)': item.silver_profit_kg, 'Labour Profit (₹)': item.labor_profit_inr
+      'Silver Profit (kg)': item.silver_profit_kg, 'Labour Profit (INR)': item.labor_profit_inr
     }));
-    exportToCSV(exportData, `profit_analysis${startDate && endDate ? `_${startDate}_to_${endDate}` : ''}`);
+    exportToCSV(exportData, `profit_${selectedYear}_${selectedMonth === 0 ? 'ALL' : MONTHS[selectedMonth - 1]}`);
   };
 
   const allItems = profitData?.all_items || [];
   const { sortedData: sortedItems, sortConfig, requestSort } = useSortableData(allItems, 'silver_profit_kg', 'desc');
 
-  if (loading) return <div className="flex items-center justify-center h-screen"><div className="text-muted-foreground">Loading...</div></div>;
-
   const startIdx = (currentPage - 1) * itemsPerPage;
   const paginatedItems = sortedItems.slice(startIdx, startIdx + itemsPerPage);
   const totalPages = Math.ceil(sortedItems.length / itemsPerPage);
+
+  // Year options (current year and 2 years back)
+  const yearOptions = [];
+  for (let y = currentYear; y >= currentYear - 2; y--) yearOptions.push(y);
 
   return (
     <div className="p-3 sm:p-6 md:p-8 space-y-4 sm:space-y-6" data-testid="profit-page">
@@ -82,160 +110,264 @@ export default function ProfitAnalysis() {
         <p className="text-xs sm:text-base md:text-lg text-muted-foreground mt-1">Silver trading profit based on tunch &amp; labour</p>
       </div>
 
-      {/* Date Range */}
+      {/* Year + Month Selector */}
       <Card className="border-border/40 shadow-sm">
-        <CardHeader className="p-3 sm:p-6 pb-2">
-          <CardTitle className="flex items-center gap-2 text-sm sm:text-lg">
-            <Calendar className="h-4 w-4 text-primary" />Date Range
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-3 sm:p-6 pt-0">
-          <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 sm:items-end">
-            <div className="flex gap-2 flex-1">
-              <div className="flex-1">
-                <Label className="text-xs">From</Label>
-                <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="font-mono text-xs h-8 sm:h-9" />
-              </div>
-              <div className="flex-1">
-                <Label className="text-xs">To</Label>
-                <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="font-mono text-xs h-8 sm:h-9" />
-              </div>
+        <CardContent className="p-3 sm:p-4">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-3">
+              <Calendar className="h-4 w-4 text-primary shrink-0" />
+              <Select value={String(selectedYear)} onValueChange={handleYearChange}>
+                <SelectTrigger className="w-24 h-8 text-xs font-mono" data-testid="year-selector">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {yearOptions.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
-            <div className="flex gap-1.5">
-              <Button onClick={handleApplyDateRange} disabled={!startDate || !endDate} size="sm" className="h-8 text-xs">Apply</Button>
-              <Button onClick={handleClearDates} variant="outline" size="sm" className="h-8 text-xs">Clear</Button>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            {[7, 30, 90, 365].map(d => (
-              <Button key={d} onClick={() => setQuickRange(d)} variant="secondary" size="sm" className="h-6 text-[10px] sm:text-xs sm:h-7">
-                {d < 365 ? `${d}d` : '1yr'}
+            <div className="flex flex-wrap gap-1.5">
+              <Button
+                onClick={() => handleMonthClick(0)}
+                variant={selectedMonth === 0 ? "default" : "outline"}
+                size="sm"
+                className="h-7 text-xs px-3 font-semibold"
+                data-testid="month-all"
+              >
+                ALL
               </Button>
-            ))}
+              {MONTHS.map((m, idx) => (
+                <Button
+                  key={idx}
+                  onClick={() => handleMonthClick(idx + 1)}
+                  variant={selectedMonth === idx + 1 ? "default" : "outline"}
+                  size="sm"
+                  className="h-7 text-xs px-2.5"
+                  data-testid={`month-${idx + 1}`}
+                >
+                  {m}
+                </Button>
+              ))}
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Summary Cards */}
-      <div className="grid gap-3 sm:gap-6 grid-cols-2 md:grid-cols-4">
-        <Card className="border-border/40 shadow-sm bg-gradient-to-br from-green-500/10 to-transparent">
-          <CardHeader className="p-2 sm:p-4 pb-1">
-            <CardTitle className="text-[10px] sm:text-sm font-medium text-muted-foreground flex items-center gap-1">
-              <Package className="h-3 w-3 sm:h-4 sm:w-4 text-green-600" />Silver Profit
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-2 sm:p-4 pt-0">
-            <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono text-green-600">
-              {profitData?.silver_profit_kg?.toLocaleString() || 0} kg
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/40 shadow-sm bg-gradient-to-br from-blue-500/10 to-transparent">
-          <CardHeader className="p-2 sm:p-4 pb-1">
-            <CardTitle className="text-[10px] sm:text-sm font-medium text-muted-foreground flex items-center gap-1">
-              <DollarSign className="h-3 w-3 sm:h-4 sm:w-4 text-blue-600" />Labour Profit
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-2 sm:p-4 pt-0">
-            <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono text-blue-600">
-              {formatIndianCurrency(profitData?.labor_profit_inr || 0)}
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/40 shadow-sm bg-gradient-to-br from-accent/10 to-transparent">
-          <CardHeader className="p-2 sm:p-4 pb-1">
-            <CardTitle className="text-[10px] sm:text-sm font-medium text-muted-foreground flex items-center gap-1">
-              <ShoppingCart className="h-3 w-3 sm:h-4 sm:w-4 text-accent" />Total Sales
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-2 sm:p-4 pt-0">
-            {salesSummary ? (
-              <div className="space-y-0.5">
-                <div className="flex justify-between"><span className="text-[10px] text-muted-foreground">Net:</span><span className="text-xs sm:text-sm font-bold font-mono text-green-600">{salesSummary.total_net_wt_kg} kg</span></div>
-                <div className="flex justify-between"><span className="text-[10px] text-muted-foreground">Fine:</span><span className="text-xs sm:text-sm font-bold font-mono text-blue-600">{salesSummary.total_fine_wt_kg} kg</span></div>
-                <div className="flex justify-between"><span className="text-[10px] text-muted-foreground">Labour:</span><span className="text-xs sm:text-sm font-bold font-mono text-purple-600">{formatIndianCurrency(salesSummary.total_labor)}</span></div>
+      {loading ? (
+        <div className="flex items-center justify-center py-20"><div className="text-muted-foreground">Loading...</div></div>
+      ) : (
+        <>
+          {/* Summary Cards */}
+          <div className="grid gap-3 sm:gap-6 grid-cols-2 md:grid-cols-4">
+            <Card className="border-border/40 shadow-sm bg-gradient-to-br from-green-500/10 to-transparent">
+              <CardHeader className="p-2 sm:p-4 pb-1">
+                <CardTitle className="text-[10px] sm:text-sm font-medium text-muted-foreground flex items-center gap-1">
+                  <Package className="h-3 w-3 sm:h-4 sm:w-4 text-green-600" />Silver Profit
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-2 sm:p-4 pt-0">
+                <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono text-green-600" data-testid="silver-profit-total">
+                  {profitData?.silver_profit_kg?.toLocaleString() || 0} kg
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-border/40 shadow-sm bg-gradient-to-br from-blue-500/10 to-transparent">
+              <CardHeader className="p-2 sm:p-4 pb-1">
+                <CardTitle className="text-[10px] sm:text-sm font-medium text-muted-foreground flex items-center gap-1">
+                  <DollarSign className="h-3 w-3 sm:h-4 sm:w-4 text-blue-600" />Labour Profit
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-2 sm:p-4 pt-0">
+                <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono text-blue-600" data-testid="labor-profit-total">
+                  {formatIndianCurrency(profitData?.labor_profit_inr || 0)}
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-border/40 shadow-sm bg-gradient-to-br from-accent/10 to-transparent">
+              <CardHeader className="p-2 sm:p-4 pb-1">
+                <CardTitle className="text-[10px] sm:text-sm font-medium text-muted-foreground flex items-center gap-1">
+                  <TrendingUp className="h-3 w-3 sm:h-4 sm:w-4 text-accent" />Total Sales
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-2 sm:p-4 pt-0">
+                <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono text-accent">
+                  {formatIndianCurrency(profitData?.total_sales_value || 0)}
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-border/40 shadow-sm">
+              <CardHeader className="p-2 sm:p-4 pb-1">
+                <CardTitle className="text-[10px] sm:text-sm font-medium text-muted-foreground flex items-center gap-1">
+                  <Package className="h-3 w-3 sm:h-4 sm:w-4" />Items
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-2 sm:p-4 pt-0">
+                <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono">{profitData?.total_items_analyzed || 0}</div>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  {selectedMonth === 0 ? `Year ${selectedYear}` : `${MONTHS[selectedMonth - 1]} ${selectedYear}`}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Item Profit Table */}
+          <Card className="border-border/40 shadow-sm">
+            <CardHeader className="p-3 sm:p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <CardTitle className="text-sm sm:text-base">
+                    {selectedMonth === 0 ? `All of ${selectedYear}` : `${MONTHS[selectedMonth - 1]} ${selectedYear}`} — Item Profits
+                  </CardTitle>
+                  <CardDescription className="text-xs">Click arrow to see monthly breakdown</CardDescription>
+                </div>
+                <Button onClick={handleExportProfit} variant="outline" size="sm" className="h-7 text-xs self-start" data-testid="export-profit">
+                  <Download className="h-3 w-3 mr-1" />Export
+                </Button>
               </div>
-            ) : (
-              <div className="text-lg sm:text-3xl font-bold font-mono text-accent">{formatIndianCurrency(profitData?.total_sales_value || 0)}</div>
-            )}
-          </CardContent>
-        </Card>
-        <Card className="border-border/40 shadow-sm">
-          <CardHeader className="p-2 sm:p-4 pb-1">
-            <CardTitle className="text-[10px] sm:text-sm font-medium text-muted-foreground flex items-center gap-1">
-              <TrendingUp className="h-3 w-3 sm:h-4 sm:w-4" />Items
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-2 sm:p-4 pt-0">
-            <div className="text-lg sm:text-2xl md:text-3xl font-bold font-mono">{profitData?.total_items_analyzed || 0}</div>
-          </CardContent>
-        </Card>
+            </CardHeader>
+            <CardContent className="p-2 sm:p-6 pt-0">
+              {allItems.length === 0 ? (
+                <p className="text-center py-8 text-muted-foreground">No profit data for this period. Try selecting "ALL" or a different month.</p>
+              ) : (
+                <>
+                  <div className="overflow-x-auto">
+                    <Table className="min-w-[750px] table-fixed">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs w-[30px]"></TableHead>
+                          <TableHead className="text-xs w-[35px]">#</TableHead>
+                          <SortableHeader label="Item" sortKey="item_name" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-xs w-[170px]" />
+                          <SortableHeader label="Sold (kg)" sortKey="net_wt_sold_kg" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs w-[90px]" />
+                          <SortableHeader label="Buy T%" sortKey="avg_purchase_tunch" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs w-[80px]" />
+                          <SortableHeader label="Sell T%" sortKey="avg_sale_tunch" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs w-[80px]" />
+                          <SortableHeader label="Silver (kg)" sortKey="silver_profit_kg" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs w-[100px]" />
+                          <SortableHeader label="Labour" sortKey="labor_profit_inr" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs w-[100px]" />
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {paginatedItems.map((item, idx) => (
+                          <>
+                            <TableRow
+                              key={item.item_name}
+                              className="cursor-pointer hover:bg-muted/50"
+                              onClick={() => handleExpandItem(item.item_name)}
+                              data-testid={`profit-row-${startIdx + idx}`}
+                            >
+                              <TableCell className="text-xs py-2 w-[30px] text-muted-foreground">
+                                {expandedItem === item.item_name ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                              </TableCell>
+                              <TableCell className="text-xs py-2 text-muted-foreground w-[35px]">{startIdx + idx + 1}</TableCell>
+                              <TableCell className="text-xs py-2 font-medium truncate w-[170px]">{item.item_name}</TableCell>
+                              <TableCell className="text-right font-mono text-xs py-2 w-[90px]">{item.net_wt_sold_kg}</TableCell>
+                              <TableCell className="text-right font-mono text-xs py-2 w-[80px]">{item.avg_purchase_tunch}%</TableCell>
+                              <TableCell className="text-right font-mono text-xs py-2 w-[80px]">{item.avg_sale_tunch}%</TableCell>
+                              <TableCell className="text-right font-mono text-xs py-2 text-green-600 font-semibold w-[100px]">{item.silver_profit_kg} kg</TableCell>
+                              <TableCell className="text-right font-mono text-xs py-2 text-blue-600 font-semibold w-[100px]">{formatIndianCurrency(item.labor_profit_inr)}</TableCell>
+                            </TableRow>
+                            {expandedItem === item.item_name && (
+                              <TableRow key={`${item.item_name}-chart`}>
+                                <TableCell colSpan={8} className="p-3 bg-muted/30">
+                                  <MonthlyBreakdownChart
+                                    data={monthlyBreakdown}
+                                    loading={breakdownLoading}
+                                    metric={chartMetric}
+                                    onMetricChange={setChartMetric}
+                                    type="item"
+                                  />
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Pagination */}
+                  {allItems.length > itemsPerPage && (
+                    <div className="flex flex-col sm:flex-row items-center justify-between mt-3 pt-3 border-t gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-muted-foreground">Per page:</span>
+                        <Select value={String(itemsPerPage)} onValueChange={(v) => { setItemsPerPage(Number(v)); setCurrentPage(1); }}>
+                          <SelectTrigger className="w-16 h-7 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {[10, 20, 50].map(n => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} variant="outline" size="sm" className="h-7 text-xs">Prev</Button>
+                        <span className="text-xs text-muted-foreground">{currentPage}/{totalPages}</span>
+                        <Button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} variant="outline" size="sm" className="h-7 text-xs">Next</Button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Expandable bar chart showing monthly breakdown */
+function MonthlyBreakdownChart({ data, loading, metric, onMetricChange, type }) {
+  if (loading) return <div className="text-center py-4 text-xs text-muted-foreground">Loading chart...</div>;
+  if (!data || !data.months) return <div className="text-center py-4 text-xs text-muted-foreground">No data</div>;
+
+  const chartData = data.months.map(m => ({
+    name: MONTHS[m.month - 1],
+    silver_profit_kg: m.silver_profit_kg || 0,
+    labor_profit_inr: m.labor_profit_inr || 0,
+    net_wt_sold_kg: m.net_wt_sold_kg || 0,
+    total_net_wt: m.total_net_wt || 0,
+    total_sales_value: m.total_sales_value || 0,
+  }));
+
+  const metricOptions = type === 'item'
+    ? [
+        { key: 'silver_profit_kg', label: 'Silver Profit (kg)', color: '#16a34a' },
+        { key: 'labor_profit_inr', label: 'Labour Profit (INR)', color: '#2563eb' },
+        { key: 'net_wt_sold_kg', label: 'Net Wt Sold (kg)', color: '#d97706' },
+      ]
+    : [
+        { key: 'total_net_wt', label: 'Net Weight (g)', color: '#16a34a' },
+        { key: 'total_sales_value', label: 'Sales Value', color: '#2563eb' },
+      ];
+
+  const activeMetric = metricOptions.find(m => m.key === metric) || metricOptions[0];
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs font-medium text-muted-foreground">Show:</span>
+        {metricOptions.map(opt => (
+          <Button
+            key={opt.key}
+            onClick={(e) => { e.stopPropagation(); onMetricChange(opt.key); }}
+            variant={metric === opt.key ? "default" : "outline"}
+            size="sm"
+            className="h-6 text-[10px] px-2"
+          >
+            {opt.label}
+          </Button>
+        ))}
       </div>
-
-      {/* Item Profit Table */}
-      <Card className="border-border/40 shadow-sm">
-        <CardHeader className="p-3 sm:p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div>
-              <CardTitle className="text-sm sm:text-base">Most Profitable Items</CardTitle>
-              <CardDescription className="text-xs">Items generating the highest profit margin</CardDescription>
-            </div>
-            <Button onClick={handleExportProfit} variant="outline" size="sm" className="h-7 text-xs self-start">
-              <Download className="h-3 w-3 mr-1" />Export
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="p-2 sm:p-6 pt-0">
-          <div className="overflow-x-auto">
-            <Table className="min-w-[700px] table-fixed">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-xs w-[40px]">#</TableHead>
-                  <SortableHeader label="Item" sortKey="item_name" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-xs w-[180px]" />
-                  <SortableHeader label="Sold (kg)" sortKey="net_wt_sold_kg" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs w-[100px]" />
-                  <SortableHeader label="Buy T%" sortKey="avg_purchase_tunch" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs w-[90px]" />
-                  <SortableHeader label="Sell T%" sortKey="avg_sale_tunch" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs w-[90px]" />
-                  <SortableHeader label="Silver (kg)" sortKey="silver_profit_kg" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs w-[110px]" />
-                  <SortableHeader label="Labour" sortKey="labor_profit_inr" sortConfig={sortConfig} onSort={(k) => { requestSort(k); setCurrentPage(1); }} className="text-right text-xs w-[100px]" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paginatedItems.map((item, idx) => (
-                  <TableRow key={idx}>
-                    <TableCell className="text-xs py-2 text-muted-foreground w-[40px]">{startIdx + idx + 1}</TableCell>
-                    <TableCell className="text-xs py-2 font-medium truncate w-[180px]">{item.item_name}</TableCell>
-                    <TableCell className="text-right font-mono text-xs py-2 w-[100px]">{item.net_wt_sold_kg}</TableCell>
-                    <TableCell className="text-right font-mono text-xs py-2 w-[90px]">{item.avg_purchase_tunch}%</TableCell>
-                    <TableCell className="text-right font-mono text-xs py-2 w-[90px]">{item.avg_sale_tunch}%</TableCell>
-                    <TableCell className="text-right font-mono text-xs py-2 text-green-600 font-semibold w-[110px]">{item.silver_profit_kg} kg</TableCell>
-                    <TableCell className="text-right font-mono text-xs py-2 text-blue-600 font-semibold w-[100px]">{formatIndianCurrency(item.labor_profit_inr)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-
-          {/* Pagination */}
-          {allItems.length > 10 && (
-            <div className="flex flex-col sm:flex-row items-center justify-between mt-3 pt-3 border-t gap-2">
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-muted-foreground">Per page:</span>
-                <Select value={String(itemsPerPage)} onValueChange={(v) => { setItemsPerPage(Number(v)); setCurrentPage(1); }}>
-                  <SelectTrigger className="w-16 h-7 text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {[10, 20, 30].map(n => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} variant="outline" size="sm" className="h-7 text-xs">Prev</Button>
-                <span className="text-xs text-muted-foreground">{currentPage}/{totalPages}</span>
-                <Button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} variant="outline" size="sm" className="h-7 text-xs">Next</Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <div className="h-40 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+            <YAxis tick={{ fontSize: 10 }} width={50} />
+            <Tooltip
+              contentStyle={{ fontSize: 11, borderRadius: 8 }}
+              formatter={(value) => [typeof value === 'number' ? value.toFixed(2) : value, activeMetric.label]}
+            />
+            <Bar dataKey={activeMetric.key} fill={activeMetric.color} radius={[3, 3, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
