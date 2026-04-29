@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { formatDate, formatDateTime } from '../utils/dateFormat';
+import { formatIndianCurrency } from '@/utils/formatCurrency';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -18,6 +20,7 @@ function formatDateDDMMYYYY(dateStr) {
 }
 
 export default function Dashboard() {
+  const currentYear = new Date().getFullYear();
   const [stats, setStats] = useState(null);
   const [stampHistory, setStampHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -25,11 +28,14 @@ export default function Dashboard() {
   const [reconFilter, setReconFilter] = useState('all');
   const [expandedSession, setExpandedSession] = useState(null);
   const [sessionDetail, setSessionDetail] = useState(null);
+  const [selectedYear, setSelectedYear] = useState(currentYear);
+  const [yearSummary, setYearSummary] = useState(null);
 
   useEffect(() => {
     fetchStats();
     fetchStampHistory();
     fetchReconSessions();
+    fetchYearSummary(currentYear);
 
     const onFocus = () => {
       fetchStats();
@@ -39,6 +45,21 @@ export default function Dashboard() {
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, []);
+
+  const fetchYearSummary = async (year) => {
+    try {
+      const response = await axios.get(`${API}/analytics/dashboard-year-summary?year=${year}`);
+      setYearSummary(response.data);
+    } catch (error) {
+      console.error('Error fetching year summary:', error);
+    }
+  };
+
+  const handleYearChange = (year) => {
+    const yr = Number(year);
+    setSelectedYear(yr);
+    fetchYearSummary(yr);
+  };
 
   const fetchStats = async () => {
     try {
@@ -271,6 +292,117 @@ export default function Dashboard() {
           </Card>
         ))}
       </div>
+
+      {/* Year-Wise Comparison */}
+      <Card className="border-border/30 shadow-sm" data-testid="year-comparison-card">
+        <CardHeader className="bg-gradient-to-r from-card to-muted/20 border-b border-border/30">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-md bg-primary/10">
+                <BarChart3 className="h-4 w-4 text-primary" />
+              </div>
+              <div>
+                <CardTitle className="text-base">Year Comparison</CardTitle>
+                <CardDescription className="text-xs">Sales breakdown by month, party & item</CardDescription>
+              </div>
+            </div>
+            <Select value={String(selectedYear)} onValueChange={handleYearChange}>
+              <SelectTrigger className="w-24 h-8 text-xs font-mono" data-testid="dashboard-year-selector">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[currentYear, currentYear - 1, currentYear - 2].map(y => (
+                  <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
+        <CardContent className="p-3 sm:p-6 space-y-5">
+          {yearSummary ? (
+            <>
+              {/* Year Totals Row */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-lg border border-border/40 p-3 text-center">
+                  <p className="text-[10px] uppercase text-muted-foreground font-medium">Total Net Wt Sold</p>
+                  <p className="text-lg sm:text-xl font-bold font-mono text-primary mt-1">{(yearSummary.year_totals.total_net_wt / 1000).toFixed(2)} kg</p>
+                </div>
+                <div className="rounded-lg border border-border/40 p-3 text-center">
+                  <p className="text-[10px] uppercase text-muted-foreground font-medium">Total Sales Value</p>
+                  <p className="text-lg sm:text-xl font-bold font-mono text-green-600 mt-1">{formatIndianCurrency(yearSummary.year_totals.total_sales_value)}</p>
+                </div>
+                <div className="rounded-lg border border-border/40 p-3 text-center">
+                  <p className="text-[10px] uppercase text-muted-foreground font-medium">Transactions</p>
+                  <p className="text-lg sm:text-xl font-bold font-mono mt-1">{yearSummary.year_totals.transaction_count.toLocaleString()}</p>
+                </div>
+              </div>
+
+              {/* Month-wise Sales Bar Chart */}
+              <div>
+                <h3 className="text-sm font-semibold mb-2">Month-wise Sales ({selectedYear})</h3>
+                <div className="h-44 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={yearSummary.monthly_sales.map(m => ({
+                      name: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m.month - 1],
+                      net_wt_kg: +(m.total_net_wt / 1000).toFixed(2),
+                      txns: m.transaction_count,
+                    }))} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                      <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                      <YAxis tick={{ fontSize: 10 }} width={45} />
+                      <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} formatter={(v) => [`${v} kg`, 'Net Wt Sold']} />
+                      <Bar dataKey="net_wt_kg" fill="#7c3aed" radius={[3, 3, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* Top Customers & Items side by side */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Top Customers */}
+                <div>
+                  <h3 className="text-sm font-semibold mb-2">Top Customers (by weight)</h3>
+                  <div className="space-y-1.5">
+                    {yearSummary.top_customers.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No customer data for {selectedYear}</p>
+                    ) : yearSummary.top_customers.map((c, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-2 rounded-md border border-border/30 bg-muted/10">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Badge className="bg-primary/80 text-[10px] w-5 h-5 flex items-center justify-center p-0 shrink-0">{idx + 1}</Badge>
+                          <span className="text-xs font-medium truncate">{c.party_name}</span>
+                        </div>
+                        <span className="text-xs font-mono font-semibold text-primary shrink-0 ml-2">{(c.total_net_wt / 1000).toFixed(2)} kg</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Top Items */}
+                <div>
+                  <h3 className="text-sm font-semibold mb-2">Top Items (by sold weight)</h3>
+                  <div className="space-y-1.5">
+                    {yearSummary.top_items.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No item data for {selectedYear}</p>
+                    ) : yearSummary.top_items.map((item, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-2 rounded-md border border-border/30 bg-muted/10">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Badge className="bg-green-600/80 text-[10px] w-5 h-5 flex items-center justify-center p-0 shrink-0">{idx + 1}</Badge>
+                          <span className="text-xs font-medium truncate">{item.item_name}</span>
+                        </div>
+                        <span className="text-xs font-mono font-semibold text-green-600 shrink-0 ml-2">{item.net_wt_sold_kg} kg</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground text-sm">
+              No summary data. Click "Recompute" in Profit Analysis or upload data to generate.
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Reconciliation Sessions */}
       <Card className="border-border/30 shadow-sm overflow-hidden" data-testid="recon-sessions-card">

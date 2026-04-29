@@ -90,11 +90,18 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
   - `GET /api/analytics/monthly-party?year=2026&month=4` (party data for month)
   - `GET /api/analytics/item-monthly-breakdown/{item_name}?year=2026` (12-month bar chart data)
   - `GET /api/analytics/party-monthly-breakdown/{party_name}?year=2026` (12-month bar chart data)
+  - `GET /api/analytics/dashboard-year-summary?year=2026` (dashboard year cards)
 - **Frontend**: Both ProfitAnalysis.jsx and PartyAnalytics.jsx now feature:
   - Year selector dropdown + 12 month buttons (Jan-Dec) + "ALL" button
   - Default: current month auto-selected on page load
   - Auto-fetch on month click (no Apply button needed)
   - Expandable rows with bar charts showing monthly comparison (toggle: silver profit / labour / net wt)
+- **Dashboard**: Year-wise comparison section with:
+  - Year selector (dropdown)
+  - Totals row (net wt sold, sales value, transactions)
+  - Month-wise sales bar chart (12 months)
+  - Top 5 Customers by weight
+  - Top 5 Items by sold weight
 - **Performance**: Reads from pre-computed collection = instant response regardless of transaction volume
 - **Backward compat**: Old `/analytics/profit` and `/analytics/party-analysis` endpoints untouched
 
@@ -106,8 +113,7 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document
-- P2: Dashboard year-wise comparison cards (party-wise, item-wise, month-wise, total sales)
-- P2: Dashboard year selector to filter all data views
+- P2: "P" Suffix Item Mapping — auto-detect/resolve branch transfer items
 - P2: Transaction archiving / materialized views for 200K+ scale
 
 ## PMS Group Resolution Fix (Apr 13, 2026)

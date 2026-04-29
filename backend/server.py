@@ -4561,6 +4561,82 @@ async def get_party_monthly_breakdown(
     return {"party_name": party_name, "year": year, "party_type": party_type, "months": months}
 
 
+@api_router.get("/analytics/dashboard-year-summary")
+async def get_dashboard_year_summary(
+    year: int = Query(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """Get year-wise dashboard comparison data from pre-computed summaries."""
+    
+    # Monthly sales totals (for bar chart)
+    monthly_pipeline = [
+        {"$match": {"year": year, "summary_type": "party_customer"}},
+        {"$group": {
+            "_id": "$month",
+            "total_net_wt": {"$sum": "$total_net_wt"},
+            "total_sales_value": {"$sum": "$total_sales_value"},
+            "transaction_count": {"$sum": "$transaction_count"},
+        }}
+    ]
+    monthly_results = await db.monthly_summaries.aggregate(monthly_pipeline).to_list(None)
+    monthly_sales = []
+    for m in range(1, 13):
+        doc = next((r for r in monthly_results if r['_id'] == m), None)
+        monthly_sales.append({
+            "month": m,
+            "total_net_wt": round(doc['total_net_wt'], 3) if doc else 0,
+            "total_sales_value": round(doc['total_sales_value'], 2) if doc else 0,
+            "transaction_count": doc['transaction_count'] if doc else 0,
+        })
+    
+    # Top 5 customers by net weight (year-wide)
+    top_cust_pipeline = [
+        {"$match": {"year": year, "summary_type": "party_customer"}},
+        {"$group": {
+            "_id": "$name",
+            "total_net_wt": {"$sum": "$total_net_wt"},
+            "total_sales_value": {"$sum": "$total_sales_value"},
+        }},
+        {"$sort": {"total_net_wt": -1}},
+        {"$limit": 5}
+    ]
+    top_customers = await db.monthly_summaries.aggregate(top_cust_pipeline).to_list(None)
+    top_customers = [{"party_name": r["_id"], "total_net_wt": round(r["total_net_wt"], 3), "total_sales_value": round(r["total_sales_value"], 2)} for r in top_customers]
+    
+    # Top 5 items by profit (year-wide)
+    top_items_pipeline = [
+        {"$match": {"year": year, "summary_type": "item_profit"}},
+        {"$group": {
+            "_id": "$name",
+            "net_wt_sold_kg": {"$sum": "$net_wt_sold_kg"},
+            "silver_profit_kg": {"$sum": "$silver_profit_kg"},
+            "total_sales_value": {"$sum": "$total_sales_value"},
+        }},
+        {"$sort": {"net_wt_sold_kg": -1}},
+        {"$limit": 5}
+    ]
+    top_items = await db.monthly_summaries.aggregate(top_items_pipeline).to_list(None)
+    top_items = [{"item_name": r["_id"], "net_wt_sold_kg": round(r["net_wt_sold_kg"], 3), "silver_profit_kg": round(r["silver_profit_kg"], 3), "total_sales_value": round(r.get("total_sales_value", 0), 2)} for r in top_items]
+    
+    # Year totals
+    year_total_net_wt = sum(m['total_net_wt'] for m in monthly_sales)
+    year_total_sales = sum(m['total_sales_value'] for m in monthly_sales)
+    year_total_txns = sum(m['transaction_count'] for m in monthly_sales)
+    
+    return {
+        "year": year,
+        "monthly_sales": monthly_sales,
+        "top_customers": top_customers,
+        "top_items": top_items,
+        "year_totals": {
+            "total_net_wt": round(year_total_net_wt, 3),
+            "total_sales_value": round(year_total_sales, 2),
+            "transaction_count": year_total_txns,
+        }
+    }
+
+
+
 
 @api_router.get("/history/actions")
 async def get_action_history(limit: int = 20, current_user: dict = Depends(get_current_user)):
