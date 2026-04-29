@@ -4373,6 +4373,11 @@ async def get_monthly_profit(
     current_user: dict = Depends(get_current_user)
 ):
     """Get pre-computed item profit for a specific month (0 = all year)."""
+    # Auto-compute if no summaries exist for this year
+    count = await db.monthly_summaries.count_documents({"year": year, "summary_type": "item_profit"})
+    if count == 0:
+        await recompute_monthly_summaries(db, year)
+    
     if month == 0:
         # ALL: aggregate across all months of the year
         pipeline = [
@@ -4435,6 +4440,11 @@ async def get_monthly_party(
     current_user: dict = Depends(get_current_user)
 ):
     """Get pre-computed party analysis for a specific month (0 = all year)."""
+    # Auto-compute if no summaries exist for this year
+    count = await db.monthly_summaries.count_documents({"year": year})
+    if count == 0:
+        await recompute_monthly_summaries(db, year)
+    
     if month == 0:
         # Aggregate across all months
         cust_pipeline = [
@@ -4567,6 +4577,10 @@ async def get_dashboard_year_summary(
     current_user: dict = Depends(get_current_user)
 ):
     """Get year-wise dashboard comparison data from pre-computed summaries."""
+    # Auto-compute if no summaries exist for this year
+    count = await db.monthly_summaries.count_documents({"year": year})
+    if count == 0:
+        await recompute_monthly_summaries(db, year)
     
     # Monthly sales totals (for bar chart)
     monthly_pipeline = [
