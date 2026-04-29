@@ -31,6 +31,11 @@ export default function ProfitAnalysis() {
   const [monthlyBreakdown, setMonthlyBreakdown] = useState(null);
   const [breakdownLoading, setBreakdownLoading] = useState(false);
   const [chartMetric, setChartMetric] = useState('silver_profit_kg');
+  const [dailyProfits, setDailyProfits] = useState(null);
+  const [dailyLoading, setDailyLoading] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [dailyDetail, setDailyDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   useEffect(() => {
     fetchMonthlyProfit(selectedYear, selectedMonth);
@@ -45,6 +50,46 @@ export default function ProfitAnalysis() {
       console.error('Error:', error);
     } finally {
       setLoading(false);
+    }
+    // Fetch daily profits if a specific month is selected
+    if (month > 0) {
+      fetchDailyProfits(year, month);
+    } else {
+      setDailyProfits(null);
+      setSelectedDate(null);
+      setDailyDetail(null);
+    }
+  };
+
+  const fetchDailyProfits = async (year, month) => {
+    setDailyLoading(true);
+    setSelectedDate(null);
+    setDailyDetail(null);
+    try {
+      const response = await axios.get(`${API}/analytics/daily-profit?year=${year}&month=${month}`);
+      setDailyProfits(response.data.daily);
+    } catch (error) {
+      console.error('Error:', error);
+    } finally {
+      setDailyLoading(false);
+    }
+  };
+
+  const handleDateClick = async (date) => {
+    if (selectedDate === date) {
+      setSelectedDate(null);
+      setDailyDetail(null);
+      return;
+    }
+    setSelectedDate(date);
+    setDetailLoading(true);
+    try {
+      const response = await axios.get(`${API}/analytics/daily-profit-detail?date=${date}`);
+      setDailyDetail(response.data);
+    } catch (error) {
+      console.error('Error:', error);
+    } finally {
+      setDetailLoading(false);
     }
   };
 
@@ -210,6 +255,90 @@ export default function ProfitAnalysis() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Daily Profit Breakdown */}
+          {selectedMonth > 0 && (
+            <Card className="border-border/40 shadow-sm">
+              <CardHeader className="p-3 sm:p-6 pb-2">
+                <CardTitle className="text-sm sm:text-base">
+                  Daily Profit — {MONTHS[selectedMonth - 1]} {selectedYear}
+                </CardTitle>
+                <CardDescription className="text-xs">Click a date to see top 20 customers & items</CardDescription>
+              </CardHeader>
+              <CardContent className="p-2 sm:p-6 pt-0">
+                {dailyLoading ? (
+                  <div className="text-center py-4 text-xs text-muted-foreground">Loading daily data...</div>
+                ) : dailyProfits ? (
+                  <div className="space-y-1">
+                    {dailyProfits.filter(d => d.sale_count > 0 || d.silver_profit_kg !== 0).length === 0 ? (
+                      <p className="text-center py-4 text-xs text-muted-foreground">No sales activity this month</p>
+                    ) : dailyProfits.map(day => {
+                      if (day.sale_count === 0 && day.silver_profit_kg === 0) return null;
+                      const isSelected = selectedDate === day.date;
+                      const dd = day.date.split('-')[2];
+                      return (
+                        <div key={day.date}>
+                          <div
+                            className={`flex items-center justify-between p-2 rounded-md cursor-pointer transition-colors ${isSelected ? 'bg-primary/10 border border-primary/30' : 'hover:bg-muted/50 border border-transparent'}`}
+                            onClick={() => handleDateClick(day.date)}
+                            data-testid={`daily-row-${day.date}`}
+                          >
+                            <div className="flex items-center gap-2">
+                              {isSelected ? <ChevronUp className="h-3.5 w-3.5 text-primary" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+                              <span className="text-xs font-mono font-semibold w-6">{dd}</span>
+                              <Badge variant="outline" className="text-[10px] px-1.5">{day.sale_count} sales</Badge>
+                            </div>
+                            <div className="flex items-center gap-4">
+                              <span className="text-xs font-mono text-green-600 font-semibold">{day.silver_profit_kg} kg</span>
+                              <span className="text-xs font-mono text-blue-600 font-semibold w-20 text-right">{formatIndianCurrency(day.labor_profit_inr)}</span>
+                            </div>
+                          </div>
+                          {isSelected && (
+                            <div className="ml-6 mt-1 mb-2 p-3 rounded-md bg-muted/30 border border-border/30">
+                              {detailLoading ? (
+                                <p className="text-xs text-muted-foreground text-center py-2">Loading...</p>
+                              ) : dailyDetail ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  {/* Top Items */}
+                                  <div>
+                                    <h4 className="text-xs font-semibold mb-1.5 text-green-700">Top 20 Items</h4>
+                                    <div className="space-y-0.5 max-h-60 overflow-y-auto">
+                                      {dailyDetail.top_items.length === 0 ? (
+                                        <p className="text-[10px] text-muted-foreground">No item data</p>
+                                      ) : dailyDetail.top_items.map((item, i) => (
+                                        <div key={i} className="flex justify-between text-[11px] py-0.5 border-b border-border/20">
+                                          <span className="truncate mr-2">{i+1}. {item.item_name}</span>
+                                          <span className="font-mono text-green-600 shrink-0">{item.silver_profit_kg}kg / {formatIndianCurrency(item.labor_profit_inr)}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  {/* Top Customers */}
+                                  <div>
+                                    <h4 className="text-xs font-semibold mb-1.5 text-blue-700">Top 20 Customers</h4>
+                                    <div className="space-y-0.5 max-h-60 overflow-y-auto">
+                                      {dailyDetail.top_customers.length === 0 ? (
+                                        <p className="text-[10px] text-muted-foreground">No customer data</p>
+                                      ) : dailyDetail.top_customers.map((c, i) => (
+                                        <div key={i} className="flex justify-between text-[11px] py-0.5 border-b border-border/20">
+                                          <span className="truncate mr-2">{i+1}. {c.party_name}</span>
+                                          <span className="font-mono text-blue-600 shrink-0">{c.total_net_wt_kg} kg ({c.sale_count} txns)</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Item Profit Table */}
           <Card className="border-border/40 shadow-sm">
