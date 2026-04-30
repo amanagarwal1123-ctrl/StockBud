@@ -173,7 +173,12 @@ def _compute_item_profits(transactions, master_stamps, mapping_dict, member_to_l
         elif t['type'] == 'sale':
             item_txns[item_name]['sales'].append(trans_data)
         elif t['type'] == 'sale_return':
-            item_txns[item_name]['sales'].append(trans_data)
+            # sale_return = reversal of a sale. Negate values so net sales = sale - sale_return.
+            ret_data = {**trans_data,
+                        'net_wt': -trans_data['net_wt'],
+                        'labor': -trans_data['labor'],
+                        'total_amount': -trans_data['total_amount']}
+            item_txns[item_name]['sales'].append(ret_data)
     
     results = {}
     for item_name, data in item_txns.items():
@@ -224,7 +229,8 @@ def _compute_item_profits(transactions, master_stamps, mapping_dict, member_to_l
             purchase_labour_per_gram = 0
         
         labor_profit_inr = total_sale_labour - (purchase_labour_per_gram * abs(total_sale_wt))
-        total_sales_value = sum(s.get('total_amount', 0) for s in sales if s.get('net_wt', 0) > 0)
+        # Net sales value = sales - returns (returns now have negative total_amount)
+        total_sales_value = sum(s.get('total_amount', 0) for s in sales)
         
         results[item_name] = {
             'silver_profit_kg': silver_profit_kg,

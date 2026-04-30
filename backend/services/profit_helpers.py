@@ -70,8 +70,12 @@ def compute_item_margins(transactions: list[dict], ledger_items: list[dict],
             item_txns[leader]["sales"].append(td)
         elif t["type"] == "sale_return":
             # sale_return = reversal of a sale, NOT a purchase.
-            # Treat as negative sale to avoid corrupting purchase cost basis.
-            item_txns[leader]["sales"].append(td)
+            # Negate net_wt / total_amount / labor so net sales = sale - sale_return.
+            ret_td = {**td,
+                      "net_wt": -td["net_wt"],
+                      "labor": -td["labor"],
+                      "total_amount": -td["total_amount"]}
+            item_txns[leader]["sales"].append(ret_td)
 
     results = []
     for item_name, data in item_txns.items():

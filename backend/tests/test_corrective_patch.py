@@ -252,13 +252,15 @@ class TestSaleReturnNotCorruptingPurchaseTunch:
 
     def test_sale_return_does_not_affect_purchase_tunch(self):
         """sale_return tunch is the SALE tunch, not the purchase cost.
-        It must go into the sales bucket, not the purchases bucket."""
+        It must go into the sales bucket, not the purchases bucket.
+        sale_return is stored with POSITIVE net_wt (matches Tally export); the
+        profit pipeline negates internally so net_wt_sold = sale - sale_return."""
         from services.profit_helpers import compute_item_margins
 
         txns = [
             {"item_name": "TEST_SR", "type": "purchase", "net_wt": 10000, "tunch": 51, "total_amount": 200, "labor": 0},
             {"item_name": "TEST_SR", "type": "sale", "net_wt": 5000, "tunch": 55, "total_amount": 100, "labor": 0},
-            {"item_name": "TEST_SR", "type": "sale_return", "net_wt": -200, "tunch": 46, "total_amount": -4, "labor": 0},
+            {"item_name": "TEST_SR", "type": "sale_return", "net_wt": 200, "tunch": 46, "total_amount": 4, "labor": 0},
         ]
         ledger = [{"item_name": "TEST_SR", "purchase_tunch": 51,
                    "labour_per_kg": 4000, "total_purchased_kg": 10,
@@ -272,13 +274,14 @@ class TestSaleReturnNotCorruptingPurchaseTunch:
         assert r["net_wt_sold_kg"] == 4.8
 
     def test_sale_return_reduces_sold_weight(self):
-        """sale_return with negative net_wt should reduce total sold weight."""
+        """sale_return reduces total sold weight (sale - return).
+        Stored with POSITIVE net_wt; pipeline negates internally."""
         from services.profit_helpers import compute_item_margins
 
         txns = [
             {"item_name": "TEST_SRW", "type": "purchase", "net_wt": 10000, "tunch": 50, "total_amount": 0, "labor": 0},
             {"item_name": "TEST_SRW", "type": "sale", "net_wt": 8000, "tunch": 55, "total_amount": 160, "labor": 0},
-            {"item_name": "TEST_SRW", "type": "sale_return", "net_wt": -1000, "tunch": 55, "total_amount": -20, "labor": 0},
+            {"item_name": "TEST_SRW", "type": "sale_return", "net_wt": 1000, "tunch": 55, "total_amount": 20, "labor": 0},
         ]
         ledger = []
         results = compute_item_margins(txns, ledger, [], [])

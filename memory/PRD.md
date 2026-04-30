@@ -116,6 +116,24 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - P2: "P" Suffix Item Mapping — auto-detect/resolve branch transfer items
 - P2: Transaction archiving / materialized views for 200K+ scale
 
+## Net Sales = Sale − Sale_Return Fix (Apr 30, 2026)
+- **Bug**: Previous agent claimed `sale_return` was treated as a "negative sale" but the parser stores `sale_return` rows with **POSITIVE** `net_wt` / `total_amount` / `labor` (raw values from Tally export). All downstream profit logic relied on `if net_wt < 0` checks that NEVER fired. Net sales = sale + sale_return (added) instead of sale − sale_return (subtracted), inflating Profit Analysis Net Wt Sold, Total Sales Value, and Labour Profit.
+- **Fix**: At every place where `sale_return` rows are appended to a `sales[]` bucket, the `net_wt`, `total_amount`, and `labor` fields are now NEGATED in the local trans_data dict. All existing math (`total_sale_wt = sum(s['net_wt'] ...)`, `if net_wt < 0:` return detection, customer net_wt attribution) now works correctly. `tunch` averaging continues to use `abs()` so SR tunch still weights correctly.
+- **Files patched**:
+  - `services/profit_helpers.py` (PMS + /analytics/profit shared helper)
+  - `services/monthly_summary_service.py` (Option B pre-computed summaries)
+  - `server.py /analytics/profit` (line 4250 area) + `total_sales_value` / `total_purchase_value` aggregation
+  - `server.py /analytics/sales-summary` (sum with `_mult(t)` instead of "already negative" assumption)
+  - `server.py /analytics/monthly-profit-daily` (daily drill-down)
+  - `server.py /analytics/daily-profit-detail` (top customers + items per day)
+- **Auto-applied**: triggered POST /api/analytics/recompute-summaries → 1574 docs recomputed for 2026.
+- **Tests**: `tests/test_sale_return_net_sales.py` (5 new regression tests). Existing `test_corrective_patch.py` updated to use POSITIVE sale_return net_wt (matching production parser). All 46 tests passing.
+
+## Upload Date Deletion Reverted (Apr 30, 2026)
+- **Issue**: Previous agent had widened upload deletion from `date $in [new_dates]` to `date $gte min_date $lte max_date` to clean "ghost data". User reported this broke reliable uploads.
+- **Fix**: Reverted to original `{"type": {"$in": delete_types}, "date": {"$in": new_dates}}` in both `_process_upload` (chunked) and the legacy upload handler. Only dates present in the file are replaced.
+- **Verified**: end-to-end chunked upload (init → chunk → finalize → status=complete) works. 2 records uploaded successfully in test.
+
 ## PMS Group Resolution Fix (Apr 13, 2026)
 - **Bug**: `_compute_margins_shared()` returned margins keyed only by leader name; forecasts use raw item names from sales → 74 items got zero margins
 - **Fix**: Extended margins dict to register ALL group members + transaction-name aliases pointing to the same leader margins

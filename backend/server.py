@@ -1163,13 +1163,9 @@ async def _process_upload(upload_id: str, meta: dict):
             # Only delete dates that exist in the NEW file (prevents losing data for dates not in the file)
             new_dates = sorted(set(r.get('date', '') for r in records if r.get('date')))
             if new_dates:
-                # Delete the FULL RANGE between min and max date in file (removes ghost data from holidays/off-days)
-                min_date = new_dates[0]
-                max_date = new_dates[-1]
-                
                 # Backup replaced records for undo
                 old_records = await db.transactions.find(
-                    {"type": {"$in": delete_types}, "date": {"$gte": min_date, "$lte": max_date + " 23:59:59"}}, {"_id": 0}
+                    {"type": {"$in": delete_types}, "date": {"$in": new_dates}}, {"_id": 0}
                 ).to_list(None)
                 if old_records:
                     await db.replaced_records.insert_one({
@@ -1179,7 +1175,7 @@ async def _process_upload(upload_id: str, meta: dict):
                     })
                 delete_result = await db.transactions.delete_many({
                     "type": {"$in": delete_types},
-                    "date": {"$gte": min_date, "$lte": max_date + " 23:59:59"}
+                    "date": {"$in": new_dates}
                 })
                 deleted_count = delete_result.deleted_count
 
@@ -4158,17 +4154,20 @@ async def get_sales_summary(
         end_date_with_time = end_date + ' 23:59:59'
         query['date'] = {'$gte': start_date, '$lte': end_date_with_time}
     
-    # Get ALL sale transactions (S and SR - SR have negative values already)
+    # Get ALL sale transactions (S and SR). SR rows are stored with positive
+    # values in DB; we apply -1 multiplier here so totals = sale - sale_return.
     sales_transactions = await db.transactions.find(query, {"_id": 0}).to_list(None)
     
     # Filter out excluded items
     sales_transactions = [t for t in sales_transactions if t['item_name'] not in EXCLUDED_ITEMS]
     
-    # Sum including negative values (SR rows are already negative)
-    total_net_wt = sum(t.get('net_wt', 0) for t in sales_transactions)
-    total_fine_wt = sum(t.get('fine', 0) for t in sales_transactions)
-    total_labor = sum((t.get('total_amount', 0) or t.get('labor', 0)) for t in sales_transactions)
-    total_sales_value = sum(t.get('total_amount', 0) for t in sales_transactions)
+    def _mult(t):
+        return -1 if t['type'] == 'sale_return' else 1
+    
+    total_net_wt = sum(t.get('net_wt', 0) * _mult(t) for t in sales_transactions)
+    total_fine_wt = sum(t.get('fine', 0) * _mult(t) for t in sales_transactions)
+    total_labor = sum((t.get('total_amount', 0) or t.get('labor', 0)) * _mult(t) for t in sales_transactions)
+    total_sales_value = sum(t.get('total_amount', 0) * _mult(t) for t in sales_transactions)
     
     return {
         "total_net_wt_kg": round(total_net_wt / 1000, 3),
@@ -4256,9 +4255,12 @@ async def calculate_profit(
             item_transactions[item_name]['sales'].append(trans_data)
         elif trans['type'] == 'sale_return':
             # sale_return = reversal of a sale (NOT a purchase).
-            # The tunch on a return is the SALE tunch, not the purchase cost.
-            # Treat as negative sale to correctly reduce sold weight & labour income.
-            item_transactions[item_name]['sales'].append(trans_data)
+            # Negate net_wt / total_amount / labor so net sales = sale - sale_return.
+            ret_data = {**trans_data,
+                        'net_wt': -trans_data['net_wt'],
+                        'labor': -trans_data['labor'],
+                        'total_amount': -trans_data['total_amount']}
+            item_transactions[item_name]['sales'].append(ret_data)
     
     # Calculate profits per user's formula
     total_silver_profit_kg = 0.0  # Silver profit in KG
@@ -4340,9 +4342,15 @@ async def calculate_profit(
     # Sort by silver profit
     item_profits.sort(key=lambda x: x['silver_profit_kg'], reverse=True)
     
-    # Calculate total sales/purchases value
-    total_sales_value = sum(t['total_amount'] for t in transactions if t['type'] == 'sale')
-    total_purchase_value = sum(t['total_amount'] for t in transactions if t['type'] == 'purchase')
+    # Calculate total sales/purchases value (sale - sale_return for net sales)
+    total_sales_value = sum(
+        t['total_amount'] * (1 if t['type'] == 'sale' else -1)
+        for t in transactions if t['type'] in ['sale', 'sale_return']
+    )
+    total_purchase_value = sum(
+        t['total_amount'] * (1 if t['type'] == 'purchase' else -1)
+        for t in transactions if t['type'] in ['purchase', 'purchase_return']
+    )
     
     return {
         "silver_profit_kg": round(total_silver_profit_kg, 3),
@@ -4710,7 +4718,8 @@ async def get_daily_profit(
                 item_data[leader]['sales'].append(td)
                 sale_count += 1
             elif t['type'] == 'sale_return':
-                item_data[leader]['sales'].append(td)
+                ret_td = {**td, 'net_wt': -td['net_wt'], 'labor': -td['labor'], 'total_amount': -td['total_amount']}
+                item_data[leader]['sales'].append(ret_td)
         
         day_silver = 0.0
         day_labor = 0.0
@@ -4802,6 +4811,8 @@ async def get_daily_profit_detail(
         if t['type'] in ['purchase', 'purchase_return']:
             item_data[leader]['purchases'].append(td)
         elif t['type'] in ['sale', 'sale_return']:
+            if t['type'] == 'sale_return':
+                td = {**td, 'net_wt': -td['net_wt'], 'labor': -td['labor'], 'total_amount': -td['total_amount']}
             item_data[leader]['sales'].append(td)
             party = t.get('party_name', 'Unknown')
             if party:
