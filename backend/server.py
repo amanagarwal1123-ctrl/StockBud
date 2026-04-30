@@ -4422,18 +4422,30 @@ async def get_monthly_profit(
     total_labor = sum(i['labor_profit_inr'] for i in items)
     total_sales = sum(i['total_sales_value'] for i in items)
     
-    # Derive sales totals from the same filtered items (only stamped, non-excluded)
-    # This ensures consistency — Total Sales = only items included in profit analysis
-    total_net_wt_sold = sum(i['net_wt_sold_kg'] for i in items) * 1000  # convert back to grams for consistency
-    # Fine wt = net_wt * avg_sale_tunch / 100 (approximate from profit items)
-    total_fine_wt_sold = sum(i['net_wt_sold_kg'] * i.get('avg_sale_tunch', 0) / 100 for i in items) * 1000
-    
-    # Unique customers from party_customer summaries
+    # Total Sales: compute directly from transactions (Sale + Sale_Return, ALL items, no exclusions)
+    # This matches Tally's "Sale Register" exactly
     if month == 0:
-        cust_count = await db.monthly_summaries.count_documents({"year": year, "summary_type": "party_customer"})
+        sales_query = {'date': {'$gte': f"{year}-01-01", '$lte': f"{year}-12-31 23:59:59"}, 'type': {'$in': ['sale', 'sale_return']}}
     else:
-        cust_count = await db.monthly_summaries.count_documents({"year": year, "month": month, "summary_type": "party_customer"})
-    unique_customers = cust_count
+        import calendar
+        last_day = calendar.monthrange(year, month)[1]
+        sales_query = {'date': {'$gte': f"{year}-{month:02d}-01", '$lte': f"{year}-{month:02d}-{last_day} 23:59:59"}, 'type': {'$in': ['sale', 'sale_return']}}
+    
+    sale_txns = await db.transactions.find(sales_query, {"_id": 0, "type": 1, "net_wt": 1, "fine": 1, "total_amount": 1, "party_name": 1}).to_list(None)
+    
+    total_net_wt_sold = 0.0
+    total_fine_wt_sold = 0.0
+    total_labour_sold = 0.0
+    customer_set = set()
+    for st in sale_txns:
+        mult = 1 if st['type'] == 'sale' else -1
+        total_net_wt_sold += st.get('net_wt', 0) * mult
+        total_fine_wt_sold += st.get('fine', 0) * mult
+        total_labour_sold += (st.get('total_amount', 0) or 0) * mult
+        if st.get('party_name'):
+            customer_set.add(st['party_name'])
+    
+    unique_customers = len(customer_set)
     
     return {
         "year": year,
@@ -4443,7 +4455,7 @@ async def get_monthly_profit(
         "total_sales_value": round(total_sales, 2),
         "total_net_wt_sold": round(total_net_wt_sold, 3),
         "total_fine_wt_sold": round(total_fine_wt_sold, 3),
-        "total_labour_sold": round(total_sales, 2),
+        "total_labour_sold": round(total_labour_sold, 2),
         "unique_customers": unique_customers,
         "all_items": items,
         "total_items_analyzed": len(items)
