@@ -322,7 +322,7 @@ export default function ProfitAnalysis() {
                                       ) : dailyDetail.top_customers.map((c, i) => (
                                         <div key={i} className="flex justify-between text-[11px] py-0.5 border-b border-border/20">
                                           <span className="truncate mr-2">{i+1}. {c.party_name}</span>
-                                          <span className="font-mono text-blue-600 shrink-0">{c.total_net_wt_kg} kg ({c.sale_count} txns)</span>
+                                          <span className="font-mono text-blue-600 shrink-0">{c.silver_profit_kg}kg / {formatIndianCurrency(c.labor_profit_inr)}</span>
                                         </div>
                                       ))}
                                     </div>

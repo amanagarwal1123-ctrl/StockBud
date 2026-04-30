@@ -4422,36 +4422,18 @@ async def get_monthly_profit(
     total_labor = sum(i['labor_profit_inr'] for i in items)
     total_sales = sum(i['total_sales_value'] for i in items)
     
-    # Get sales metrics and unique customers from party_customer summaries
-    if month == 0:
-        sales_pipeline = [
-            {"$match": {"year": year, "summary_type": "party_customer"}},
-            {"$group": {
-                "_id": None,
-                "total_net_wt": {"$sum": "$total_net_wt"},
-                "total_fine_wt": {"$sum": "$total_fine_wt"},
-                "total_sales_value_party": {"$sum": "$total_sales_value"},
-                "unique_customers": {"$sum": 1},
-            }}
-        ]
-    else:
-        sales_pipeline = [
-            {"$match": {"year": year, "month": month, "summary_type": "party_customer"}},
-            {"$group": {
-                "_id": None,
-                "total_net_wt": {"$sum": "$total_net_wt"},
-                "total_fine_wt": {"$sum": "$total_fine_wt"},
-                "total_sales_value_party": {"$sum": "$total_sales_value"},
-                "unique_customers": {"$sum": 1},
-            }}
-        ]
-    sales_agg = await db.monthly_summaries.aggregate(sales_pipeline).to_list(1)
-    sales_info = sales_agg[0] if sales_agg else {}
+    # Derive sales totals from the same filtered items (only stamped, non-excluded)
+    # This ensures consistency — Total Sales = only items included in profit analysis
+    total_net_wt_sold = sum(i['net_wt_sold_kg'] for i in items) * 1000  # convert back to grams for consistency
+    # Fine wt = net_wt * avg_sale_tunch / 100 (approximate from profit items)
+    total_fine_wt_sold = sum(i['net_wt_sold_kg'] * i.get('avg_sale_tunch', 0) / 100 for i in items) * 1000
     
-    # Total labour sold = sum of all sale labour from item profits (total_sales_value is labour)
-    total_net_wt_sold = sales_info.get('total_net_wt', 0)
-    total_fine_wt_sold = sales_info.get('total_fine_wt', 0)
-    unique_customers = sales_info.get('unique_customers', 0)
+    # Unique customers from party_customer summaries
+    if month == 0:
+        cust_count = await db.monthly_summaries.count_documents({"year": year, "summary_type": "party_customer"})
+    else:
+        cust_count = await db.monthly_summaries.count_documents({"year": year, "month": month, "summary_type": "party_customer"})
+    unique_customers = cust_count
     
     return {
         "year": year,
@@ -4708,12 +4690,15 @@ async def get_daily_profit_detail(
         elif t['type'] in ['sale', 'sale_return']:
             item_data[leader]['sales'].append(td)
             party = t.get('party_name', 'Unknown')
-            if party and t['type'] == 'sale':
-                customer_data[party]['sales'].append(td)
-                customer_data[party]['total_net_wt'] += t.get('net_wt', 0)
+            if party:
+                if 'items' not in customer_data[party]:
+                    customer_data[party]['items'] = defaultdict(list)
+                customer_data[party]['items'][leader].append(td)
     
     # Compute item profits
     item_profits = []
+    # Also store per-item profit rates for customer attribution
+    item_profit_rates = {}
     for item_name, data in item_data.items():
         purchases = data['purchases']
         sales = data['sales']
@@ -4747,18 +4732,36 @@ async def get_daily_profit_detail(
         labor = sale_labour - (plpg * abs(total_sw))
         
         item_profits.append({"item_name": item_name, "silver_profit_kg": round(silver, 3), "labor_profit_inr": round(labor, 2), "net_wt_sold_kg": round(total_sw / 1000, 3)})
+        
+        # Store profit per gram for customer attribution
+        if abs(total_sw) > 0.001:
+            item_profit_rates[item_name] = {
+                'silver_per_gram': (avg_st - avg_pt) / 100 / 1000,  # kg profit per gram sold
+                'labor_per_gram': labor / abs(total_sw)  # INR profit per gram sold
+            }
     
     item_profits.sort(key=lambda x: x['silver_profit_kg'], reverse=True)
     
-    # Compute customer profits (simplified — by net weight and items sold)
+    # Compute customer profits using per-item profit rates
     customer_profits = []
     for party, cdata in customer_data.items():
-        customer_profits.append({
-            "party_name": party,
-            "total_net_wt_kg": round(cdata['total_net_wt'] / 1000, 3),
-            "sale_count": len(cdata['sales']),
-        })
-    customer_profits.sort(key=lambda x: x['total_net_wt_kg'], reverse=True)
+        cust_silver = 0.0
+        cust_labor = 0.0
+        for item_name, sales_list in cdata.get('items', {}).items():
+            rates = item_profit_rates.get(item_name)
+            if not rates:
+                continue
+            cust_net_wt = sum(s.get('net_wt', 0) for s in sales_list)
+            cust_silver += rates['silver_per_gram'] * cust_net_wt
+            cust_labor += rates['labor_per_gram'] * cust_net_wt
+        
+        if abs(cust_silver) > 0.0001 or abs(cust_labor) > 0.01:
+            customer_profits.append({
+                "party_name": party,
+                "silver_profit_kg": round(cust_silver, 3),
+                "labor_profit_inr": round(cust_labor, 2),
+            })
+    customer_profits.sort(key=lambda x: x['silver_profit_kg'], reverse=True)
     
     return {
         "date": date,
