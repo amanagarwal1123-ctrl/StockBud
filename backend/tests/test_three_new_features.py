@@ -11,7 +11,7 @@ import time
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 if not BASE_URL:
-    BASE_URL = "https://inventory-ml-1.preview.emergentagent.com"
+    BASE_URL = "https://profit-planner-16.preview.emergentagent.com"
 
 
 @pytest.fixture(scope="module")

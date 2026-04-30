@@ -4,7 +4,7 @@ import httpx
 import openpyxl
 import io
 
-API_URL = "https://inventory-ml-1.preview.emergentagent.com/api"
+API_URL = "https://profit-planner-16.preview.emergentagent.com/api"
 
 @pytest.fixture(scope="module")
 def admin_token():

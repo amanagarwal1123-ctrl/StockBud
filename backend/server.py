@@ -1194,7 +1194,6 @@ async def _process_upload(upload_id: str, meta: dict):
             })
             await auto_normalize_stamps()
             # Trigger monthly summary recomputation in background
-            import asyncio
             asyncio.create_task(recompute_monthly_summaries(db))
             meta['status'] = 'complete'
             meta['result'] = {"success": True, "count": len(transactions), "replaced_count": deleted_count,
@@ -4462,7 +4461,6 @@ async def find_orphan_transactions(
             del_result = await db.transactions.delete_many({"_id": {"$in": ids_to_delete}})
             result["deleted_duplicates"] = del_result.deleted_count
             _inv_cache.invalidate()
-            import asyncio
             asyncio.create_task(recompute_monthly_summaries(db))
     
     return result
