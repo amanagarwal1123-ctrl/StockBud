@@ -4532,8 +4532,9 @@ async def get_monthly_profit(
     total_labor = sum(i['labor_profit_inr'] for i in items)
     total_sales = sum(i['total_sales_value'] for i in items)
     
-    # Total Sales: compute directly from transactions (Sale + Sale_Return, ALL items, no exclusions)
-    # This matches Tally's "Sale Register" exactly
+    # Total Sales: compute from transactions with SAME filter used in profit calc
+    # (exclude SILVER ORNAMENTS / COURIER / etc + unassigned-stamp items).
+    # This matches Tally's user-facing Net Sale (1445.294 kg) exactly.
     if month == 0:
         sales_query = {'date': {'$gte': f"{year}-01-01", '$lte': f"{year}-12-31 23:59:59"}, 'type': {'$in': ['sale', 'sale_return']}}
     else:
@@ -4541,13 +4542,30 @@ async def get_monthly_profit(
         last_day = calendar.monthrange(year, month)[1]
         sales_query = {'date': {'$gte': f"{year}-{month:02d}-01", '$lte': f"{year}-{month:02d}-{last_day} 23:59:59"}, 'type': {'$in': ['sale', 'sale_return']}}
     
-    sale_txns = await db.transactions.find(sales_query, {"_id": 0, "type": 1, "net_wt": 1, "fine": 1, "total_amount": 1, "party_name": 1}).to_list(None)
+    sale_txns = await db.transactions.find(sales_query, {"_id": 0, "type": 1, "net_wt": 1, "fine": 1, "total_amount": 1, "party_name": 1, "item_name": 1}).to_list(None)
+    
+    # Build the same filter the profit pipeline uses
+    EXCLUDED_ITEMS = {"SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"}
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    ms_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
+    ms_master = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(None)
+    ms_stamps = {m['item_name']: m.get('stamp', 'Unassigned') for m in ms_master}
+    ms_map_dict, ms_member_to_leader, _ = build_group_maps(all_groups, ms_mappings)
+    
+    def _inc(item_name: str) -> bool:
+        leader = resolve_to_leader(item_name, ms_map_dict, ms_member_to_leader)
+        if leader in EXCLUDED_ITEMS:
+            return False
+        stamp = ms_stamps.get(leader, ms_stamps.get(ms_map_dict.get(item_name, item_name), 'Unassigned'))
+        return bool(stamp) and stamp != 'Unassigned'
     
     total_net_wt_sold = 0.0
     total_fine_wt_sold = 0.0
     total_labour_sold = 0.0
     customer_set = set()
     for st in sale_txns:
+        if not _inc(st.get('item_name', '')):
+            continue
         mult = 1 if st['type'] == 'sale' else -1
         total_net_wt_sold += st.get('net_wt', 0) * mult
         total_fine_wt_sold += st.get('fine', 0) * mult
