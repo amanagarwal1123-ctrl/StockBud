@@ -158,27 +158,22 @@ def _compute_item_profits(transactions, master_stamps, mapping_dict, member_to_l
             continue
         filtered.append(t)
     
-    # Group by leader item
+    # Group by leader item — canonicalize signs so SR always carries negative
+    # net_wt/total_amount/labor regardless of how DB stored them.
     item_txns = defaultdict(lambda: {'purchases': [], 'sales': []})
     for t in filtered:
         item_name = _resolve(t['item_name'])
+        sign = -1 if t['type'] in ('sale_return', 'purchase_return') else 1
         trans_data = {
-            'net_wt': t.get('net_wt', 0),
+            'net_wt': abs(t.get('net_wt', 0) or 0) * sign,
             'tunch': float(t.get('tunch', 0) or 0),
-            'labor': t.get('labor', 0),
-            'total_amount': t.get('total_amount', 0)
+            'labor': abs(t.get('labor', 0) or 0) * sign,
+            'total_amount': abs(t.get('total_amount', 0) or 0) * sign
         }
         if t['type'] in ['purchase', 'purchase_return']:
             item_txns[item_name]['purchases'].append(trans_data)
-        elif t['type'] == 'sale':
+        elif t['type'] in ['sale', 'sale_return']:
             item_txns[item_name]['sales'].append(trans_data)
-        elif t['type'] == 'sale_return':
-            # sale_return = reversal of a sale. Negate values so net sales = sale - sale_return.
-            ret_data = {**trans_data,
-                        'net_wt': -trans_data['net_wt'],
-                        'labor': -trans_data['labor'],
-                        'total_amount': -trans_data['total_amount']}
-            item_txns[item_name]['sales'].append(ret_data)
     
     results = {}
     for item_name, data in item_txns.items():
@@ -261,24 +256,26 @@ def _compute_party_data(transactions):
         if not party:
             continue
         
-        net_wt = t.get('net_wt', 0)
-        fine_wt = t.get('fine', 0)
-        gr_wt = t.get('gr_wt', 0)
-        amount = t.get('total_amount', 0)
+        # Canonicalize sign: returns always contribute negatively regardless of
+        # whether DB stored them as signed or unsigned.
+        is_return = t['type'] in ('sale_return', 'purchase_return')
+        sign = -1 if is_return else 1
+        net_wt = abs(t.get('net_wt', 0) or 0) * sign
+        fine_wt = abs(t.get('fine', 0) or 0) * sign
+        gr_wt = abs(t.get('gr_wt', 0) or 0) * sign
+        amount = abs(t.get('total_amount', 0) or 0) * sign
         
         if t['type'] in ['sale', 'sale_return']:
-            mult = 1 if t['type'] == 'sale' else -1
-            customers[party]['total_net_wt'] += net_wt * mult
-            customers[party]['total_fine_wt'] += fine_wt * mult
-            customers[party]['total_gr_wt'] += gr_wt * mult
-            customers[party]['total_sales_value'] += amount * mult
+            customers[party]['total_net_wt'] += net_wt
+            customers[party]['total_fine_wt'] += fine_wt
+            customers[party]['total_gr_wt'] += gr_wt
+            customers[party]['total_sales_value'] += amount
             customers[party]['transaction_count'] += 1
         elif t['type'] in ['purchase', 'purchase_return']:
-            mult = 1 if t['type'] == 'purchase' else -1
-            suppliers[party]['total_net_wt'] += net_wt * mult
-            suppliers[party]['total_fine_wt'] += fine_wt * mult
-            suppliers[party]['total_gr_wt'] += gr_wt * mult
-            suppliers[party]['total_purchases_value'] += amount * mult
+            suppliers[party]['total_net_wt'] += net_wt
+            suppliers[party]['total_fine_wt'] += fine_wt
+            suppliers[party]['total_gr_wt'] += gr_wt
+            suppliers[party]['total_purchases_value'] += amount
             suppliers[party]['transaction_count'] += 1
     
     return {'customers': dict(customers), 'suppliers': dict(suppliers)}

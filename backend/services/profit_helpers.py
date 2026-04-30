@@ -54,28 +54,22 @@ def compute_item_margins(transactions: list[dict], ledger_items: list[dict],
                 continue
         filtered.append(t)
 
-    # Group by leader
+    # Group by leader — canonicalize signs so SR rows always carry negative
+    # weight/amount/labor regardless of how DB stored them (signed or unsigned).
     item_txns = defaultdict(lambda: {"purchases": [], "sales": []})
     for t in filtered:
         leader = _resolve(t["item_name"])
+        sign = -1 if t["type"] in ("sale_return", "purchase_return") else 1
         td = {
-            "net_wt": t.get("net_wt", 0),
+            "net_wt": abs(t.get("net_wt", 0) or 0) * sign,
             "tunch": float(t.get("tunch", 0) or 0),
-            "labor": t.get("labor", 0),
-            "total_amount": t.get("total_amount", 0),
+            "labor": abs(t.get("labor", 0) or 0) * sign,
+            "total_amount": abs(t.get("total_amount", 0) or 0) * sign,
         }
         if t["type"] in ("purchase", "purchase_return"):
             item_txns[leader]["purchases"].append(td)
-        elif t["type"] == "sale":
+        elif t["type"] in ("sale", "sale_return"):
             item_txns[leader]["sales"].append(td)
-        elif t["type"] == "sale_return":
-            # sale_return = reversal of a sale, NOT a purchase.
-            # Negate net_wt / total_amount / labor so net sales = sale - sale_return.
-            ret_td = {**td,
-                      "net_wt": -td["net_wt"],
-                      "labor": -td["labor"],
-                      "total_amount": -td["total_amount"]}
-            item_txns[leader]["sales"].append(ret_td)
 
     results = []
     for item_name, data in item_txns.items():

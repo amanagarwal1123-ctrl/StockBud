@@ -4154,20 +4154,21 @@ async def get_sales_summary(
         end_date_with_time = end_date + ' 23:59:59'
         query['date'] = {'$gte': start_date, '$lte': end_date_with_time}
     
-    # Get ALL sale transactions (S and SR). SR rows are stored with positive
-    # values in DB; we apply -1 multiplier here so totals = sale - sale_return.
+    # Get ALL sale transactions (S and SR). Apply signed canonicalization so
+    # returns subtract regardless of whether DB stored them signed or unsigned.
     sales_transactions = await db.transactions.find(query, {"_id": 0}).to_list(None)
     
     # Filter out excluded items
     sales_transactions = [t for t in sales_transactions if t['item_name'] not in EXCLUDED_ITEMS]
     
-    def _mult(t):
-        return -1 if t['type'] == 'sale_return' else 1
+    def _s(t, field):
+        v = abs(t.get(field, 0) or 0)
+        return -v if t['type'] == 'sale_return' else v
     
-    total_net_wt = sum(t.get('net_wt', 0) * _mult(t) for t in sales_transactions)
-    total_fine_wt = sum(t.get('fine', 0) * _mult(t) for t in sales_transactions)
-    total_labor = sum((t.get('total_amount', 0) or t.get('labor', 0)) * _mult(t) for t in sales_transactions)
-    total_sales_value = sum(t.get('total_amount', 0) * _mult(t) for t in sales_transactions)
+    total_net_wt = sum(_s(t, 'net_wt') for t in sales_transactions)
+    total_fine_wt = sum(_s(t, 'fine') for t in sales_transactions)
+    total_labor = sum(_s(t, 'total_amount') if t.get('total_amount') else _s(t, 'labor') for t in sales_transactions)
+    total_sales_value = sum(_s(t, 'total_amount') for t in sales_transactions)
     
     return {
         "total_net_wt_kg": round(total_net_wt / 1000, 3),
@@ -4241,26 +4242,20 @@ async def calculate_profit(
         # Resolve to GROUP LEADER for consistent grouping
         item_name = _resolve_profit(raw_name)
         
+        # Canonicalize signs: returns always carry negative regardless of DB storage
+        sign = -1 if trans['type'] in ('sale_return', 'purchase_return') else 1
         trans_data = {
             'date': trans.get('date'),
-            'net_wt': trans.get('net_wt', 0),
+            'net_wt': abs(trans.get('net_wt', 0) or 0) * sign,
             'tunch': float(trans.get('tunch', 0) or 0),
-            'labor': trans.get('labor', 0),
-            'total_amount': trans.get('total_amount', 0)
+            'labor': abs(trans.get('labor', 0) or 0) * sign,
+            'total_amount': abs(trans.get('total_amount', 0) or 0) * sign
         }
         
         if trans['type'] in ['purchase', 'purchase_return']:
             item_transactions[item_name]['purchases'].append(trans_data)
-        elif trans['type'] == 'sale':
+        elif trans['type'] in ['sale', 'sale_return']:
             item_transactions[item_name]['sales'].append(trans_data)
-        elif trans['type'] == 'sale_return':
-            # sale_return = reversal of a sale (NOT a purchase).
-            # Negate net_wt / total_amount / labor so net sales = sale - sale_return.
-            ret_data = {**trans_data,
-                        'net_wt': -trans_data['net_wt'],
-                        'labor': -trans_data['labor'],
-                        'total_amount': -trans_data['total_amount']}
-            item_transactions[item_name]['sales'].append(ret_data)
     
     # Calculate profits per user's formula
     total_silver_profit_kg = 0.0  # Silver profit in KG
@@ -4342,15 +4337,13 @@ async def calculate_profit(
     # Sort by silver profit
     item_profits.sort(key=lambda x: x['silver_profit_kg'], reverse=True)
     
-    # Calculate total sales/purchases value (sale - sale_return for net sales)
-    total_sales_value = sum(
-        t['total_amount'] * (1 if t['type'] == 'sale' else -1)
-        for t in transactions if t['type'] in ['sale', 'sale_return']
-    )
-    total_purchase_value = sum(
-        t['total_amount'] * (1 if t['type'] == 'purchase' else -1)
-        for t in transactions if t['type'] in ['purchase', 'purchase_return']
-    )
+    # Calculate total sales/purchases value (signed: returns subtract regardless of DB sign)
+    def _signed(t, field):
+        v = abs(t.get(field, 0) or 0)
+        is_ret = t['type'] in ('sale_return', 'purchase_return')
+        return -v if is_ret else v
+    total_sales_value = sum(_signed(t, 'total_amount') for t in transactions if t['type'] in ['sale', 'sale_return'])
+    total_purchase_value = sum(_signed(t, 'total_amount') for t in transactions if t['type'] in ['purchase', 'purchase_return'])
     
     return {
         "silver_profit_kg": round(total_silver_profit_kg, 3),
@@ -4363,6 +4356,98 @@ async def calculate_profit(
 
 
 # ==================== MONTHLY SUMMARY ENDPOINTS ====================
+
+@api_router.get("/analytics/sale-debug-breakdown")
+async def sale_debug_breakdown(
+    year: int = Query(...),
+    month: int = Query(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """Debug breakdown of sales sums for a given month.
+    Shows raw sums for S and SR rows separately, plus the signed (canonical) net
+    used by the UI — so we can verify the 1445/1494 discrepancy transparently.
+    """
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    
+    import calendar as _cal
+    last_day = _cal.monthrange(year, month)[1]
+    q = {'date': {'$gte': f"{year}-{month:02d}-01",
+                  '$lte': f"{year}-{month:02d}-{last_day} 23:59:59"},
+         'type': {'$in': ['sale', 'sale_return']}}
+    txns = await db.transactions.find(q, {"_id": 0, "type": 1, "net_wt": 1,
+                                          "fine": 1, "total_amount": 1,
+                                          "item_name": 1}).to_list(None)
+    
+    # Build the SAME filter as /analytics/monthly-profit (excluded + unassigned)
+    EXCLUDED = {"SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"}
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    m_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
+    m_master = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(None)
+    m_stamps = {m['item_name']: m.get('stamp', 'Unassigned') for m in m_master}
+    m_map, m_m2l, _ = build_group_maps(all_groups, m_mappings)
+    
+    def _inc(name: str) -> bool:
+        leader = resolve_to_leader(name, m_map, m_m2l)
+        if leader in EXCLUDED:
+            return False
+        stamp = m_stamps.get(leader, m_stamps.get(m_map.get(name, name), 'Unassigned'))
+        return bool(stamp) and stamp != 'Unassigned'
+    
+    def _raw(t, f):
+        return t.get(f, 0) or 0
+    
+    s = [t for t in txns if t['type'] == 'sale']
+    sr = [t for t in txns if t['type'] == 'sale_return']
+    
+    sale_raw_sum_g = sum(_raw(t, 'net_wt') for t in s)
+    sale_return_raw_sum_g = sum(_raw(t, 'net_wt') for t in sr)
+    sale_return_abs_sum_g = sum(abs(_raw(t, 'net_wt')) for t in sr)
+    
+    # Signed canonical: S always + ; SR always -
+    def _signed(t, f):
+        v = abs(_raw(t, f))
+        return -v if t['type'] == 'sale_return' else v
+    
+    signed_net_total_g = sum(_signed(t, 'net_wt') for t in txns)
+    displayed_filtered_g = sum(_signed(t, 'net_wt') for t in txns if _inc(t.get('item_name', '')))
+    
+    # Also compute how many rows the filter drops
+    dropped = [t for t in txns if not _inc(t.get('item_name', ''))]
+    dropped_sale_g = sum(_signed(t, 'net_wt') for t in dropped)
+    
+    return {
+        "year": year,
+        "month": month,
+        "counts": {
+            "sale_rows": len(s),
+            "sale_return_rows": len(sr),
+            "total_rows": len(txns),
+            "dropped_by_filter": len(dropped),
+        },
+        "raw_kg": {
+            "sale_raw_sum_kg": round(sale_raw_sum_g / 1000, 3),
+            "sale_return_raw_sum_kg": round(sale_return_raw_sum_g / 1000, 3),
+            "sale_return_abs_sum_kg": round(sale_return_abs_sum_g / 1000, 3),
+        },
+        "totals_kg": {
+            "signed_net_total_all_items_kg": round(signed_net_total_g / 1000, 3),
+            "displayed_net_total_kg": round(displayed_filtered_g / 1000, 3),
+            "dropped_by_filter_kg": round(dropped_sale_g / 1000, 3),
+        },
+        "diagnostics": {
+            "sr_storage": "SR rows are " + (
+                "stored with NEGATIVE net_wt (Excel sign preserved)"
+                if sale_return_raw_sum_g < 0 else
+                "stored with POSITIVE net_wt (sign stripped)"
+            ),
+            "double_negation_would_produce_kg": round(
+                (sale_raw_sum_g - sale_return_raw_sum_g) / 1000, 3
+            ),
+            "canonical_formula": "signed_sale_value(t, f) = abs(v) * (-1 if SR else 1)",
+        }
+    }
+
 
 @api_router.post("/analytics/recompute-summaries")
 async def trigger_recompute_summaries(
@@ -4566,10 +4651,12 @@ async def get_monthly_profit(
     for st in sale_txns:
         if not _inc(st.get('item_name', '')):
             continue
-        mult = 1 if st['type'] == 'sale' else -1
-        total_net_wt_sold += st.get('net_wt', 0) * mult
-        total_fine_wt_sold += st.get('fine', 0) * mult
-        total_labour_sold += (st.get('total_amount', 0) or 0) * mult
+        # Canonicalize: returns always subtract, whether DB stored them signed or unsigned
+        is_ret = st['type'] == 'sale_return'
+        sign = -1 if is_ret else 1
+        total_net_wt_sold += abs(st.get('net_wt', 0) or 0) * sign
+        total_fine_wt_sold += abs(st.get('fine', 0) or 0) * sign
+        total_labour_sold += abs(st.get('total_amount', 0) or 0) * sign
         if st.get('party_name'):
             customer_set.add(st['party_name'])
     
@@ -4727,8 +4814,9 @@ async def get_daily_profit(
             if not stamp or stamp == 'Unassigned':
                 continue
             
-            td = {'net_wt': t.get('net_wt', 0), 'tunch': float(t.get('tunch', 0) or 0),
-                  'labor': t.get('labor', 0), 'total_amount': t.get('total_amount', 0)}
+            sign = -1 if t['type'] in ('sale_return', 'purchase_return') else 1
+            td = {'net_wt': abs(t.get('net_wt', 0) or 0) * sign, 'tunch': float(t.get('tunch', 0) or 0),
+                  'labor': abs(t.get('labor', 0) or 0) * sign, 'total_amount': abs(t.get('total_amount', 0) or 0) * sign}
             
             if t['type'] in ['purchase', 'purchase_return']:
                 item_data[leader]['purchases'].append(td)
@@ -4736,8 +4824,7 @@ async def get_daily_profit(
                 item_data[leader]['sales'].append(td)
                 sale_count += 1
             elif t['type'] == 'sale_return':
-                ret_td = {**td, 'net_wt': -td['net_wt'], 'labor': -td['labor'], 'total_amount': -td['total_amount']}
-                item_data[leader]['sales'].append(ret_td)
+                item_data[leader]['sales'].append(td)
         
         day_silver = 0.0
         day_labor = 0.0
@@ -4823,14 +4910,13 @@ async def get_daily_profit_detail(
         if not stamp or stamp == 'Unassigned':
             continue
         
-        td = {'net_wt': t.get('net_wt', 0), 'tunch': float(t.get('tunch', 0) or 0),
-              'labor': t.get('labor', 0), 'total_amount': t.get('total_amount', 0), 'item': leader}
+        sign = -1 if t['type'] in ('sale_return', 'purchase_return') else 1
+        td = {'net_wt': abs(t.get('net_wt', 0) or 0) * sign, 'tunch': float(t.get('tunch', 0) or 0),
+              'labor': abs(t.get('labor', 0) or 0) * sign, 'total_amount': abs(t.get('total_amount', 0) or 0) * sign, 'item': leader}
         
         if t['type'] in ['purchase', 'purchase_return']:
             item_data[leader]['purchases'].append(td)
         elif t['type'] in ['sale', 'sale_return']:
-            if t['type'] == 'sale_return':
-                td = {**td, 'net_wt': -td['net_wt'], 'labor': -td['labor'], 'total_amount': -td['total_amount']}
             item_data[leader]['sales'].append(td)
             party = t.get('party_name', 'Unknown')
             if party:
