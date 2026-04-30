@@ -4375,15 +4375,14 @@ async def find_orphan_transactions(
     request: Dict,
     current_user: dict = Depends(get_current_user)
 ):
-    """Find transactions on dates NOT present in the latest upload for a date range.
-    Use this to identify ghost data from partial uploads."""
+    """Diagnose and fix data discrepancies. Finds duplicate/orphan transactions in a date range."""
     if current_user['role'] != 'admin':
         raise HTTPException(status_code=403, detail="Admin only")
     
     start_date = request.get('start_date')  # e.g. "2026-04-01"
     end_date = request.get('end_date')      # e.g. "2026-04-28"
-    file_type = request.get('file_type', 'sale')  # sale, purchase, branch_transfer
-    delete = request.get('delete', False)
+    file_type = request.get('file_type', 'sale')
+    delete_orphans = request.get('delete', False)
     
     if not start_date or not end_date:
         raise HTTPException(status_code=400, detail="start_date and end_date required")
@@ -4396,69 +4395,78 @@ async def find_orphan_transactions(
     else:
         types = ['sale', 'sale_return']
     
-    # Get all dates that have transactions in this range
+    # Get ALL sale/sale_return transactions in the range
     all_txns = await db.transactions.find(
         {"type": {"$in": types}, "date": {"$gte": start_date, "$lte": end_date + " 23:59:59"}},
-        {"_id": 0, "date": 1, "net_wt": 1, "item_name": 1, "type": 1}
+        {"_id": 1, "date": 1, "net_wt": 1, "item_name": 1, "type": 1, "batch_id": 1, "refno": 1, "party_name": 1}
     ).to_list(None)
     
-    # Find the latest batch_id for this type (from the most recent upload)
-    latest_action = await db.action_history.find_one(
-        {"action_type": {"$regex": f"upload_{file_type}"}},
-        sort=[("timestamp", -1)]
-    )
-    latest_batch = latest_action.get('data_snapshot', {}).get('batch_id') if latest_action else None
+    total_net_wt = sum(t.get('net_wt', 0) * (1 if t['type'] in ['sale', 'purchase', 'issue'] else -1) for t in all_txns)
     
-    # Get dates from latest batch
-    if latest_batch:
-        latest_txns = await db.transactions.find(
-            {"batch_id": latest_batch},
-            {"_id": 0, "date": 1}
-        ).to_list(None)
-        latest_dates = set(t['date'][:10] for t in latest_txns if t.get('date'))
-    else:
-        latest_dates = set()
+    # Group by batch_id
+    from collections import defaultdict, Counter
+    batch_groups = defaultdict(list)
+    for t in all_txns:
+        bid = t.get('batch_id', 'NO_BATCH')
+        batch_groups[bid].append(t)
     
-    # Find orphan dates (dates with transactions that weren't in the latest upload)
-    from collections import defaultdict
-    all_dates_in_range = set(t['date'][:10] for t in all_txns if t.get('date'))
-    orphan_dates = sorted(all_dates_in_range - latest_dates) if latest_dates else []
+    batch_summary = []
+    for bid, txns in sorted(batch_groups.items(), key=lambda x: -len(x[1])):
+        batch_net = sum(t.get('net_wt', 0) * (1 if t['type'] in ['sale', 'purchase', 'issue'] else -1) for t in txns)
+        dates = sorted(set(t.get('date', '')[:10] for t in txns))
+        batch_summary.append({
+            "batch_id": bid[:12] + "..." if len(bid) > 12 else bid,
+            "count": len(txns),
+            "net_wt_kg": round(batch_net / 1000, 3),
+            "date_range": f"{dates[0]} to {dates[-1]}" if dates else "?",
+            "unique_dates": len(dates)
+        })
     
-    # Summarize orphan data
-    orphan_summary = []
-    orphan_total_net_wt = 0
-    orphan_count = 0
-    for d in orphan_dates:
-        date_txns = [t for t in all_txns if t.get('date', '')[:10] == d]
-        net_wt = sum(t.get('net_wt', 0) for t in date_txns if t['type'] in ['sale', 'purchase', 'issue']) - \
-                 sum(t.get('net_wt', 0) for t in date_txns if t['type'] in ['sale_return', 'purchase_return', 'receive'])
-        orphan_summary.append({"date": d, "count": len(date_txns), "net_wt_grams": round(net_wt, 3)})
-        orphan_total_net_wt += net_wt
-        orphan_count += len(date_txns)
+    # Group by date for date-level analysis
+    date_counts = Counter(t.get('date', '')[:10] for t in all_txns)
+    
+    # Find potential duplicates (same date + item + refno + type)
+    seen = set()
+    duplicates = []
+    for t in all_txns:
+        key = (t.get('date', '')[:10], t.get('item_name', ''), t.get('refno', ''), t.get('type', ''), t.get('party_name', ''))
+        if key in seen:
+            duplicates.append({"date": key[0], "item": key[1], "refno": key[2], "type": key[3], "party": key[4], "net_wt": t.get('net_wt', 0)})
+        seen.add(key)
+    
+    dup_net_wt = sum(d['net_wt'] for d in duplicates)
     
     result = {
-        "start_date": start_date,
-        "end_date": end_date,
-        "file_type": file_type,
-        "latest_batch_id": latest_batch,
-        "latest_upload_dates": len(latest_dates),
-        "orphan_dates": orphan_summary,
-        "orphan_total_count": orphan_count,
-        "orphan_total_net_wt_kg": round(orphan_total_net_wt / 1000, 3),
+        "date_range": f"{start_date} to {end_date}",
+        "total_transactions": len(all_txns),
+        "total_net_wt_kg": round(total_net_wt / 1000, 3),
+        "batch_count": len(batch_groups),
+        "batches": batch_summary[:10],
+        "duplicate_count": len(duplicates),
+        "duplicate_net_wt_kg": round(dup_net_wt / 1000, 3),
+        "duplicates_sample": duplicates[:20],
     }
     
-    if delete and orphan_dates:
-        del_result = await db.transactions.delete_many({
-            "type": {"$in": types},
-            "date": {"$in": [d for d in orphan_dates]}
-        })
-        result["deleted"] = del_result.deleted_count
-        _inv_cache.invalidate()
-        # Recompute summaries
-        import asyncio
-        asyncio.create_task(recompute_monthly_summaries(db))
+    # If duplicates found and delete requested, remove them
+    if delete_orphans and duplicates:
+        # Keep one of each, delete extras
+        seen_for_delete = set()
+        ids_to_delete = []
+        for t in all_txns:
+            key = (t.get('date', '')[:10], t.get('item_name', ''), t.get('refno', ''), t.get('type', ''), t.get('party_name', ''))
+            if key in seen_for_delete:
+                ids_to_delete.append(t['_id'])
+            seen_for_delete.add(key)
+        
+        if ids_to_delete:
+            del_result = await db.transactions.delete_many({"_id": {"$in": ids_to_delete}})
+            result["deleted_duplicates"] = del_result.deleted_count
+            _inv_cache.invalidate()
+            import asyncio
+            asyncio.create_task(recompute_monthly_summaries(db))
     
     return result
+
 
 
 
