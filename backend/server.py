@@ -1163,9 +1163,13 @@ async def _process_upload(upload_id: str, meta: dict):
             # Only delete dates that exist in the NEW file (prevents losing data for dates not in the file)
             new_dates = sorted(set(r.get('date', '') for r in records if r.get('date')))
             if new_dates:
+                # Delete the FULL RANGE between min and max date in file (removes ghost data from holidays/off-days)
+                min_date = new_dates[0]
+                max_date = new_dates[-1]
+                
                 # Backup replaced records for undo
                 old_records = await db.transactions.find(
-                    {"type": {"$in": delete_types}, "date": {"$in": new_dates}}, {"_id": 0}
+                    {"type": {"$in": delete_types}, "date": {"$gte": min_date, "$lte": max_date + " 23:59:59"}}, {"_id": 0}
                 ).to_list(None)
                 if old_records:
                     await db.replaced_records.insert_one({
@@ -1175,7 +1179,7 @@ async def _process_upload(upload_id: str, meta: dict):
                     })
                 delete_result = await db.transactions.delete_many({
                     "type": {"$in": delete_types},
-                    "date": {"$in": new_dates}
+                    "date": {"$gte": min_date, "$lte": max_date + " 23:59:59"}
                 })
                 deleted_count = delete_result.deleted_count
 
@@ -4364,6 +4368,98 @@ async def trigger_recompute_summaries(
     year = request.get('year')
     result = await recompute_monthly_summaries(db, year)
     return {"success": True, **result}
+
+
+@api_router.post("/analytics/find-orphan-transactions")
+async def find_orphan_transactions(
+    request: Dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Find transactions on dates NOT present in the latest upload for a date range.
+    Use this to identify ghost data from partial uploads."""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    
+    start_date = request.get('start_date')  # e.g. "2026-04-01"
+    end_date = request.get('end_date')      # e.g. "2026-04-28"
+    file_type = request.get('file_type', 'sale')  # sale, purchase, branch_transfer
+    delete = request.get('delete', False)
+    
+    if not start_date or not end_date:
+        raise HTTPException(status_code=400, detail="start_date and end_date required")
+    
+    # Map file_type to transaction types
+    if file_type == 'branch_transfer':
+        types = ['issue', 'receive']
+    elif file_type == 'purchase':
+        types = ['purchase', 'purchase_return']
+    else:
+        types = ['sale', 'sale_return']
+    
+    # Get all dates that have transactions in this range
+    all_txns = await db.transactions.find(
+        {"type": {"$in": types}, "date": {"$gte": start_date, "$lte": end_date + " 23:59:59"}},
+        {"_id": 0, "date": 1, "net_wt": 1, "item_name": 1, "type": 1}
+    ).to_list(None)
+    
+    # Find the latest batch_id for this type (from the most recent upload)
+    latest_action = await db.action_history.find_one(
+        {"action_type": {"$regex": f"upload_{file_type}"}},
+        sort=[("timestamp", -1)]
+    )
+    latest_batch = latest_action.get('data_snapshot', {}).get('batch_id') if latest_action else None
+    
+    # Get dates from latest batch
+    if latest_batch:
+        latest_txns = await db.transactions.find(
+            {"batch_id": latest_batch},
+            {"_id": 0, "date": 1}
+        ).to_list(None)
+        latest_dates = set(t['date'][:10] for t in latest_txns if t.get('date'))
+    else:
+        latest_dates = set()
+    
+    # Find orphan dates (dates with transactions that weren't in the latest upload)
+    from collections import defaultdict
+    all_dates_in_range = set(t['date'][:10] for t in all_txns if t.get('date'))
+    orphan_dates = sorted(all_dates_in_range - latest_dates) if latest_dates else []
+    
+    # Summarize orphan data
+    orphan_summary = []
+    orphan_total_net_wt = 0
+    orphan_count = 0
+    for d in orphan_dates:
+        date_txns = [t for t in all_txns if t.get('date', '')[:10] == d]
+        net_wt = sum(t.get('net_wt', 0) for t in date_txns if t['type'] in ['sale', 'purchase', 'issue']) - \
+                 sum(t.get('net_wt', 0) for t in date_txns if t['type'] in ['sale_return', 'purchase_return', 'receive'])
+        orphan_summary.append({"date": d, "count": len(date_txns), "net_wt_grams": round(net_wt, 3)})
+        orphan_total_net_wt += net_wt
+        orphan_count += len(date_txns)
+    
+    result = {
+        "start_date": start_date,
+        "end_date": end_date,
+        "file_type": file_type,
+        "latest_batch_id": latest_batch,
+        "latest_upload_dates": len(latest_dates),
+        "orphan_dates": orphan_summary,
+        "orphan_total_count": orphan_count,
+        "orphan_total_net_wt_kg": round(orphan_total_net_wt / 1000, 3),
+    }
+    
+    if delete and orphan_dates:
+        del_result = await db.transactions.delete_many({
+            "type": {"$in": types},
+            "date": {"$in": [d for d in orphan_dates]}
+        })
+        result["deleted"] = del_result.deleted_count
+        _inv_cache.invalidate()
+        # Recompute summaries
+        import asyncio
+        asyncio.create_task(recompute_monthly_summaries(db))
+    
+    return result
+
 
 
 @api_router.get("/analytics/monthly-profit")
