@@ -8,6 +8,7 @@ import UploadManager from './pages/UploadManager';
 import CurrentStock from './pages/CurrentStock';
 import PartyAnalytics from './pages/PartyAnalytics';
 import ProfitAnalysis from './pages/ProfitAnalysis';
+import SalesReport from './pages/SalesReport';
 import History from './pages/History';
 import ItemDetail from './pages/ItemDetail';
 import StampManagement from './pages/StampManagement';
@@ -86,6 +87,7 @@ function App() {
                       <Route path="/purchase-rates" element={<PurchaseRates />} />
                       <Route path="/party-analytics" element={<PartyAnalytics />} />
                       <Route path="/profit" element={<ProfitAnalysis />} />
+                      <Route path="/sales-report" element={<SalesReport />} />
                       <Route path="/history" element={<History />} />
                       <Route path="/stamps" element={<StampManagement />} />
                       <Route path="/users" element={<UserManagement />} />

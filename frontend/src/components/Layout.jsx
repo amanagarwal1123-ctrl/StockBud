@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Upload, Package, Users, TrendingUp, History, RotateCcw, Power, Tag, Scale, Link2, GitBranch, Receipt, LogOut, User, CheckCircle2, Activity, Box, BarChart3, ShoppingCart, Layers, UserCog, ChevronDown, ChevronRight, FileUp, Combine } from 'lucide-react';
+import { LayoutDashboard, Upload, Package, Users, TrendingUp, History, RotateCcw, Power, Tag, Scale, Link2, GitBranch, Receipt, LogOut, User, CheckCircle2, Activity, Box, BarChart3, ShoppingCart, Layers, UserCog, ChevronDown, ChevronRight, FileUp, Combine, FileText } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -107,6 +107,7 @@ export default function Layout({ children }) {
         { name: 'Orders', href: '/orders', icon: ShoppingCart, roles: ['admin', 'executive'] },
         { name: 'Party Analytics', href: '/party-analytics', icon: Users, roles: ['admin'] },
         { name: 'Profit Analysis', href: '/profit', icon: TrendingUp, roles: ['admin'] },
+        { name: 'Sales Report', href: '/sales-report', icon: FileText, roles: ['admin'] },
       ]
     },
     {

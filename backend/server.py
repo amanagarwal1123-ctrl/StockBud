@@ -4462,6 +4462,191 @@ async def trigger_recompute_summaries(
     return {"success": True, **result}
 
 
+@api_router.get("/analytics/sales-report")
+async def get_sales_report(
+    year: Optional[int] = Query(None),
+    month: int = Query(0),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    current_user: dict = Depends(get_current_user)
+):
+    """Stamp-wise and item-wise sales report for a period.
+    
+    Period selection:
+      * Custom range: pass start_date + end_date (YYYY-MM-DD)
+      * Year + Month: pass year, plus month (0 = full year, 1..12 = specific month)
+    
+    Uses signed_sale_value canonical formula:
+      signed = abs(value) * (-1 if sale_return else 1)
+    so totals work regardless of how SR rows were stored in DB.
+    
+    Same exclusion filter as Profit Analysis (EXCLUDED_ITEMS), but Unassigned-
+    stamp items ARE included under an "Unassigned" stamp group — the UI uses
+    per-stamp checkboxes to include/exclude from totals.
+    """
+    # Determine date range
+    if start_date and end_date:
+        sd, ed = start_date, end_date
+    elif year is not None:
+        import calendar as _cal
+        if month == 0:
+            sd = f"{year}-01-01"
+            ed = f"{year}-12-31"
+        else:
+            last_day = _cal.monthrange(year, month)[1]
+            sd = f"{year}-{month:02d}-01"
+            ed = f"{year}-{month:02d}-{last_day:02d}"
+    else:
+        raise HTTPException(status_code=400, detail="Provide either start_date+end_date or year[+month]")
+    
+    # Pull sales + sale_returns in range
+    txns = await db.transactions.find({
+        'date': {'$gte': sd, '$lte': ed + ' 23:59:59'},
+        'type': {'$in': ['sale', 'sale_return']}
+    }, {"_id": 0, "type": 1, "item_name": 1, "net_wt": 1, "gr_wt": 1,
+        "fine": 1, "tunch": 1, "total_amount": 1, "party_name": 1, "date": 1}).to_list(None)
+    
+    # Build resolution context
+    EXCLUDED = {"SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"}
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
+    master_list = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(None)
+    stamp_lookup = {m['item_name']: (m.get('stamp') or 'Unassigned') for m in master_list}
+    map_dict, m2l, _ = build_group_maps(all_groups, mappings)
+    
+    def _resolve(name: str) -> str:
+        return resolve_to_leader(name, map_dict, m2l)
+    
+    def _stamp_for(name: str) -> str:
+        leader = _resolve(name)
+        return stamp_lookup.get(leader, stamp_lookup.get(map_dict.get(name, name), 'Unassigned'))
+    
+    # Aggregate
+    from collections import defaultdict as _dd
+    by_stamp = _dd(lambda: {'gross_wt_g': 0.0, 'net_wt_g': 0.0, 'fine_g': 0.0,
+                            'total_amount': 0.0, 'tunch_num': 0.0, 'abs_net_g': 0.0,
+                            'transactions': 0, 'items': set(), 'sale_kg_g': 0.0,
+                            'return_kg_g': 0.0, 'customers': set()})
+    by_item = _dd(lambda: {'stamp': '', 'gross_wt_g': 0.0, 'net_wt_g': 0.0, 'fine_g': 0.0,
+                           'total_amount': 0.0, 'tunch_num': 0.0, 'abs_net_g': 0.0,
+                           'transactions': 0, 'sale_kg_g': 0.0, 'return_kg_g': 0.0})
+    
+    excluded_kg_g = 0.0
+    excluded_count = 0
+    
+    for t in txns:
+        item_raw = t.get('item_name', '')
+        leader = _resolve(item_raw)
+        if leader in EXCLUDED:
+            excluded_kg_g += abs(t.get('net_wt', 0) or 0) * (-1 if t['type'] == 'sale_return' else 1)
+            excluded_count += 1
+            continue
+        stamp = _stamp_for(item_raw) or 'Unassigned'
+        
+        is_ret = t['type'] == 'sale_return'
+        sign = -1 if is_ret else 1
+        abs_net = abs(t.get('net_wt', 0) or 0)
+        gw = abs(t.get('gr_wt', 0) or 0) * sign
+        nw = abs_net * sign
+        fw = abs(t.get('fine', 0) or 0) * sign
+        amt = abs(t.get('total_amount', 0) or 0) * sign
+        tunch_val = float(t.get('tunch', 0) or 0)
+        
+        # by stamp
+        s = by_stamp[stamp]
+        s['gross_wt_g'] += gw
+        s['net_wt_g'] += nw
+        s['fine_g'] += fw
+        s['total_amount'] += amt
+        s['tunch_num'] += tunch_val * abs_net
+        s['abs_net_g'] += abs_net
+        s['transactions'] += 1
+        s['items'].add(leader)
+        if t.get('party_name'):
+            s['customers'].add(t['party_name'])
+        if is_ret:
+            s['return_kg_g'] += abs_net
+        else:
+            s['sale_kg_g'] += abs_net
+        
+        # by item (leader-level)
+        i = by_item[leader]
+        i['stamp'] = stamp
+        i['gross_wt_g'] += gw
+        i['net_wt_g'] += nw
+        i['fine_g'] += fw
+        i['total_amount'] += amt
+        i['tunch_num'] += tunch_val * abs_net
+        i['abs_net_g'] += abs_net
+        i['transactions'] += 1
+        if is_ret:
+            i['return_kg_g'] += abs_net
+        else:
+            i['sale_kg_g'] += abs_net
+    
+    def _avg_tunch(d):
+        return (d['tunch_num'] / d['abs_net_g']) if d['abs_net_g'] > 0 else 0
+    
+    def _avg_labour_per_kg(d):
+        # avg labour per kg of sold weight (using net absolute weight)
+        abs_kg = d['abs_net_g'] / 1000
+        return (d['total_amount'] / abs_kg) if abs_kg > 0 else 0
+    
+    stamps_rows = []
+    for stamp_name, d in by_stamp.items():
+        stamps_rows.append({
+            'stamp': stamp_name,
+            'gross_wt_kg': round(d['gross_wt_g'] / 1000, 3),
+            'net_wt_kg': round(d['net_wt_g'] / 1000, 3),
+            'avg_tunch': round(_avg_tunch(d), 2),
+            'avg_labour_per_kg': round(_avg_labour_per_kg(d), 2),
+            'total_fine_kg': round(d['fine_g'] / 1000, 3),
+            'total_labour_inr': round(d['total_amount'], 2),
+            'sale_kg': round(d['sale_kg_g'] / 1000, 3),
+            'return_kg': round(d['return_kg_g'] / 1000, 3),
+            'transactions': d['transactions'],
+            'items_count': len(d['items']),
+            'customers_count': len(d['customers']),
+        })
+    stamps_rows.sort(key=lambda r: r['net_wt_kg'], reverse=True)
+    
+    items_rows = []
+    for item_name, d in by_item.items():
+        items_rows.append({
+            'item_name': item_name,
+            'stamp': d['stamp'],
+            'gross_wt_kg': round(d['gross_wt_g'] / 1000, 3),
+            'net_wt_kg': round(d['net_wt_g'] / 1000, 3),
+            'avg_tunch': round(_avg_tunch(d), 2),
+            'avg_labour_per_kg': round(_avg_labour_per_kg(d), 2),
+            'total_fine_kg': round(d['fine_g'] / 1000, 3),
+            'total_labour_inr': round(d['total_amount'], 2),
+            'sale_kg': round(d['sale_kg_g'] / 1000, 3),
+            'return_kg': round(d['return_kg_g'] / 1000, 3),
+            'transactions': d['transactions'],
+        })
+    items_rows.sort(key=lambda r: r['net_wt_kg'], reverse=True)
+    
+    # Default totals (ALL stamps included). Frontend will recompute when user
+    # toggles per-stamp checkboxes.
+    default_totals = {
+        'gross_wt_kg': round(sum(r['gross_wt_kg'] for r in stamps_rows), 3),
+        'net_wt_kg': round(sum(r['net_wt_kg'] for r in stamps_rows), 3),
+        'total_fine_kg': round(sum(r['total_fine_kg'] for r in stamps_rows), 3),
+        'total_labour_inr': round(sum(r['total_labour_inr'] for r in stamps_rows), 2),
+        'transactions': sum(r['transactions'] for r in stamps_rows),
+    }
+    
+    return {
+        'period': {'start_date': sd, 'end_date': ed, 'year': year, 'month': month},
+        'by_stamp': stamps_rows,
+        'by_item': items_rows,
+        'totals': default_totals,
+        'excluded_items_kg': round(excluded_kg_g / 1000, 3),
+        'excluded_rows': excluded_count,
+    }
+
+
 @api_router.post("/analytics/find-orphan-transactions")
 async def find_orphan_transactions(
     request: Dict,

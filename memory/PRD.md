@@ -110,6 +110,17 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Root cause**: Frontend `handleApproval()` received `verificationDate` but did not send it to the backend. Backend `approve_stamp` queried only by stamp name + status, sorted by `entry_date DESC` — picking the most recent entry regardless of which one the user clicked.
 - **Fix**: Frontend now sends `verification_date` in the POST payload. Backend uses it as an additional filter to target the correct entry. Includes fallback logic: if no entry found with verification_date, tries pending-only, then any pending/approved.
 
+## Sales Report Page (Apr 30, 2026)
+- **New page**: `/sales-report` under "Analytics & ML" sidebar group (FileText icon)
+- **Period selection**: Year + Month tabs (Jan-Dec + ALL) OR Custom Date Range tabs (default: current month)
+- **Two views** (toggle tabs): "By Stamp" and "By Item"
+- **Columns** (per row): Gross Wt, Net Wt, Avg Tunch, Avg Labour ₹/kg, Total Fine, Total Labour, Sale (green), Return (red), Txns, Items count (stamp view), Customers count
+- **Per-stamp inclusion checkbox**: each stamp row has a checkbox to include/exclude from header totals; totals recompute live in-browser. Items inherit from their stamp.
+- **Filter parity with Profit Analysis**: same `EXCLUDED_ITEMS` set (SILVER ORNAMENTS, COURIER, EMERALD MURTI, FRAME NEW, NAJARIA) dropped automatically; Unassigned-stamp items shown under "Unassigned" stamp group with a "no stamp assigned" badge
+- **CSV Export**: per-view export (by_stamp or by_item) with all visible columns + Included column for stamp view
+- **Backend**: new `GET /api/analytics/sales-report?year=&month=` OR `?start_date=&end_date=` (admin only). Uses canonical `signed_sale_value` formula so SR rows always subtract regardless of DB sign storage.
+- **Tests**: `tests/test_sales_report_endpoint.py` (6 endpoint tests covering year+month mode, custom range, columns, missing params, auth, canonical signed math). 60 total backend tests passing.
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document
