@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { FileText, Calendar, Download, Search, ChevronDown, ChevronUp } from 'lucide-react';
+import { FileText, Calendar, Download, Search, ChevronDown, ChevronRight } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -120,12 +120,16 @@ export default function SalesReport() {
     };
   }, [includedStamps]);
 
-  // Search filter
+  // Natural-sort comparator (Stamp 1, Stamp 2, Stamp 10 ... not Stamp 1, Stamp 10, Stamp 2)
+  const naturalCompare = (a, b) =>
+    (a || '').localeCompare(b || '', undefined, { numeric: true, sensitivity: 'base' });
+
+  // Search filter (stamps in natural order by default)
   const filteredStamps = useMemo(() => {
     if (!data) return [];
     const q = search.trim().toLowerCase();
-    if (!q) return data.by_stamp || [];
-    return (data.by_stamp || []).filter((s) => s.stamp.toLowerCase().includes(q));
+    const base = q ? (data.by_stamp || []).filter((s) => s.stamp.toLowerCase().includes(q)) : (data.by_stamp || []);
+    return [...base].sort((a, b) => naturalCompare(a.stamp, b.stamp));
   }, [data, search]);
 
   const filteredItems = useMemo(() => {
@@ -138,9 +142,33 @@ export default function SalesReport() {
   }, [data, search]);
 
   const { sortedData: sortedStamps, requestSort: sortStamps, sortConfig: stampSort } =
-    useSortableData(filteredStamps, 'net_wt_kg', 'desc');
+    useSortableData(filteredStamps, null, 'asc'); // default: preserve natural order
   const { sortedData: sortedItems, requestSort: sortItems, sortConfig: itemSort } =
     useSortableData(filteredItems, 'net_wt_kg', 'desc');
+
+  // Group items by stamp for expandable rows
+  const itemsByStamp = useMemo(() => {
+    const map = {};
+    (data?.by_item || []).forEach((it) => {
+      if (!map[it.stamp]) map[it.stamp] = [];
+      map[it.stamp].push(it);
+    });
+    // sort items within each stamp by net_wt_kg desc
+    Object.keys(map).forEach((k) => {
+      map[k].sort((a, b) => (b.net_wt_kg || 0) - (a.net_wt_kg || 0));
+    });
+    return map;
+  }, [data]);
+
+  const [expandedStamps, setExpandedStamps] = useState(new Set());
+  const toggleExpand = (stampName) => {
+    setExpandedStamps((prev) => {
+      const next = new Set(prev);
+      if (next.has(stampName)) next.delete(stampName);
+      else next.add(stampName);
+      return next;
+    });
+  };
 
   const handleExport = () => {
     if (!data) return;
@@ -310,8 +338,8 @@ export default function SalesReport() {
 
       {/* Totals */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+        <TotalCard label="Gross Wt" value={`${totals.gross_wt_kg.toFixed(3)} kg`} data-testid="total-gross" />
         <TotalCard label="Net Wt" value={`${totals.net_wt_kg.toFixed(3)} kg`} data-testid="total-net" />
-        <TotalCard label="Gross Wt" value={`${totals.gross_wt_kg.toFixed(3)} kg`} />
         <TotalCard label="Total Fine" value={`${totals.total_fine_kg.toFixed(3)} kg`} />
         <TotalCard label="Total Labour" value={formatIndianCurrency(totals.total_labour_inr)} />
         <TotalCard label="Avg Tunch" value={`${(totals.avg_tunch || 0).toFixed(2)} %`} />
@@ -359,6 +387,9 @@ export default function SalesReport() {
               onToggleStamp={toggleStamp}
               sortConfig={stampSort}
               onSort={sortStamps}
+              itemsByStamp={itemsByStamp}
+              expandedStamps={expandedStamps}
+              onToggleExpand={toggleExpand}
             />
           ) : (
             <ItemTable
@@ -387,13 +418,14 @@ function TotalCard({ label, value }) {
   );
 }
 
-function StampTable({ rows, excludedStamps, onToggleStamp, sortConfig, onSort }) {
+function StampTable({ rows, excludedStamps, onToggleStamp, sortConfig, onSort, itemsByStamp, expandedStamps, onToggleExpand }) {
   if (!rows || rows.length === 0) return <div className="text-muted-foreground text-sm">No data</div>;
   return (
     <div className="overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead className="w-[40px]"></TableHead>
             <TableHead className="w-[40px]"></TableHead>
             <SortableHeader label="Stamp" sortKey="stamp" sortConfig={sortConfig} onSort={onSort} />
             <SortableHeader label="Gross Wt (kg)" sortKey="gross_wt_kg" sortConfig={sortConfig} onSort={onSort} className="text-right" />
@@ -411,46 +443,93 @@ function StampTable({ rows, excludedStamps, onToggleStamp, sortConfig, onSort })
         <TableBody>
           {rows.map((r) => {
             const included = !excludedStamps.has(r.stamp);
+            const isExpanded = expandedStamps.has(r.stamp);
+            const items = itemsByStamp[r.stamp] || [];
             return (
-              <TableRow
-                key={r.stamp}
-                className={!included ? 'opacity-50' : ''}
-                data-testid={`stamp-row-${r.stamp}`}
-              >
-                <TableCell className="w-[40px]">
-                  <Checkbox
-                    checked={included}
-                    onCheckedChange={(v) => onToggleStamp(r.stamp, !!v)}
-                    data-testid={`stamp-toggle-${r.stamp}`}
-                  />
-                </TableCell>
-                <TableCell className="font-medium">
-                  {r.stamp}
-                  {r.stamp === 'Unassigned' && (
-                    <Badge variant="outline" className="ml-2 text-[10px]">
-                      no stamp assigned
-                    </Badge>
-                  )}
-                </TableCell>
-                <TableCell className="text-right font-mono">{r.gross_wt_kg.toFixed(3)}</TableCell>
-                <TableCell className="text-right font-mono font-bold">{r.net_wt_kg.toFixed(3)}</TableCell>
-                <TableCell className="text-right font-mono">{r.avg_tunch.toFixed(2)}</TableCell>
-                <TableCell className="text-right font-mono">
-                  {r.avg_labour_per_kg.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                </TableCell>
-                <TableCell className="text-right font-mono">{r.total_fine_kg.toFixed(3)}</TableCell>
-                <TableCell className="text-right font-mono">{formatIndianCurrency(r.total_labour_inr)}</TableCell>
-                <TableCell className="text-right font-mono text-green-600">{r.sale_kg.toFixed(3)}</TableCell>
-                <TableCell className="text-right font-mono text-red-600">{r.return_kg.toFixed(3)}</TableCell>
-                <TableCell className="text-right font-mono">{r.transactions}</TableCell>
-                <TableCell className="text-right font-mono">{r.items_count}</TableCell>
-              </TableRow>
+              <FragmentRow key={r.stamp}>
+                <TableRow
+                  className={!included ? 'opacity-50' : ''}
+                  data-testid={`stamp-row-${r.stamp}`}
+                >
+                  <TableCell className="w-[40px]">
+                    <button
+                      onClick={() => onToggleExpand(r.stamp)}
+                      className="p-1 hover:bg-muted rounded transition-colors"
+                      aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                      data-testid={`stamp-expand-${r.stamp}`}
+                    >
+                      {isExpanded ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      )}
+                    </button>
+                  </TableCell>
+                  <TableCell className="w-[40px]">
+                    <Checkbox
+                      checked={included}
+                      onCheckedChange={(v) => onToggleStamp(r.stamp, !!v)}
+                      data-testid={`stamp-toggle-${r.stamp}`}
+                    />
+                  </TableCell>
+                  <TableCell className="font-medium">
+                    {r.stamp}
+                    {r.stamp === 'Unassigned' && (
+                      <Badge variant="outline" className="ml-2 text-[10px]">
+                        no stamp assigned
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right font-mono">{r.gross_wt_kg.toFixed(3)}</TableCell>
+                  <TableCell className="text-right font-mono font-bold">{r.net_wt_kg.toFixed(3)}</TableCell>
+                  <TableCell className="text-right font-mono">{r.avg_tunch.toFixed(2)}</TableCell>
+                  <TableCell className="text-right font-mono">
+                    {r.avg_labour_per_kg.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                  </TableCell>
+                  <TableCell className="text-right font-mono">{r.total_fine_kg.toFixed(3)}</TableCell>
+                  <TableCell className="text-right font-mono">{formatIndianCurrency(r.total_labour_inr)}</TableCell>
+                  <TableCell className="text-right font-mono text-green-600">{r.sale_kg.toFixed(3)}</TableCell>
+                  <TableCell className="text-right font-mono text-red-600">{r.return_kg.toFixed(3)}</TableCell>
+                  <TableCell className="text-right font-mono">{r.transactions}</TableCell>
+                  <TableCell className="text-right font-mono">{r.items_count}</TableCell>
+                </TableRow>
+                {isExpanded && items.map((it) => (
+                  <TableRow
+                    key={`${r.stamp}__${it.item_name}`}
+                    className={`bg-muted/30 ${!included ? 'opacity-50' : ''}`}
+                    data-testid={`item-sub-row-${it.item_name}`}
+                  >
+                    <TableCell className="w-[40px]"></TableCell>
+                    <TableCell className="w-[40px]"></TableCell>
+                    <TableCell className="pl-8 text-sm text-muted-foreground">↳ {it.item_name}</TableCell>
+                    <TableCell className="text-right font-mono text-sm">{it.gross_wt_kg.toFixed(3)}</TableCell>
+                    <TableCell className="text-right font-mono text-sm">{it.net_wt_kg.toFixed(3)}</TableCell>
+                    <TableCell className="text-right font-mono text-sm">{it.avg_tunch.toFixed(2)}</TableCell>
+                    <TableCell className="text-right font-mono text-sm">
+                      {it.avg_labour_per_kg.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-sm">{it.total_fine_kg.toFixed(3)}</TableCell>
+                    <TableCell className="text-right font-mono text-sm">{formatIndianCurrency(it.total_labour_inr)}</TableCell>
+                    <TableCell className="text-right font-mono text-sm text-green-600">{it.sale_kg.toFixed(3)}</TableCell>
+                    <TableCell className="text-right font-mono text-sm text-red-600">{it.return_kg.toFixed(3)}</TableCell>
+                    <TableCell className="text-right font-mono text-sm">{it.transactions}</TableCell>
+                    <TableCell></TableCell>
+                  </TableRow>
+                ))}
+              </FragmentRow>
             );
           })}
         </TableBody>
       </Table>
     </div>
   );
+}
+
+// Helper: render multiple TableRow children inline (we cannot use a Fragment
+// directly inside <TableBody> in shadcn's Table for the key prop case, so we
+// just inline render via a function that returns a fragment).
+function FragmentRow({ children }) {
+  return <>{children}</>;
 }
 
 function ItemTable({ rows, excludedStamps, sortConfig, onSort }) {
