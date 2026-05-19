@@ -1,18 +1,17 @@
-<analysis>UnboundLocalErrorasynciomonthly_summary_service.pyUnboundLocalError: cannot access local variable 'asyncio'import asyncio/api/upload/initchunkfinalizeimport asyncio_process_uploadclean_duplicate_transactionsserver.pyUnboundLocalErrorrecompute_monthly_summariesserver.pyserver.py/routes/analytics.py/routes/stock.py/routes/uploads.pyverificationDateStampManagement.jsxupsert=Truemonthly_summary_service.pyUnboundLocalError
+<analysis>signed_sale_valuesigned_sale_value/sales-reportserver.pyserver.py/routes/analytics.py/routes/stock.py/routes/uploads.pysale_returnsigned_sale_valueEXCLUDED_ITEMSlocaleComparenumeric: true
 /app
 ├── backend/
-│   ├── server.py (Critically bloated, ~6900 lines)
+│   ├── server.py (Critically bloated, ~7000 lines. Has new Sales Report endpoints & signed_sale_value helpers)
 │   ├── services/
 │   │   ├── group_utils.py
-│   │   ├── profit_helpers.py
-│   │   └── monthly_summary_service.py (NEW - Pre-computes Option B analytics)
+│   │   ├── profit_helpers.py (Updated to use signed_sale_value)
+│   │   └── monthly_summary_service.py
 │   └── tests/
+│       ├── test_sale_return_signed_sums.py (NEW)
+│       └── test_sales_report_endpoint.py (NEW)
 └── frontend/
     └── src/
-        ├── pages/
-        │   ├── Dashboard.jsx (Added Year stats)
-        │   ├── ProfitAnalysis.jsx (Added Month selector & Daily drill-down)
-        │   ├── PartyAnalytics.jsx (Added Month selector & Charts)
-        │   ├── ManagerApprovals.jsx (Fixed verification payload)
-        │   └── StampManagement.jsx (Fixed grouped item mapping)
-monthly_summariesasynciotransactionsphysical_stockmaster_itemsmonthly_summariesstamp_assignments/app/backend/server.pyasyncio/app/backend/services/monthly_summary_service.py/app/frontend/src/pages/Dashboard.jsx/app/frontend/src/pages/ProfitAnalysis.jsx/app/frontend/src/pages/PartyAnalytics.jsx/app/frontend/src/pages/StampManagement.jsxManagerApprovals.jsxbackend/server.py/api/upload/init/api/upload/chunk/{id}/api/upload/finalize/{id}/api/analytics/monthly-profit/api/analytics/monthly-party/api/analytics/daily-profit-detailUnboundLocalErrorimport asyncio_process_uploadmonthly_summaries/app/memory/PRD.mdUnboundLocalErrorasyncioimport asyncioadminadmin123TEST_EXECexec123import asyncioserver.py</analysis>
+        ├── App.js & Layout.jsx (Updated with Sales Report routing)
+        └── pages/
+            └── SalesReport.jsx (NEW - Features natural sort and expandable rows)
+sale_returnsigned_sale_value(t, field)abs(v) * (-1 if type == 'sale_return' else 1)String.prototype.localeCompare(..., { numeric: true })transactionsphysical_stockmaster_itemsmonthly_summariesstamp_assignments/app/backend/server.pysigned_sale_value/app/backend/services/profit_helpers.py/app/backend/services/monthly_summary_service.py/app/frontend/src/pages/SalesReport.jsx/app/backend/tests/test_sale_return_signed_sums.py/app/backend/tests/test_sales_report_endpoint.pybackend/server.py/routes/api/analytics/sales-report/api/analytics/sale-debug-breakdown/api/analytics/monthly-profit/api/upload/initchunkfinalizesale_returnsigned_sale_value(t, field)EXCLUDED_ITEMSUnassignedhttps://stock-tracker-722.../app/memory/PRD.md/app/backend/tests/test_sale_return_signed_sums.py/app/backend/tests/test_sales_report_endpoint.pysale_return/app/backend/tests/test_sale_return_signed_sums.py/app/backend/tests/test_sales_report_endpoint.pyadminadmin123TEST_EXECexec123</analysis>
