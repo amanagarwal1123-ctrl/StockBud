@@ -127,6 +127,18 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - P2: "P" Suffix Item Mapping — auto-detect/resolve branch transfer items
 - P2: Transaction archiving / materialized views for 200K+ scale
 
+## Monthly Summary Freshness + Sales Reconciliation (May 30, 2026)
+- **Problem reported**: User on production saw Dashboard "Net Wt Sold = 5503.77 kg" and Profit Analysis figures NOT updating despite recent uploads. Tally Excel (27/01 → 29/05) showed correct 5621.126 kg. Live Sales Report was close to correct (5638 kg) but Dashboard / Profit Analysis kept serving the older pre-computed totals.
+- **Root cause**: Both pages read from `monthly_summaries` collection populated by `asyncio.create_task(recompute_monthly_summaries(db))` after every upload. The detached task had no error handler — any failure (DB exception, worker restart, timeout) was silently swallowed, leaving summaries stale.
+- **Fix #1 — Freshness fingerprint**: `services/monthly_summary_service.py` now writes a per-year `_meta` doc capturing `txn_count` + `max(created_at)`. New helpers `get_year_meta`, `is_year_summary_stale`, `ensure_year_summary_fresh` detect drift on every read and recompute synchronously when needed.
+- **Fix #2 — Safe background recompute**: `_safe_recompute_summaries()` wraps the task in try/except with structured logging so any failure shows up in supervisor logs instead of disappearing.
+- **Fix #3 — Endpoint freshness fields**: `/analytics/dashboard-year-summary`, `/monthly-profit`, `/monthly-party`, `/recompute-summaries` all now return `last_computed_at` + `was_recomputed` so the UI can show "Updated X ago" and a one-click "Refresh" button.
+- **Fix #4 — UI Refresh control**: new `components/SummaryFreshness.jsx` rendered on Dashboard (next to Year Comparison) and Profit Analysis (header). One-click manual refresh + relative-time indicator.
+- **Fix #5 — Sales Reconciliation**: new `GET /api/analytics/sales-reconciliation?start_date=&end_date=` returns per-raw-item rows with leader/stamp/excluded/unassigned flags + sale/return/net weights, fine, amounts. Headline totals separate "grand", "excluded", "unassigned", and "visible" buckets so the user can pinpoint which items are silently dropped by the EXCLUDED_ITEMS or Unassigned-stamp filters. New `/sales-reconciliation` page with date pickers, totals cards, filter tabs (All / Included / Unassigned / Excluded), search, and CSV export. Sidebar entry added under Analytics & ML.
+- **New endpoint**: `GET /api/analytics/summary-status?year=Y` returns the stored fingerprint vs. live fingerprint so UI can show data-current/stale state.
+- **Tests**: `tests/test_summary_freshness.py` (6 unit tests for meta/stale detection/ensure_fresh) + `tests/test_freshness_and_reconciliation_endpoints.py` (7 endpoint tests). Combined 27/27 backend tests pass. Recompute completes in 0.23s for 11.7K transactions on preview; expected ~1s on production's 39K+ txns.
+- **Action required by user**: redeploy preview build to production to apply the fix on the production database.
+
 ## Net Sales = Sale − Sale_Return Fix (Apr 30, 2026) + **Canonical Signed-Sum Correction (Apr 30, 2026, later)**
 - **Initial bug**: Previous agent applied `mult = 1 if sale else -1` to SR rows. Since the parser preserves Excel signs, SR rows are stored with NEGATIVE net_wt already. Applying `-1` to an already-negative value flipped it back to positive → returns were being ADDED instead of subtracted. April showed 1494.188 kg instead of correct 1445.294 kg.
 - **Root cause**: `1469.741 + (-(-24.447)) = 1494.188` (double negation). The user's Tally shows 1445.294 kg = `1469.741 - 24.447`.
