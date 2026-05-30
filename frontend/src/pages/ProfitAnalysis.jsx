@@ -11,6 +11,7 @@ import { exportToCSV } from '@/utils/exportCSV';
 import { useSortableData } from '@/hooks/useSortableData';
 import { SortableHeader } from '@/components/SortableHeader';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import SummaryFreshness from '../components/SummaryFreshness';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -150,9 +151,18 @@ export default function ProfitAnalysis() {
 
   return (
     <div className="p-3 sm:p-6 md:p-8 space-y-4 sm:space-y-6" data-testid="profit-page">
-      <div>
-        <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight">Profit Analysis</h1>
-        <p className="text-xs sm:text-base md:text-lg text-muted-foreground mt-1">Silver trading profit based on tunch &amp; labour</p>
+      <div className="flex items-end justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight">Profit Analysis</h1>
+          <p className="text-xs sm:text-base md:text-lg text-muted-foreground mt-1">Silver trading profit based on tunch &amp; labour</p>
+        </div>
+        <SummaryFreshness
+          year={selectedYear}
+          lastComputedAt={profitData?.last_computed_at}
+          wasRecomputed={profitData?.was_recomputed}
+          onRefreshed={() => fetchMonthlyProfit(selectedYear, selectedMonth)}
+          testId="profit-freshness"
+        />
       </div>
 
       {/* Year + Month Selector */}

@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { formatDate, formatDateTime } from '../utils/dateFormat';
 import { formatIndianCurrency } from '@/utils/formatCurrency';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import SummaryFreshness from '../components/SummaryFreshness';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -319,6 +320,17 @@ export default function Dashboard() {
           </div>
         </CardHeader>
         <CardContent className="p-3 sm:p-6 space-y-5">
+          {/* Freshness indicator — surfaces stale pre-computed summaries so users
+              can force a refresh after an upload. */}
+          <div className="flex justify-end">
+            <SummaryFreshness
+              year={selectedYear}
+              lastComputedAt={yearSummary?.last_computed_at}
+              wasRecomputed={yearSummary?.was_recomputed}
+              onRefreshed={() => fetchYearSummary(selectedYear)}
+              testId="dashboard-freshness"
+            />
+          </div>
           {yearSummary ? (
             <>
               {/* Year Totals Row */}

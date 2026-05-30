@@ -2,13 +2,25 @@
 Pre-computed Monthly Summary Service
 Computes and stores monthly aggregates for instant retrieval.
 Triggered on data upload or manual recompute.
+
+Freshness model
+---------------
+Every recompute writes a `_meta` document per year containing
+(txn_count, max_created_at, computed_at). On every read, callers can use
+``ensure_year_summary_fresh(db, year)`` which compares the stored fingerprint
+to the current state of `transactions` for that year and recomputes only if
+they diverge. This guarantees Dashboard / Profit Analysis never serve stale
+totals after a new upload, even if the background task lost in flight.
 """
+import logging
 from collections import defaultdict
 from datetime import datetime, timezone
 from services.group_utils import build_group_maps, build_group_ledger, resolve_to_leader
 
 
 EXCLUDED_ITEMS = ["SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"]
+
+logger = logging.getLogger(__name__)
 
 
 async def recompute_monthly_summaries(db, year: int = None):
@@ -25,7 +37,7 @@ async def recompute_monthly_summaries(db, year: int = None):
                 except ValueError:
                     pass
         if not years:
-            return {"recomputed": 0}
+            return {"recomputed": 0, "years": []}
     else:
         years = {year}
     
@@ -34,6 +46,78 @@ async def recompute_monthly_summaries(db, year: int = None):
         total_docs += await _compute_year(db, yr)
     
     return {"recomputed": total_docs, "years": sorted(years)}
+
+
+async def _get_year_fingerprint(db, year: int):
+    """Return (txn_count, max_created_at) for a year's transactions.
+
+    Used to detect whether the monthly summaries are stale relative to the
+    current state of the `transactions` collection. Both fields together
+    catch inserts, deletes, and replacements done by re-uploads.
+    """
+    start = f"{year}-01-01"
+    end = f"{year}-12-31 23:59:59"
+    count = await db.transactions.count_documents({'date': {'$gte': start, '$lte': end}})
+    max_created = None
+    if count > 0:
+        cursor = db.transactions.aggregate([
+            {'$match': {'date': {'$gte': start, '$lte': end}}},
+            {'$group': {'_id': None, 'max_created': {'$max': '$created_at'}}}
+        ])
+        async for doc in cursor:
+            max_created = doc.get('max_created')
+            break
+    return count, max_created
+
+
+async def get_year_meta(db, year: int):
+    """Return the stored _meta doc for a year (or None)."""
+    return await db.monthly_summaries.find_one(
+        {"year": year, "summary_type": "_meta"},
+        {"_id": 0}
+    )
+
+
+async def is_year_summary_stale(db, year: int):
+    """True if the year's pre-computed summaries diverge from live transactions."""
+    meta = await get_year_meta(db, year)
+    if not meta:
+        return True
+    current_count, current_max_created = await _get_year_fingerprint(db, year)
+    if meta.get('txn_count') != current_count:
+        return True
+    if (meta.get('max_created_at') or '') != (current_max_created or ''):
+        return True
+    return False
+
+
+async def ensure_year_summary_fresh(db, year: int):
+    """Recompute the year if stale; otherwise no-op. Returns status dict."""
+    stale = await is_year_summary_stale(db, year)
+    if not stale:
+        meta = await get_year_meta(db, year)
+        return {
+            "recomputed": False,
+            "last_computed_at": (meta or {}).get('computed_at'),
+            "txn_count": (meta or {}).get('txn_count', 0),
+        }
+    try:
+        await _compute_year(db, year)
+        meta = await get_year_meta(db, year)
+        return {
+            "recomputed": True,
+            "last_computed_at": (meta or {}).get('computed_at'),
+            "txn_count": (meta or {}).get('txn_count', 0),
+        }
+    except Exception as e:
+        logger.error(f"[monthly_summaries] ensure_year_summary_fresh({year}) failed: {e}", exc_info=True)
+        meta = await get_year_meta(db, year)
+        return {
+            "recomputed": False,
+            "error": str(e),
+            "last_computed_at": (meta or {}).get('computed_at'),
+            "txn_count": (meta or {}).get('txn_count', 0),
+        }
 
 
 async def _compute_year(db, year: int):
@@ -137,6 +221,17 @@ async def _compute_year(db, year: int):
         if summaries:
             await db.monthly_summaries.insert_many(summaries)
             docs_written += len(summaries)
+    
+    # Write fingerprint meta so freshness checks can detect future drift.
+    txn_count, max_created = await _get_year_fingerprint(db, year)
+    await db.monthly_summaries.insert_one({
+        "year": year,
+        "summary_type": "_meta",
+        "txn_count": txn_count,
+        "max_created_at": max_created,
+        "computed_at": datetime.now(timezone.utc).isoformat(),
+    })
+    docs_written += 1
     
     return docs_written
 

@@ -108,6 +108,7 @@ export default function Layout({ children }) {
         { name: 'Party Analytics', href: '/party-analytics', icon: Users, roles: ['admin'] },
         { name: 'Profit Analysis', href: '/profit', icon: TrendingUp, roles: ['admin'] },
         { name: 'Sales Report', href: '/sales-report', icon: FileText, roles: ['admin'] },
+        { name: 'Sales Reconciliation', href: '/sales-reconciliation', icon: FileText, roles: ['admin'] },
       ]
     },
     {

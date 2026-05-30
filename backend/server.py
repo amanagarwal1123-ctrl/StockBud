@@ -43,7 +43,9 @@ from services.helpers import (
 )
 from services.stock_service import get_current_inventory, get_effective_physical_base_for_date, _flat_base_from_inventory
 from services.group_utils import build_group_maps, build_group_ledger, resolve_to_leader
-from services.monthly_summary_service import recompute_monthly_summaries
+from services.monthly_summary_service import (
+    recompute_monthly_summaries, ensure_year_summary_fresh, get_year_meta
+)
 
 # Simple TTL cache for heavy inventory computations
 import time
@@ -72,6 +74,23 @@ class InventoryCache:
             self._cache.clear()
 
 _inv_cache = InventoryCache(ttl_seconds=30)
+
+
+async def _safe_recompute_summaries(year: int = None):
+    """Background-safe wrapper around recompute_monthly_summaries.
+
+    Wraps the heavy recompute in try/except + structured logging so failures
+    (DB errors, worker restarts, etc.) are visible in supervisor logs instead
+    of being swallowed by ``asyncio.create_task``.
+    """
+    try:
+        result = await recompute_monthly_summaries(db, year)
+        _log = logging.getLogger(__name__)
+        _log.info(f"[monthly_summaries] recomputed: {result}")
+    except Exception as e:
+        _log = logging.getLogger(__name__)
+        _log.error(f"[monthly_summaries] recompute FAILED (year={year}): {e}", exc_info=True)
+
 
 app = FastAPI()
 
@@ -1189,8 +1208,8 @@ async def _process_upload(upload_id: str, meta: dict):
                 'batch_id': batch_id, 'file_type': file_type, 'count': len(transactions)
             })
             await auto_normalize_stamps()
-            # Trigger monthly summary recomputation in background
-            asyncio.create_task(recompute_monthly_summaries(db))
+            # Trigger monthly summary recomputation in background (with logging + error handling)
+            asyncio.create_task(_safe_recompute_summaries())
             meta['status'] = 'complete'
             meta['result'] = {"success": True, "count": len(transactions), "replaced_count": deleted_count,
                               "batch_id": batch_id, "message": message}
@@ -4449,17 +4468,262 @@ async def sale_debug_breakdown(
     }
 
 
+@api_router.get("/analytics/sales-reconciliation")
+async def sales_reconciliation(
+    start_date: str = Query(...),
+    end_date: str = Query(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """Item-by-item sale reconciliation for any date range.
+
+    Emits one row per **raw item name** (as stored in transactions) so the user
+    can diff each row against the Tally Excel without any group resolution
+    masking discrepancies. Also includes the resolved leader + stamp so mapping
+    issues are visible.
+
+    Use this to find:
+      * items whose net_wt is wrong because of mapping/duplication
+      * items being silently excluded by EXCLUDED_ITEMS or 'Unassigned' filter
+      * the precise contribution of returns per item
+    """
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    txns = await db.transactions.find({
+        'date': {'$gte': start_date, '$lte': end_date + ' 23:59:59'},
+        'type': {'$in': ['sale', 'sale_return']}
+    }, {"_id": 0, "type": 1, "item_name": 1, "net_wt": 1, "gr_wt": 1,
+        "fine": 1, "total_amount": 1, "tunch": 1, "party_name": 1,
+        "date": 1, "pc": 1}).to_list(None)
+
+    EXCLUDED = {"SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"}
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    rec_maps = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
+    rec_master = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(None)
+    rec_stamps = {m['item_name']: (m.get('stamp') or 'Unassigned') for m in rec_master}
+    rec_map_dict, rec_m2l, _ = build_group_maps(all_groups, rec_maps)
+
+    def _resolve(name: str) -> str:
+        return resolve_to_leader(name, rec_map_dict, rec_m2l)
+
+    def _stamp_for(leader: str, raw: str) -> str:
+        return rec_stamps.get(leader, rec_stamps.get(rec_map_dict.get(raw, raw), 'Unassigned'))
+
+    from collections import defaultdict as _dd
+    by_raw = _dd(lambda: {
+        'raw_item_name': '', 'leader': '', 'stamp': '',
+        'is_excluded': False, 'is_unassigned': False,
+        'sale_gross_wt_g': 0.0, 'sale_ret_gross_wt_g': 0.0,
+        'sale_net_wt_g': 0.0, 'sale_ret_net_wt_g': 0.0,
+        'sale_fine_g': 0.0, 'sale_ret_fine_g': 0.0,
+        'sale_amount': 0.0, 'sale_ret_amount': 0.0,
+        'sale_pc': 0, 'sale_ret_pc': 0,
+        'sale_rows': 0, 'sale_ret_rows': 0,
+        'customers': set(), 'first_date': '', 'last_date': '',
+    })
+
+    for t in txns:
+        raw = t.get('item_name', '') or ''
+        leader = _resolve(raw)
+        stamp = _stamp_for(leader, raw)
+        is_excluded = leader in EXCLUDED
+        is_unassigned = (not stamp) or stamp == 'Unassigned'
+
+        is_ret = t['type'] == 'sale_return'
+        gw = abs(t.get('gr_wt', 0) or 0)
+        nw = abs(t.get('net_wt', 0) or 0)
+        fw = abs(t.get('fine', 0) or 0)
+        amt = abs(t.get('total_amount', 0) or 0)
+        pc = int(t.get('pc', 0) or 0)
+        dt = (t.get('date') or '')[:10]
+
+        b = by_raw[raw]
+        b['raw_item_name'] = raw
+        b['leader'] = leader
+        b['stamp'] = stamp
+        b['is_excluded'] = is_excluded
+        b['is_unassigned'] = is_unassigned
+        if is_ret:
+            b['sale_ret_gross_wt_g'] += gw
+            b['sale_ret_net_wt_g'] += nw
+            b['sale_ret_fine_g'] += fw
+            b['sale_ret_amount'] += amt
+            b['sale_ret_pc'] += pc
+            b['sale_ret_rows'] += 1
+        else:
+            b['sale_gross_wt_g'] += gw
+            b['sale_net_wt_g'] += nw
+            b['sale_fine_g'] += fw
+            b['sale_amount'] += amt
+            b['sale_pc'] += pc
+            b['sale_rows'] += 1
+        if t.get('party_name'):
+            b['customers'].add(t['party_name'])
+        if dt:
+            if not b['first_date'] or dt < b['first_date']:
+                b['first_date'] = dt
+            if not b['last_date'] or dt > b['last_date']:
+                b['last_date'] = dt
+
+    rows = []
+    grand = {
+        'sale_gross_kg': 0.0, 'ret_gross_kg': 0.0,
+        'sale_net_kg': 0.0, 'ret_net_kg': 0.0,
+        'net_after_returns_kg': 0.0,
+        'sale_fine_kg': 0.0, 'ret_fine_kg': 0.0, 'net_fine_kg': 0.0,
+        'sale_amount': 0.0, 'ret_amount': 0.0, 'net_amount': 0.0,
+        'sale_pc': 0, 'ret_pc': 0,
+        'sale_rows': 0, 'ret_rows': 0,
+    }
+    excluded_totals = dict(net_after_returns_kg=0.0, net_amount=0.0, rows=0)
+    unassigned_totals = dict(net_after_returns_kg=0.0, net_amount=0.0, rows=0)
+
+    for raw, b in by_raw.items():
+        sale_g_kg = b['sale_gross_wt_g'] / 1000
+        ret_g_kg = b['sale_ret_gross_wt_g'] / 1000
+        sale_n_kg = b['sale_net_wt_g'] / 1000
+        ret_n_kg = b['sale_ret_net_wt_g'] / 1000
+        sale_f_kg = b['sale_fine_g'] / 1000
+        ret_f_kg = b['sale_ret_fine_g'] / 1000
+        net_after_returns_kg = sale_n_kg - ret_n_kg
+        net_fine_kg = sale_f_kg - ret_f_kg
+        net_amount = b['sale_amount'] - b['sale_ret_amount']
+        rows.append({
+            'raw_item_name': b['raw_item_name'],
+            'leader': b['leader'],
+            'stamp': b['stamp'],
+            'is_excluded': b['is_excluded'],
+            'is_unassigned': b['is_unassigned'],
+            'excluded_reason': (
+                'EXCLUDED_ITEMS list' if b['is_excluded']
+                else ('Unassigned stamp' if b['is_unassigned'] else None)
+            ),
+            'sale_gross_kg': round(sale_g_kg, 3),
+            'ret_gross_kg': round(ret_g_kg, 3),
+            'sale_net_kg': round(sale_n_kg, 3),
+            'ret_net_kg': round(ret_n_kg, 3),
+            'net_after_returns_kg': round(net_after_returns_kg, 3),
+            'sale_fine_kg': round(sale_f_kg, 3),
+            'ret_fine_kg': round(ret_f_kg, 3),
+            'net_fine_kg': round(net_fine_kg, 3),
+            'sale_amount': round(b['sale_amount'], 2),
+            'ret_amount': round(b['sale_ret_amount'], 2),
+            'net_amount': round(net_amount, 2),
+            'sale_pc': b['sale_pc'],
+            'ret_pc': b['sale_ret_pc'],
+            'sale_rows': b['sale_rows'],
+            'ret_rows': b['sale_ret_rows'],
+            'customers': len(b['customers']),
+            'first_date': b['first_date'],
+            'last_date': b['last_date'],
+        })
+        grand['sale_gross_kg'] += sale_g_kg
+        grand['ret_gross_kg'] += ret_g_kg
+        grand['sale_net_kg'] += sale_n_kg
+        grand['ret_net_kg'] += ret_n_kg
+        grand['net_after_returns_kg'] += net_after_returns_kg
+        grand['sale_fine_kg'] += sale_f_kg
+        grand['ret_fine_kg'] += ret_f_kg
+        grand['net_fine_kg'] += net_fine_kg
+        grand['sale_amount'] += b['sale_amount']
+        grand['ret_amount'] += b['sale_ret_amount']
+        grand['net_amount'] += net_amount
+        grand['sale_pc'] += b['sale_pc']
+        grand['ret_pc'] += b['sale_ret_pc']
+        grand['sale_rows'] += b['sale_rows']
+        grand['ret_rows'] += b['sale_ret_rows']
+        if b['is_excluded']:
+            excluded_totals['net_after_returns_kg'] += net_after_returns_kg
+            excluded_totals['net_amount'] += net_amount
+            excluded_totals['rows'] += b['sale_rows'] + b['sale_ret_rows']
+        elif b['is_unassigned']:
+            unassigned_totals['net_after_returns_kg'] += net_after_returns_kg
+            unassigned_totals['net_amount'] += net_amount
+            unassigned_totals['rows'] += b['sale_rows'] + b['sale_ret_rows']
+
+    rows.sort(key=lambda r: r['net_after_returns_kg'], reverse=True)
+
+    for k in ('sale_gross_kg', 'ret_gross_kg', 'sale_net_kg', 'ret_net_kg',
+              'net_after_returns_kg', 'sale_fine_kg', 'ret_fine_kg', 'net_fine_kg'):
+        grand[k] = round(grand[k], 3)
+    for k in ('sale_amount', 'ret_amount', 'net_amount'):
+        grand[k] = round(grand[k], 2)
+    for k in ('net_after_returns_kg', 'net_amount'):
+        excluded_totals[k] = round(excluded_totals[k], 3 if 'kg' in k else 2)
+        unassigned_totals[k] = round(unassigned_totals[k], 3 if 'kg' in k else 2)
+
+    # Headline counters used for quick Tally tally
+    visible_net_kg = round(grand['net_after_returns_kg']
+                           - excluded_totals['net_after_returns_kg']
+                           - unassigned_totals['net_after_returns_kg'], 3)
+
+    return {
+        "period": {"start_date": start_date, "end_date": end_date},
+        "total_raw_items": len(rows),
+        "grand_totals_all_items": grand,
+        "excluded_items_totals": excluded_totals,
+        "unassigned_stamp_totals": unassigned_totals,
+        "visible_net_after_returns_kg": visible_net_kg,
+        "tally_comparison_note": (
+            "grand_totals_all_items.net_after_returns_kg should match Tally's "
+            "Less column total. visible_net_after_returns_kg shows what Profit "
+            "Analysis and Dashboard see after EXCLUDED_ITEMS + Unassigned filter."
+        ),
+        "items": rows,
+    }
+
+
 @api_router.post("/analytics/recompute-summaries")
 async def trigger_recompute_summaries(
     request: Dict = {},
     current_user: dict = Depends(get_current_user)
 ):
-    """Manually trigger recomputation of monthly summaries."""
+    """Manually trigger recomputation of monthly summaries (admin only)."""
     if current_user['role'] != 'admin':
         raise HTTPException(status_code=403, detail="Admin only")
     year = request.get('year')
     result = await recompute_monthly_summaries(db, year)
-    return {"success": True, **result}
+    # Return latest meta for the targeted year (or the most recent year if year=None)
+    last_year = year if year else (result.get("years") or [None])[-1]
+    meta = await get_year_meta(db, last_year) if last_year else None
+    return {
+        "success": True,
+        "last_computed_at": (meta or {}).get('computed_at'),
+        "txn_count": (meta or {}).get('txn_count', 0),
+        **result,
+    }
+
+
+@api_router.get("/analytics/summary-status")
+async def get_summary_status(
+    year: int = Query(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """Lightweight freshness probe for the UI.
+
+    Returns the stored fingerprint vs. the live transactions fingerprint so
+    the frontend can show 'data is current' / 'X new transactions waiting' UX.
+    """
+    meta = await get_year_meta(db, year)
+    from services.monthly_summary_service import _get_year_fingerprint
+    current_count, current_max_created = await _get_year_fingerprint(db, year)
+    is_stale = False
+    if not meta:
+        is_stale = True
+    else:
+        if meta.get('txn_count') != current_count:
+            is_stale = True
+        if (meta.get('max_created_at') or '') != (current_max_created or ''):
+            is_stale = True
+    return {
+        "year": year,
+        "is_stale": is_stale,
+        "last_computed_at": (meta or {}).get('computed_at'),
+        "stored_txn_count": (meta or {}).get('txn_count', 0),
+        "live_txn_count": current_count,
+        "stored_max_created_at": (meta or {}).get('max_created_at'),
+        "live_max_created_at": current_max_created,
+    }
 
 
 @api_router.get("/analytics/sales-report")
@@ -4739,7 +5003,7 @@ async def find_orphan_transactions(
             del_result = await db.transactions.delete_many({"_id": {"$in": ids_to_delete}})
             result["deleted_duplicates"] = del_result.deleted_count
             _inv_cache.invalidate()
-            asyncio.create_task(recompute_monthly_summaries(db))
+            asyncio.create_task(_safe_recompute_summaries())
     
     return result
 
@@ -4752,11 +5016,13 @@ async def get_monthly_profit(
     month: int = Query(0),
     current_user: dict = Depends(get_current_user)
 ):
-    """Get pre-computed item profit for a specific month (0 = all year)."""
-    # Auto-compute if no summaries exist for this year
-    count = await db.monthly_summaries.count_documents({"year": year, "summary_type": "item_profit"})
-    if count == 0:
-        await recompute_monthly_summaries(db, year)
+    """Get pre-computed item profit for a specific month (0 = all year).
+
+    Auto-recomputes the year if the live transactions diverged from the stored
+    fingerprint (so dashboards stay fresh even if the background task failed
+    after a recent upload).
+    """
+    freshness = await ensure_year_summary_fresh(db, year)
     
     if month == 0:
         # ALL: aggregate across all months of the year
@@ -4858,7 +5124,9 @@ async def get_monthly_profit(
         "total_labour_sold": round(total_labour_sold, 2),
         "unique_customers": unique_customers,
         "all_items": items,
-        "total_items_analyzed": len(items)
+        "total_items_analyzed": len(items),
+        "last_computed_at": freshness.get("last_computed_at"),
+        "was_recomputed": freshness.get("recomputed", False),
     }
 
 
@@ -4869,10 +5137,8 @@ async def get_monthly_party(
     current_user: dict = Depends(get_current_user)
 ):
     """Get pre-computed party analysis for a specific month (0 = all year)."""
-    # Auto-compute if no summaries exist for this year
-    count = await db.monthly_summaries.count_documents({"year": year})
-    if count == 0:
-        await recompute_monthly_summaries(db, year)
+    # Auto-recompute if the live transactions diverged from the stored fingerprint
+    freshness = await ensure_year_summary_fresh(db, year)
     
     if month == 0:
         # Aggregate across all months
@@ -4935,7 +5201,9 @@ async def get_monthly_party(
         "customers": customers,
         "suppliers": suppliers,
         "top_customer": customers[0] if customers else None,
-        "top_supplier": suppliers[0] if suppliers else None
+        "top_supplier": suppliers[0] if suppliers else None,
+        "last_computed_at": freshness.get("last_computed_at"),
+        "was_recomputed": freshness.get("recomputed", False),
     }
 
 
@@ -5251,11 +5519,12 @@ async def get_dashboard_year_summary(
     year: int = Query(...),
     current_user: dict = Depends(get_current_user)
 ):
-    """Get year-wise dashboard comparison data from pre-computed summaries."""
-    # Auto-compute if no summaries exist for this year
-    count = await db.monthly_summaries.count_documents({"year": year})
-    if count == 0:
-        await recompute_monthly_summaries(db, year)
+    """Get year-wise dashboard comparison data from pre-computed summaries.
+
+    Auto-recomputes the year if the live transactions diverged from the stored
+    fingerprint, so the Dashboard always reflects the latest upload.
+    """
+    freshness = await ensure_year_summary_fresh(db, year)
     
     # Monthly sales totals (for bar chart)
     monthly_pipeline = [
@@ -5321,7 +5590,9 @@ async def get_dashboard_year_summary(
             "total_net_wt": round(year_total_net_wt, 3),
             "total_sales_value": round(year_total_sales, 2),
             "transaction_count": year_total_txns,
-        }
+        },
+        "last_computed_at": freshness.get("last_computed_at"),
+        "was_recomputed": freshness.get("recomputed", False),
     }
 
 
