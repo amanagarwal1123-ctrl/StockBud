@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { FileText, Calendar, Download, Search, ChevronDown, ChevronRight } from 'lucide-react';
+import { FileText, Calendar, Download, Search, ChevronDown, ChevronRight, EyeOff } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -38,6 +38,7 @@ export default function SalesReport() {
   const [view, setView] = useState('by_stamp'); // 'by_stamp' | 'by_item'
   const [search, setSearch] = useState('');
   const [excludedStamps, setExcludedStamps] = useState(new Set()); // stamps unchecked
+  const [showExcludedBreakdown, setShowExcludedBreakdown] = useState(false);
 
   useEffect(() => {
     fetchReport();
@@ -323,13 +324,74 @@ export default function SalesReport() {
           </Tabs>
 
           {data && (
-            <div className="text-xs text-muted-foreground">
-              Showing data from <span className="font-mono">{data.period.start_date}</span> to{' '}
-              <span className="font-mono">{data.period.end_date}</span>
+            <div className="space-y-2">
+              <div className="text-xs text-muted-foreground">
+                Showing data from <span className="font-mono">{data.period.start_date}</span> to{' '}
+                <span className="font-mono">{data.period.end_date}</span>
+              </div>
               {data.excluded_rows > 0 && (
-                <Badge variant="outline" className="ml-2">
-                  Profit filter applied: {data.excluded_rows} rows excluded ({data.excluded_items_kg.toFixed(3)} kg)
-                </Badge>
+                <div
+                  className="rounded-lg border border-amber-200 bg-amber-50/60 p-2.5"
+                  data-testid="sales-report-excluded-panel"
+                >
+                  <button
+                    type="button"
+                    className="flex items-center gap-2 w-full text-left"
+                    onClick={() => setShowExcludedBreakdown((v) => !v)}
+                    data-testid="excluded-toggle"
+                  >
+                    <EyeOff className="h-3.5 w-3.5 text-amber-700 shrink-0" />
+                    <div className="flex-1 text-xs text-amber-900">
+                      <span className="font-semibold">Hidden from totals (EXCLUDED_ITEMS):</span>{' '}
+                      <span className="font-mono">{data.excluded_rows} rows</span> ·{' '}
+                      <span className="font-mono">{(data.excluded_items_kg || 0).toFixed(3)} kg</span>
+                      {' · '}
+                      <span className="font-mono font-bold" data-testid="excluded-amount-label">
+                        {formatIndianCurrency(data.excluded_items_amount_inr || 0)} labour
+                      </span>
+                      {data.excluded_items_fine_kg != null && (
+                        <span className="font-mono">
+                          {' · '}{(data.excluded_items_fine_kg || 0).toFixed(3)} kg fine
+                        </span>
+                      )}
+                    </div>
+                    {showExcludedBreakdown ? (
+                      <ChevronDown className="h-3.5 w-3.5 text-amber-700" />
+                    ) : (
+                      <ChevronRight className="h-3.5 w-3.5 text-amber-700" />
+                    )}
+                  </button>
+                  {showExcludedBreakdown && (data.excluded_items_breakdown || []).length > 0 && (
+                    <div className="mt-2 border-t border-amber-200 pt-2" data-testid="excluded-breakdown">
+                      <div className="grid grid-cols-12 text-[10px] uppercase text-amber-700 font-semibold pb-1 border-b border-amber-200/60">
+                        <div className="col-span-5">Item</div>
+                        <div className="col-span-2 text-right">Net (kg)</div>
+                        <div className="col-span-2 text-right">Fine (kg)</div>
+                        <div className="col-span-2 text-right">Labour</div>
+                        <div className="col-span-1 text-right">Rows</div>
+                      </div>
+                      {(data.excluded_items_breakdown || []).map((it) => (
+                        <div
+                          key={it.item_name}
+                          className="grid grid-cols-12 text-xs py-1 border-b border-amber-100 last:border-b-0"
+                          data-testid={`excluded-row-${it.item_name.replace(/\s+/g, '-')}`}
+                        >
+                          <div className="col-span-5 font-mono">{it.item_name}</div>
+                          <div className="col-span-2 text-right font-mono">{it.net_kg.toFixed(3)}</div>
+                          <div className="col-span-2 text-right font-mono text-blue-700">{it.fine_kg.toFixed(3)}</div>
+                          <div className="col-span-2 text-right font-mono font-semibold">{formatIndianCurrency(it.amount_inr)}</div>
+                          <div className="col-span-1 text-right text-muted-foreground">{it.rows}</div>
+                        </div>
+                      ))}
+                      <p className="text-[10px] text-amber-700 mt-2 italic">
+                        These items are stripped from Sales Report and Profit Analysis
+                        by the canonical filter so Tally parity is preserved on Stamp/Item
+                        totals. The Tally export DOES include them — that's what causes
+                        the labour gap between Tally and this page.
+                      </p>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}

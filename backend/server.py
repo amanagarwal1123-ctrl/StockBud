@@ -4797,13 +4797,31 @@ async def get_sales_report(
     
     excluded_kg_g = 0.0
     excluded_count = 0
+    excluded_amount_inr = 0.0
+    excluded_fine_g = 0.0
+    # Per-item breakdown of what's silently dropped so users can see exactly
+    # which "hidden" items account for any Tally vs App gap.
+    from collections import defaultdict as _dd2
+    excluded_by_item = _dd2(lambda: {'net_g': 0.0, 'amount': 0.0, 'fine_g': 0.0, 'rows': 0})
     
     for t in txns:
         item_raw = t.get('item_name', '')
         leader = _resolve(item_raw)
         if leader in EXCLUDED:
-            excluded_kg_g += abs(t.get('net_wt', 0) or 0) * (-1 if t['type'] == 'sale_return' else 1)
+            is_ret_x = t['type'] == 'sale_return'
+            sign_x = -1 if is_ret_x else 1
+            net_x = abs(t.get('net_wt', 0) or 0) * sign_x
+            amt_x = abs(t.get('total_amount', 0) or 0) * sign_x
+            fine_x = abs(t.get('fine', 0) or 0) * sign_x
+            excluded_kg_g += net_x
+            excluded_amount_inr += amt_x
+            excluded_fine_g += fine_x
             excluded_count += 1
+            eb = excluded_by_item[leader]
+            eb['net_g'] += net_x
+            eb['amount'] += amt_x
+            eb['fine_g'] += fine_x
+            eb['rows'] += 1
             continue
         stamp = _stamp_for(item_raw) or 'Unassigned'
         
@@ -4906,8 +4924,22 @@ async def get_sales_report(
         'by_stamp': stamps_rows,
         'by_item': items_rows,
         'totals': default_totals,
+        # Hidden (silently-dropped EXCLUDED_ITEMS): expose weight, labour AND fine
+        # so users can see exactly how much sales the Profit/Sales pages mask out.
         'excluded_items_kg': round(excluded_kg_g / 1000, 3),
+        'excluded_items_amount_inr': round(excluded_amount_inr, 2),
+        'excluded_items_fine_kg': round(excluded_fine_g / 1000, 3),
         'excluded_rows': excluded_count,
+        'excluded_items_breakdown': sorted([
+            {
+                'item_name': name,
+                'net_kg': round(v['net_g'] / 1000, 3),
+                'amount_inr': round(v['amount'], 2),
+                'fine_kg': round(v['fine_g'] / 1000, 3),
+                'rows': v['rows'],
+            }
+            for name, v in excluded_by_item.items()
+        ], key=lambda r: r['amount_inr'], reverse=True),
     }
 
 

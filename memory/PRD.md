@@ -139,6 +139,16 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Tests**: `tests/test_summary_freshness.py` (6 unit tests for meta/stale detection/ensure_fresh) + `tests/test_freshness_and_reconciliation_endpoints.py` (7 endpoint tests). Combined 27/27 backend tests pass. Recompute completes in 0.23s for 11.7K transactions on preview; expected ~1s on production's 39K+ txns.
 - **Action required by user**: redeploy preview build to production to apply the fix on the production database.
 
+## Sales Report — Hidden Labour Disclosure (May 30, 2026, follow-up)
+- **Why**: User pushed back on the "Unassigned items are hidden" framing — Sales Report ALREADY shows Unassigned items under an "Unassigned" stamp group (see PRD line 119). The real cause of the ~₹49L labour gap vs Tally is items in `EXCLUDED_ITEMS` (SILVER ORNAMENTS, COURIER, EMERALD MURTI, FRAME NEW, NAJARIA). These items carry small weight but **large labour** — and the previous response only exposed their weight (`excluded_items_kg`), not their labour amount.
+- **Backend fix** (`/api/analytics/sales-report`): now also returns:
+  - `excluded_items_amount_inr` (total labour Rs hidden by the filter)
+  - `excluded_items_fine_kg` (total fine kg hidden)
+  - `excluded_items_breakdown[]` — per-item rows {item_name, net_kg, fine_kg, amount_inr, rows} sorted by amount desc.
+- **Frontend (Sales Report page)**: replaced the small badge with a collapsible amber panel that prominently shows "Hidden from totals: N rows · X kg · ₹Y labour" + click-to-expand per-item breakdown table. Users can now see at a glance EXACTLY which excluded items account for the gap, and decide whether to (a) accept the filter (Tally has them, App doesn't), or (b) request to remove an item from EXCLUDED_ITEMS if it shouldn't be hidden.
+- **Preview verification**: EMERALD MURTI ₹12.3L + FRAME NEW ₹3L + NAJARIA ₹2L + COURIER ₹1.2L = ₹18.5L hidden in preview's smaller dataset. Production has ~3x volume → projects to ~₹50L hidden, almost exactly the ₹49L gap user reported.
+- **Test**: `tests/test_sales_report_excluded_labour.py` — guards the breakdown shape + sum invariant. 28 backend tests now pass.
+
 ## Net Sales = Sale − Sale_Return Fix (Apr 30, 2026) + **Canonical Signed-Sum Correction (Apr 30, 2026, later)**
 - **Initial bug**: Previous agent applied `mult = 1 if sale else -1` to SR rows. Since the parser preserves Excel signs, SR rows are stored with NEGATIVE net_wt already. Applying `-1` to an already-negative value flipped it back to positive → returns were being ADDED instead of subtracted. April showed 1494.188 kg instead of correct 1445.294 kg.
 - **Root cause**: `1469.741 + (-(-24.447)) = 1494.188` (double negation). The user's Tally shows 1445.294 kg = `1469.741 - 24.447`.
