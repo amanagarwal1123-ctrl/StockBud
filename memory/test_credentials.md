@@ -3,6 +3,7 @@
 ## Admin
 - Username: `admin`
 - Password: `admin123`
+- NOTE (Jun 1, 2026): An idempotent `seed_admin()` runs on startup — it CREATES `admin`/`admin123` only if no admin exists, and never overwrites an existing admin's password (so a custom production password is preserved). It also reactivates an inactive admin.
 
 ## Executive (Stock Entry)
 - Username: `TEST_EXEC`

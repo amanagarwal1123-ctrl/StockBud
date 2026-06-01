@@ -92,6 +92,29 @@ async def _safe_recompute_summaries(year: int = None):
         _log.error(f"[monthly_summaries] recompute FAILED (year={year}): {e}", exc_info=True)
 
 
+async def seed_admin():
+    """Idempotent admin seed run on startup.
+
+    Guarantees an active 'admin' account always exists in whatever database the deployment
+    connects to (covers a fresh / migrated production DB that has no users). It does NOT
+    overwrite an existing admin's password, so a custom password set by the user is preserved.
+    """
+    existing = await db.users.find_one({"username": "admin"})
+    if not existing:
+        admin = User(
+            username="admin",
+            password_hash=get_password_hash("admin123"),
+            full_name="System Administrator",
+            role="admin",
+            created_by="system",
+        )
+        await db.users.insert_one(admin.model_dump())
+        logger.info("[seed] Created default admin user (username=admin)")
+    elif not existing.get('is_active', True):
+        await db.users.update_one({"username": "admin"}, {"$set": {"is_active": True}})
+        logger.info("[seed] Reactivated inactive admin user")
+
+
 app = FastAPI()
 
 @app.on_event("startup")
@@ -140,6 +163,14 @@ async def create_upload_indexes():
     )
     if stale.modified_count > 0:
         logger.info(f"Cleaned {stale.modified_count} stale upload tasks on startup")
+
+    # --- Auth hardening (fixes production login) ---
+    # 1) Resolve a STABLE JWT secret shared by all workers (prevents random-per-worker key
+    #    causing tokens to be rejected right after login).
+    from auth import ensure_secret_key
+    await ensure_secret_key(db)
+    # 2) Guarantee an admin account exists in this deployment's DB.
+    await seed_admin()
 
 # Health check endpoints
 @app.get("/health")

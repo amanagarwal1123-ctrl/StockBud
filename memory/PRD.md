@@ -185,3 +185,21 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Labour fix**: Returns (negative net_wt) now reduce total sale labour income instead of adding to it
 - **Header alignment**: Profit Analysis table now uses `table-fixed` with explicit column widths for consistent alignment
 - Tests: 41 total (18 corrective + 23 ML), all passing. 3 new sale_return tests added.
+
+
+
+## Auth Hardening — Production Login Fix (Jun 1, 2026)
+- **Problem reported**: User could NOT log in to the PRODUCTION (deployed) app; preview worked fine.
+- **Root cause (primary)**: `auth.py` read `SECRET_KEY = os.environ.get('JWT_SECRET_KEY')` and, when missing, generated a **random** `secrets.token_hex(32)` PER PROCESS. In a multi-worker deployment (or any restart) each worker signed/validated JWTs with a different key → login succeeds but the very next authenticated request returns 401 "Invalid token" → appears as "cannot log in". Preview has the env var set + single worker, so it never surfaced there.
+- **Root cause (secondary)**: Admin user was only created via the manual `/users/initialize-admin` endpoint (works only when 0 users exist). A fresh / migrated production DB could have no `admin` → login 401.
+- **Fix #1 — Stable JWT secret** (`auth.py`): removed the per-process random fallback. Added `async def ensure_secret_key(db)` resolving a STABLE key in order: env `JWT_SECRET_KEY` → key persisted in `db.app_config` (`_id="jwt_secret"`) → generate once & persist. Called on startup so all workers share one secret. `create_access_token`/`get_current_user` read the module global at call time, so the resolved value is used.
+- **Fix #2 — Idempotent admin seed** (`server.py` `seed_admin()`, called on startup): guarantees an active `admin` account exists in whatever DB the deployment connects to. Does NOT overwrite an existing admin's password (custom passwords preserved); reactivates an inactive admin.
+- **Tests**: `tests/test_auth_secret_key.py` (3 tests): stable key shared across simulated workers + cross-worker JWT validation, env-var precedence (not persisted), idempotent admin seed. All pass.
+- **Verified on preview**: login (curl + UI) → token 144 chars in sessionStorage → dashboard loads; authed endpoint returns 200; wrong password → 401; no duplicate admin.
+- **ACTION REQUIRED BY USER**: REDEPLOY to apply these code fixes to production. They only take effect on the next deployment.
+- **NOTE (kept, not changed)**: Auth uses Bearer JWT in sessionStorage (no refactor to httpOnly cookies, per user). Deployment agent also flagged an OOM-risk unbounded backup query (`.to_list(None)`) in the upload-delete path — left untouched because that area is fragile (a prior agent broke uploads editing it) and it is not the login cause.
+
+## Code Review — Safe Fixes Applied (Jun 1, 2026)
+- **Mutable default arg** (`server.py` `/analytics/recompute-summaries`): `request: Dict = {}` → `Optional[Dict] = None` with safe init.
+- **Empty catch blocks** (3): `OrderManagement.jsx` overdue check, `Notifications.jsx` prefs read + markRead now log errors instead of silently swallowing.
+- **Investigated → false positives (intentionally NOT changed)**: (a) "9 undefined vars" — ruff F821/F823 + pylint E0606/E0601/E0602 report ZERO. (b) "84 incorrect is/==" — all are `is None`/`is True/False` (correct PEP8 idiom; `==` would add E711 errors). (c) "25 sensitive storage" — all `sessionStorage.getItem('token')` (app-wide JWT convention) + non-sensitive notif UI prefs; cookie migration = full auth rewrite, declined. (d) "74 missing hook deps" — project ESLint passes clean; mass useCallback changes risk infinite loops.

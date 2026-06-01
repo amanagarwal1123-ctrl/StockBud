@@ -1,6 +1,7 @@
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import bcrypt
+import secrets
 from datetime import datetime, timezone, timedelta
 from typing import List
 import jwt
@@ -9,12 +10,39 @@ from database import db
 
 security = HTTPBearer()
 
+# JWT signing key. Primary source: JWT_SECRET_KEY env var (set in .env and carried to deploy).
+# The key MUST be STABLE across worker processes and restarts — otherwise a token issued by
+# one worker fails validation on another, so the user logs in but is immediately rejected on
+# the next request ("can't log in" in production). `ensure_secret_key()` (called on startup)
+# resolves a stable key even when the env var is missing by persisting one in the DB so every
+# worker shares the same secret. This replaces the previous per-process random fallback.
 SECRET_KEY = os.environ.get('JWT_SECRET_KEY')
-if not SECRET_KEY:
-    import secrets
-    SECRET_KEY = secrets.token_hex(32)
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 18
+
+
+async def ensure_secret_key(db_handle) -> str:
+    """Resolve a STABLE JWT secret shared across all workers/restarts.
+
+    Resolution order:
+      1. JWT_SECRET_KEY env var (preferred, present in .env)
+      2. key persisted in db.app_config (shared by all workers)
+      3. generate a new key once and persist it
+    """
+    global SECRET_KEY
+    if SECRET_KEY:
+        return SECRET_KEY
+    doc = await db_handle.app_config.find_one({"_id": "jwt_secret"})
+    if doc and doc.get("value"):
+        SECRET_KEY = doc["value"]
+    else:
+        SECRET_KEY = secrets.token_hex(32)
+        await db_handle.app_config.update_one(
+            {"_id": "jwt_secret"},
+            {"$set": {"value": SECRET_KEY}},
+            upsert=True,
+        )
+    return SECRET_KEY
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
