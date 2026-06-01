@@ -53,7 +53,7 @@ export default function OrderManagement() {
     try {
       const token = sessionStorage.getItem('token');
       await axios.get(`${API}/orders/overdue`, { headers: { Authorization: `Bearer ${token}` } });
-    } catch (e) { /* ignore */ }
+    } catch (e) { console.error('Overdue check failed:', e); }
   };
 
   const handleCreate = async () => {

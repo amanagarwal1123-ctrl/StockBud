@@ -26,7 +26,9 @@ function getBrowserNotifPrefs() {
   try {
     const saved = localStorage.getItem(BROWSER_NOTIF_KEY);
     if (saved) return JSON.parse(saved);
-  } catch {}
+  } catch (e) {
+    console.error('Failed to read browser notification prefs:', e);
+  }
   // Default: stock and order enabled, rest disabled
   return { stock: true, order: true, stamp: true, polythene: false, general: false };
 }
@@ -104,7 +106,7 @@ export default function Notifications() {
     try {
       await axios.post(`${API}/notifications/${notifId}/read`);
       fetchNotifications();
-    } catch (e) { /* ignore */ }
+    } catch (e) { console.error('Failed to mark notification read:', e); }
   };
 
   const togglePref = (category) => {

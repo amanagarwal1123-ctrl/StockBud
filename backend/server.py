@@ -4675,12 +4675,13 @@ async def sales_reconciliation(
 
 @api_router.post("/analytics/recompute-summaries")
 async def trigger_recompute_summaries(
-    request: Dict = {},
+    request: Optional[Dict] = None,
     current_user: dict = Depends(get_current_user)
 ):
     """Manually trigger recomputation of monthly summaries (admin only)."""
     if current_user['role'] != 'admin':
         raise HTTPException(status_code=403, detail="Admin only")
+    request = request or {}
     year = request.get('year')
     result = await recompute_monthly_summaries(db, year)
     # Return latest meta for the targeted year (or the most recent year if year=None)
