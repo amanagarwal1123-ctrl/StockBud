@@ -46,7 +46,10 @@ from services.group_utils import build_group_maps, build_group_ledger, resolve_t
 from services.monthly_summary_service import (
     recompute_monthly_summaries, ensure_year_summary_fresh, get_year_meta
 )
-from services.profit_helpers import compute_daily_profits, compute_date_profit_detail
+from services.profit_helpers import (
+    compute_daily_profits, compute_date_profit_detail,
+    ledger_cost_basis, aggregate_sale_profit,
+)
 
 # Simple TTL cache for heavy inventory computations
 import time
@@ -4314,73 +4317,32 @@ async def calculate_profit(
     item_profits = []
     
     for item_name, data in item_transactions.items():
-        purchases = data['purchases']
         sales = data['sales']
-        
+
         # Skip if no sales
         if not sales:
             continue
-        
-        # If no purchases in this period, try to get cost basis from GROUP-AWARE ledger
-        if not purchases:
-            ledger_item = grp_ledger.get(item_name)
-            if ledger_item:
-                # Use cumulative purchase data as cost basis
-                purchases = [{
-                    'net_wt': ledger_item.get('total_purchased_kg', 0) * 1000,  # Convert to grams
-                    'tunch': ledger_item.get('purchase_tunch', 0),
-                    'labor': ledger_item.get('total_labour', 0),  # Total labour Rs (NOT per-kg rate)
-                    'total_amount': ledger_item.get('total_labour', 0)
-                }]
-            else:
-                # No purchase history - skip this item
-                continue
-        
-        # Calculate total and average values
-        total_purchase_wt = sum(p['net_wt'] for p in purchases)
-        total_sale_wt = sum(s['net_wt'] for s in sales)  # sale_returns have negative net_wt, reducing total
-        
-        if abs(total_purchase_wt) < 0.001 or abs(total_sale_wt) < 0.001:
+
+        # Cost basis = long-run CUMULATIVE ledger (goods sold now were purchased earlier).
+        cb = ledger_cost_basis(grp_ledger, item_name)
+        if cb is None:
+            continue  # no long-run cost basis -> skip (effectively unassigned)
+        cost_tunch, cost_lpg = cb
+
+        # Per-ENTRY silver/labour profit (atom-by-atom) so totals reconcile exactly.
+        silver_profit_kg, labor_profit_inr, total_sale_wt, avg_sale_tunch = aggregate_sale_profit(
+            sales, cost_tunch, cost_lpg)
+        if abs(total_sale_wt) < 0.001:
             continue
-        
-        # Average tunch weighted by ABSOLUTE net weight
-        avg_purchase_tunch = sum(p['tunch'] * abs(p['net_wt']) for p in purchases) / sum(abs(p['net_wt']) for p in purchases) if purchases else 0
-        avg_sale_tunch = sum(s['tunch'] * abs(s['net_wt']) for s in sales) / sum(abs(s['net_wt']) for s in sales) if sales else 0
-        
-        # 1. Silver Profit (kg) = (sale tunch - purchase tunch) * sale net weight / 100
-        silver_profit_grams = (avg_sale_tunch - avg_purchase_tunch) * total_sale_wt / 100
-        silver_profit_kg = silver_profit_grams / 1000  # Convert to kg
-        
-        # 2. Labour Profit (INR)
-        # Sale labour: returns (negative net_wt) reduce labour income
-        total_sale_labour = 0
-        for s in sales:
-            amt = abs(s.get('total_amount', 0) or s.get('labor', 0))
-            if s.get('net_wt', 0) < 0:  # sale_return → reduce income
-                total_sale_labour -= amt
-            else:
-                total_sale_labour += amt
-        
-        # Purchase labour cost: ALWAYS prefer purchase ledger (individual txns often have labor=0)
-        ledger_item = grp_ledger.get(item_name)
-        if ledger_item and ledger_item.get('labour_per_kg', 0) > 0:
-            purchase_labour_per_gram = ledger_item['labour_per_kg'] / 1000
-        elif purchases and sum(abs(p['net_wt']) for p in purchases) > 0:
-            purchase_labour_per_gram = sum(abs(p.get('total_amount', 0) or p.get('labor', 0)) for p in purchases) / sum(abs(p['net_wt']) for p in purchases)
-        else:
-            purchase_labour_per_gram = 0
-        
-        # Labour profit = total sale labour income - purchase labour cost for sold quantity
-        labor_profit_inr = total_sale_labour - (purchase_labour_per_gram * abs(total_sale_wt))
-        
+
         total_silver_profit_kg += silver_profit_kg
         total_labor_profit_inr += labor_profit_inr
-        
+
         item_profits.append({
             'item_name': item_name,
             'silver_profit_kg': round(silver_profit_kg, 3),
             'labor_profit_inr': round(labor_profit_inr, 2),
-            'avg_purchase_tunch': round(avg_purchase_tunch, 2),
+            'avg_purchase_tunch': round(cost_tunch, 2),
             'avg_sale_tunch': round(avg_sale_tunch, 2),
             'net_wt_sold_kg': round(total_sale_wt / 1000, 3)
         })

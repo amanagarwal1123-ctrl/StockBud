@@ -13,9 +13,17 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from services.profit_helpers import compute_item_margins
 from services.monthly_summary_service import _compute_item_profits, _compute_party_data
+from services.group_utils import build_group_ledger
 
 
 KG = 1000  # grams per kg
+
+
+def _led(tunch, lpk=0.0):
+    """Long-run cumulative ledger cost basis for item 'X'."""
+    return [{'item_name': 'X', 'purchase_tunch': tunch, 'labour_per_kg': lpk,
+             'total_purchased_kg': 10.0, 'total_fine_kg': tunch * 10 / 100,
+             'total_labour': lpk * 10}]
 
 
 def test_signed_negative_sr_yields_1445():
@@ -28,7 +36,7 @@ def test_signed_negative_sr_yields_1445():
         {'type': 'purchase', 'item_name': 'X', 'net_wt': 2000 * KG, 'tunch': '50',
          'labor': 0, 'total_amount': 0},
     ]
-    result = compute_item_margins(transactions, [], [], [])
+    result = compute_item_margins(transactions, _led(50), [], [])
     assert len(result) == 1
     # 1469.741 - 24.447 = 1445.294
     assert result[0]['net_wt_sold_kg'] == 1445.294, f"expected 1445.294, got {result[0]['net_wt_sold_kg']}"
@@ -44,7 +52,7 @@ def test_signed_positive_sr_also_yields_1445():
         {'type': 'purchase', 'item_name': 'X', 'net_wt': 2000 * KG, 'tunch': '50',
          'labor': 0, 'total_amount': 0},
     ]
-    result = compute_item_margins(transactions, [], [], [])
+    result = compute_item_margins(transactions, _led(50), [], [])
     assert len(result) == 1
     assert result[0]['net_wt_sold_kg'] == 1445.294, f"expected 1445.294, got {result[0]['net_wt_sold_kg']}"
 
@@ -60,7 +68,7 @@ def test_monthly_summary_negative_sr():
          'labor': 0, 'total_amount': 3000},
     ]
     master_stamps = {'X': 'JB-1'}
-    result = _compute_item_profits(transactions, master_stamps, {}, {}, {})
+    result = _compute_item_profits(transactions, master_stamps, {}, {}, build_group_ledger(_led(50), [], []))
     assert 'X' in result
     assert result['X']['net_wt_sold_kg'] == 1445.294
     # total_sales_value = 5000 - 100 = 4900
@@ -78,7 +86,7 @@ def test_monthly_summary_positive_sr():
          'labor': 0, 'total_amount': 3000},
     ]
     master_stamps = {'X': 'JB-1'}
-    result = _compute_item_profits(transactions, master_stamps, {}, {}, {})
+    result = _compute_item_profits(transactions, master_stamps, {}, {}, build_group_ledger(_led(50), [], []))
     assert result['X']['net_wt_sold_kg'] == 1445.294
     # Even with +100 SR total_amount in DB, signed should be -100 → 5000 - 100 = 4900
     assert result['X']['total_sales_value'] == 4900.0
@@ -120,7 +128,7 @@ def test_profit_calc_subtracts_return_from_volume():
         {'type': 'purchase', 'item_name': 'X', 'net_wt': 2000.0, 'tunch': '89',
          'labor': 0, 'total_amount': 0},
     ]
-    result = compute_item_margins(transactions, [], [], [])
+    result = compute_item_margins(transactions, _led(89), [], [])
     # Net vol = 900g. silver = (91-89) * 900 / 100 / 1000 = 0.018 kg
     assert result[0]['net_wt_sold_kg'] == 0.9
     assert result[0]['silver_profit_kg'] == 0.018
@@ -136,7 +144,7 @@ def test_no_double_negation():
         {'type': 'purchase', 'item_name': 'X', 'net_wt': 500.0, 'tunch': '50',
          'labor': 0, 'total_amount': 0},
     ]
-    result = compute_item_margins(transactions, [], [], [])
+    result = compute_item_margins(transactions, _led(50), [], [])
     # Correct net = 100 - 20 = 80g = 0.08 kg.
     # Double-negated (buggy) would be 100 + 20 = 120g = 0.12 kg.
     assert result[0]['net_wt_sold_kg'] == 0.08

@@ -16,9 +16,16 @@ import logging
 from collections import defaultdict
 from datetime import datetime, timezone
 from services.group_utils import build_group_maps, build_group_ledger, resolve_to_leader
+from services.profit_helpers import ledger_cost_basis, aggregate_sale_profit
 
 
 EXCLUDED_ITEMS = ["SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"]
+
+# Bump this whenever the profit/summary computation logic changes so that pre-computed
+# summaries from an older logic version are treated as stale and auto-recomputed on the
+# next read (no manual "recompute" needed after a deploy).
+# v2: cumulative-ledger cost basis + per-entry (atom-by-atom) silver/labour profit.
+PROFIT_LOGIC_VERSION = 2
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +89,9 @@ async def is_year_summary_stale(db, year: int):
     """True if the year's pre-computed summaries diverge from live transactions."""
     meta = await get_year_meta(db, year)
     if not meta:
+        return True
+    # Logic version bump -> existing summaries were computed with old math -> stale.
+    if meta.get('logic_version') != PROFIT_LOGIC_VERSION:
         return True
     current_count, current_max_created = await _get_year_fingerprint(db, year)
     if meta.get('txn_count') != current_count:
@@ -229,6 +239,7 @@ async def _compute_year(db, year: int):
         "summary_type": "_meta",
         "txn_count": txn_count,
         "max_created_at": max_created,
+        "logic_version": PROFIT_LOGIC_VERSION,
         "computed_at": datetime.now(timezone.utc).isoformat(),
     })
     docs_written += 1
@@ -272,65 +283,34 @@ def _compute_item_profits(transactions, master_stamps, mapping_dict, member_to_l
     
     results = {}
     for item_name, data in item_txns.items():
-        purchases = data['purchases']
         sales = data['sales']
-        
         if not sales:
             continue
-        
-        if not purchases:
-            ledger_item = grp_ledger.get(item_name)
-            if ledger_item:
-                purchases = [{
-                    'net_wt': ledger_item.get('total_purchased_kg', 0) * 1000,
-                    'tunch': ledger_item.get('purchase_tunch', 0),
-                    'labor': ledger_item.get('total_labour', 0),
-                    'total_amount': ledger_item.get('total_labour', 0)
-                }]
-            else:
-                continue
-        
-        total_purchase_wt = sum(p['net_wt'] for p in purchases)
-        total_sale_wt = sum(s['net_wt'] for s in sales)
-        
-        if abs(total_purchase_wt) < 0.001 or abs(total_sale_wt) < 0.001:
+
+        # Cost basis = long-run CUMULATIVE ledger (goods sold now were purchased earlier).
+        cb = ledger_cost_basis(grp_ledger, item_name)
+        if cb is None:
+            continue  # no long-run cost basis -> skip (effectively unassigned)
+        cost_tunch, cost_lpg = cb
+
+        # Per-ENTRY silver/labour profit (atom-by-atom) so day/month/year reconcile exactly.
+        silver_profit_kg, labor_profit_inr, total_sale_wt, avg_sale_tunch = aggregate_sale_profit(
+            sales, cost_tunch, cost_lpg)
+        if abs(total_sale_wt) < 0.001:
             continue
-        
-        avg_purchase_tunch = sum(p['tunch'] * abs(p['net_wt']) for p in purchases) / sum(abs(p['net_wt']) for p in purchases) if purchases else 0
-        avg_sale_tunch = sum(s['tunch'] * abs(s['net_wt']) for s in sales) / sum(abs(s['net_wt']) for s in sales) if sales else 0
-        
-        silver_profit_grams = (avg_sale_tunch - avg_purchase_tunch) * total_sale_wt / 100
-        silver_profit_kg = silver_profit_grams / 1000
-        
-        total_sale_labour = 0
-        for s in sales:
-            amt = abs(s.get('total_amount', 0) or s.get('labor', 0))
-            if s.get('net_wt', 0) < 0:
-                total_sale_labour -= amt
-            else:
-                total_sale_labour += amt
-        
-        ledger_item = grp_ledger.get(item_name)
-        if ledger_item and ledger_item.get('labour_per_kg', 0) > 0:
-            purchase_labour_per_gram = ledger_item['labour_per_kg'] / 1000
-        elif purchases and sum(abs(p['net_wt']) for p in purchases) > 0:
-            purchase_labour_per_gram = sum(abs(p.get('total_amount', 0) or p.get('labor', 0)) for p in purchases) / sum(abs(p['net_wt']) for p in purchases)
-        else:
-            purchase_labour_per_gram = 0
-        
-        labor_profit_inr = total_sale_labour - (purchase_labour_per_gram * abs(total_sale_wt))
-        # Net sales value = sales - returns (returns now have negative total_amount)
+
+        # Net sales value = sales - returns (returns carry negative total_amount)
         total_sales_value = sum(s.get('total_amount', 0) for s in sales)
-        
+
         results[item_name] = {
             'silver_profit_kg': silver_profit_kg,
             'labor_profit_inr': labor_profit_inr,
-            'avg_purchase_tunch': avg_purchase_tunch,
+            'avg_purchase_tunch': cost_tunch,
             'avg_sale_tunch': avg_sale_tunch,
             'net_wt_sold_kg': total_sale_wt / 1000,
             'total_sales_value': total_sales_value
         }
-    
+
     return results
 
 

@@ -283,13 +283,14 @@ class TestSaleReturnNotCorruptingPurchaseTunch:
             {"item_name": "TEST_SRW", "type": "sale", "net_wt": 8000, "tunch": 55, "total_amount": 160, "labor": 0},
             {"item_name": "TEST_SRW", "type": "sale_return", "net_wt": 1000, "tunch": 55, "total_amount": 20, "labor": 0},
         ]
-        ledger = []
+        ledger = [{"item_name": "TEST_SRW", "purchase_tunch": 50.0, "labour_per_kg": 0.0,
+                   "total_purchased_kg": 10.0, "total_fine_kg": 5.0, "total_labour": 0.0}]
         results = compute_item_margins(txns, ledger, [], [])
         assert len(results) == 1
         r = results[0]
         # Net sold = 8000 - 1000 = 7000g = 7.0 kg
         assert r["net_wt_sold_kg"] == 7.0
-        # Purchase tunch = 50 (from purchase only, not from sale_return)
+        # Purchase tunch = 50 (cumulative ledger cost basis)
         assert r["avg_purchase_tunch"] == 50.0
 
     def test_profit_endpoint_buy_tunch_uncontaminated(self, admin_token):

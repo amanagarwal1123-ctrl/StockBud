@@ -11,6 +11,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from services.profit_helpers import compute_item_margins
 from services.monthly_summary_service import _compute_item_profits, _compute_party_data
+from services.group_utils import build_group_ledger
+
+
+def _led(tunch, lpk=0.0):
+    """Long-run cumulative ledger cost basis for item 'ITEM_X'."""
+    return [{'item_name': 'ITEM_X', 'purchase_tunch': tunch, 'labour_per_kg': lpk,
+             'total_purchased_kg': 10.0, 'total_fine_kg': tunch * 10 / 100,
+             'total_labour': lpk * 10}]
 
 
 def test_profit_helpers_subtracts_sale_return_from_net_wt():
@@ -23,7 +31,7 @@ def test_profit_helpers_subtracts_sale_return_from_net_wt():
         {'type': 'purchase', 'item_name': 'ITEM_X', 'net_wt': 100.0, 'tunch': '89',
          'labor': 0, 'total_amount': 8900},
     ]
-    result = compute_item_margins(transactions, [], [], [])
+    result = compute_item_margins(transactions, _led(89), [], [])
     assert len(result) == 1
     r = result[0]
     assert r['net_wt_sold_kg'] == 0.07, f"expected 0.07 kg net (100g - 30g), got {r['net_wt_sold_kg']}"
@@ -39,7 +47,7 @@ def test_profit_helpers_subtracts_sale_return_from_silver_profit():
         {'type': 'purchase', 'item_name': 'ITEM_X', 'net_wt': 100.0, 'tunch': '89',
          'labor': 0, 'total_amount': 8900},
     ]
-    result = compute_item_margins(transactions, [], [], [])
+    result = compute_item_margins(transactions, _led(89), [], [])
     r = result[0]
     # (sale tunch 91 - purchase tunch 89) * 70g / 100 / 1000 = 0.0014 kg
     expected = round(0.0014, 3)
@@ -57,7 +65,7 @@ def test_monthly_summary_subtracts_sale_return_from_total_sales_value():
          'labor': 30, 'total_amount': 3000},
     ]
     master_stamps = {'ITEM_X': 'JB-1'}
-    result = _compute_item_profits(transactions, master_stamps, {}, {}, {})
+    result = _compute_item_profits(transactions, master_stamps, {}, {}, build_group_ledger(_led(89), [], []))
     assert 'ITEM_X' in result
     v = result['ITEM_X']
     assert v['net_wt_sold_kg'] == 0.07
@@ -87,7 +95,7 @@ def test_no_returns_unchanged():
         {'type': 'purchase', 'item_name': 'ITEM_X', 'net_wt': 100.0, 'tunch': '89',
          'labor': 0, 'total_amount': 8900},
     ]
-    result = compute_item_margins(transactions, [], [], [])
+    result = compute_item_margins(transactions, _led(89), [], [])
     assert result[0]['net_wt_sold_kg'] == 0.1
 
 

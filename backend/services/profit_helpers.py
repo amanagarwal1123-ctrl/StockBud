@@ -12,28 +12,70 @@ from services.group_utils import build_group_maps, resolve_to_leader, build_grou
 EXCLUDED_ITEMS = ["SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"]
 
 
+def ledger_cost_basis(grp_ledger: dict, leader: str, raw_name: str | None = None):
+    """Long-run CUMULATIVE cost basis from the PURCHASE_CUMUL ledger.
+
+    Goods sold in any period were purchased earlier, so the cost side must be a long-run
+    average, NOT the period's own purchases. The PURCHASE_CUMUL ledger holds each item's
+    cumulative purchase totals, giving a stable weighted-average purchase tunch & labour/kg
+    that is identical across every period (day/month/year) → profit is consistent & additive.
+
+    Returns (purchase_tunch_pct, purchase_labour_per_gram) or None when the item has no
+    ledger entry (such items are skipped from profit — effectively unassigned).
+    """
+    le = grp_ledger.get(leader)
+    if le is None and raw_name is not None:
+        le = grp_ledger.get(raw_name)
+    if not le:
+        return None
+    return (le.get("purchase_tunch", 0) or 0), ((le.get("labour_per_kg", 0) or 0) / 1000)
+
+
+def aggregate_sale_profit(sales: list[dict], cost_tunch: float, cost_lpg: float):
+    """Sum PER-ENTRY silver (kg) & labour (INR) profit for a bag of sale rows of one item.
+
+    Each sale entry's margin uses its OWN actual sale tunch/labour against the long-run cost
+    basis — never a period-blended sale rate. Because profit is computed atom-by-atom (per
+    transaction) and summed, day/month/year totals always reconcile exactly, and a past day's
+    profit never changes when later sales arrive.
+
+      silver(entry) = (sale_tunch - cost_tunch) * net_wt_signed / 100 / 1000   (kg)
+      labour(entry) = sale_total_signed - cost_lpg * net_wt_signed             (INR)
+
+    ``net_wt_signed`` is negative for sale_returns, which correctly reverses that sale's profit
+    (matches the proven /analytics/customer-profit logic). Returns
+    (silver_kg, labour_inr, signed_net_wt_g, avg_sale_tunch).
+    """
+    silver = 0.0
+    labour = 0.0
+    signed_wt = 0.0
+    abs_wt = 0.0
+    st_weighted = 0.0
+    for s in sales:
+        w = s.get("net_wt", 0) or 0  # signed (SR negative)
+        st = float(s.get("tunch", 0) or 0)
+        amt = abs(s.get("total_amount", 0) or 0) or abs(s.get("labor", 0) or 0)
+        amt_signed = -amt if w < 0 else amt
+        silver += (st - cost_tunch) * w / 100 / 1000
+        labour += amt_signed - cost_lpg * w
+        signed_wt += w
+        abs_wt += abs(w)
+        st_weighted += st * abs(w)
+    avg_st = st_weighted / abs_wt if abs_wt > 0.0001 else 0.0
+    return silver, labour, signed_wt, avg_st
+
+
 def compute_item_margins(transactions: list[dict], ledger_items: list[dict],
                          groups: list[dict], mappings: list[dict],
                          master_stamps: dict | None = None) -> list[dict]:
-    """Compute silver and labour margin per item using the real group-aware
-    profit logic.
+    """Compute silver and labour margin per item using the canonical per-entry profit logic.
 
-    This is the SINGLE source of truth shared by /analytics/profit
-    and the Seasonal Analysis PMS pipeline.
+    This is the SINGLE source of truth shared by /analytics/profit and the Seasonal Analysis
+    PMS pipeline. Cost basis = cumulative PURCHASE_CUMUL ledger (long-run); sale side = each
+    sale entry's actual tunch/labour. Items without a ledger cost basis are skipped.
 
-    Parameters
-    ----------
-    transactions : sale + sale_return rows (dicts with item_name, tunch, net_wt, total_amount, labor, type)
-    ledger_items : raw purchase_ledger docs
-    groups       : item_groups docs
-    mappings     : item_mappings docs
-    master_stamps: optional {item_name: stamp} for exclusion (skip Unassigned)
-
-    Returns
-    -------
-    list of dicts, each with:
-      item_name, silver_profit_kg, labor_profit_inr, avg_purchase_tunch,
-      avg_sale_tunch, net_wt_sold_kg, stamp (if master_stamps supplied)
+    Returns list of dicts: item_name, silver_profit_kg, labor_profit_inr, avg_purchase_tunch,
+    avg_sale_tunch, net_wt_sold_kg, silver_margin_per_gram, labour_margin_per_gram.
     """
     mapping_dict, member_to_leader, _ = build_group_maps(groups, mappings)
     grp_ledger = build_group_ledger(ledger_items, groups, mappings)
@@ -41,9 +83,11 @@ def compute_item_margins(transactions: list[dict], ledger_items: list[dict],
     def _resolve(name):
         return resolve_to_leader(name, mapping_dict, member_to_leader)
 
-    # Optionally filter out excluded / unassigned items
-    filtered = []
+    # Group SALE rows by leader (signed); skip excluded / unassigned
+    item_sales = defaultdict(list)
     for t in transactions:
+        if t["type"] not in ("sale", "sale_return"):
+            continue
         leader = _resolve(t["item_name"])
         if leader in EXCLUDED_ITEMS:
             continue
@@ -52,93 +96,32 @@ def compute_item_margins(transactions: list[dict], ledger_items: list[dict],
                 mapping_dict.get(t["item_name"], t["item_name"]), "Unassigned"))
             if not s or s == "Unassigned":
                 continue
-        filtered.append(t)
-
-    # Group by leader — canonicalize signs so SR rows always carry negative
-    # weight/amount/labor regardless of how DB stored them (signed or unsigned).
-    item_txns = defaultdict(lambda: {"purchases": [], "sales": []})
-    for t in filtered:
-        leader = _resolve(t["item_name"])
-        sign = -1 if t["type"] in ("sale_return", "purchase_return") else 1
-        td = {
+        sign = -1 if t["type"] == "sale_return" else 1
+        item_sales[leader].append({
             "net_wt": abs(t.get("net_wt", 0) or 0) * sign,
             "tunch": float(t.get("tunch", 0) or 0),
             "labor": abs(t.get("labor", 0) or 0) * sign,
             "total_amount": abs(t.get("total_amount", 0) or 0) * sign,
-        }
-        if t["type"] in ("purchase", "purchase_return"):
-            item_txns[leader]["purchases"].append(td)
-        elif t["type"] in ("sale", "sale_return"):
-            item_txns[leader]["sales"].append(td)
+        })
 
     results = []
-    for item_name, data in item_txns.items():
-        purchases = data["purchases"]
-        sales = data["sales"]
-        if not sales:
+    for item_name, sales in item_sales.items():
+        cb = ledger_cost_basis(grp_ledger, item_name)
+        if cb is None:
+            continue  # no long-run cost basis -> skip (effectively unassigned)
+        cost_tunch, cost_lpg = cb
+        silver_kg, labour_inr, signed_wt, avg_st = aggregate_sale_profit(sales, cost_tunch, cost_lpg)
+        if abs(signed_wt) < 0.001:
             continue
-
-        # Cost-basis fallback from group ledger (same as /analytics/profit)
-        if not purchases:
-            le = grp_ledger.get(item_name)
-            if le:
-                purchases = [{
-                    "net_wt": le.get("total_purchased_kg", 0) * 1000,
-                    "tunch": le.get("purchase_tunch", 0),
-                    "labor": le.get("total_labour", 0),
-                    "total_amount": le.get("total_labour", 0),
-                }]
-            else:
-                continue
-
-        total_purchase_wt = sum(p["net_wt"] for p in purchases)
-        total_sale_wt = sum(s["net_wt"] for s in sales)  # sale_returns reduce via negative net_wt
-        if abs(total_purchase_wt) < 0.001 or abs(total_sale_wt) < 0.001:
-            continue
-
-        avg_purchase_tunch = (
-            sum(p["tunch"] * abs(p["net_wt"]) for p in purchases)
-            / sum(abs(p["net_wt"]) for p in purchases)
-        ) if purchases else 0
-        avg_sale_tunch = (
-            sum(s["tunch"] * abs(s["net_wt"]) for s in sales)
-            / sum(abs(s["net_wt"]) for s in sales)
-        ) if sales else 0
-
-        # Silver profit (kg)
-        silver_profit_g = (avg_sale_tunch - avg_purchase_tunch) * total_sale_wt / 100
-        silver_profit_kg = silver_profit_g / 1000
-
-        # Labour profit (INR) — returns (negative net_wt) reduce labour income
-        total_sale_labour = 0
-        for s in sales:
-            amt = abs(s.get("total_amount", 0) or s.get("labor", 0))
-            if s.get("net_wt", 0) < 0:  # sale_return
-                total_sale_labour -= amt
-            else:
-                total_sale_labour += amt
-        le = grp_ledger.get(item_name)
-        if le and le.get("labour_per_kg", 0) > 0:
-            purchase_labour_per_gram = le["labour_per_kg"] / 1000
-        elif purchases and sum(abs(p["net_wt"]) for p in purchases) > 0:
-            purchase_labour_per_gram = (
-                sum(abs(p.get("total_amount", 0) or p.get("labor", 0)) for p in purchases)
-                / sum(abs(p["net_wt"]) for p in purchases)
-            )
-        else:
-            purchase_labour_per_gram = 0
-        labor_profit_inr = total_sale_labour - (purchase_labour_per_gram * abs(total_sale_wt))
-
         results.append({
             "item_name": item_name,
-            "silver_profit_kg": round(silver_profit_kg, 3),
-            "labor_profit_inr": round(labor_profit_inr, 2),
-            "avg_purchase_tunch": round(avg_purchase_tunch, 2),
-            "avg_sale_tunch": round(avg_sale_tunch, 2),
-            "net_wt_sold_kg": round(total_sale_wt / 1000, 3),
-            # Per-gram components for PMS
-            "silver_margin_per_gram": silver_profit_g / max(abs(total_sale_wt), 1),
-            "labour_margin_per_gram": labor_profit_inr / max(abs(total_sale_wt), 1),
+            "silver_profit_kg": round(silver_kg, 3),
+            "labor_profit_inr": round(labour_inr, 2),
+            "avg_purchase_tunch": round(cost_tunch, 2),
+            "avg_sale_tunch": round(avg_st, 2),
+            "net_wt_sold_kg": round(signed_wt / 1000, 3),
+            "silver_margin_per_gram": (silver_kg * 1000) / max(abs(signed_wt), 1),
+            "labour_margin_per_gram": labour_inr / max(abs(signed_wt), 1),
         })
 
     return results
@@ -165,70 +148,24 @@ def _build_month_context(transactions: list[dict], ledger_items: list[dict],
         s = master_stamps.get(leader, master_stamps.get(mapping_dict.get(raw, raw), "Unassigned"))
         return bool(s) and s != "Unassigned"
 
-    month_purchases = defaultdict(list)
-    for t in transactions:
-        if t.get("type") not in ("purchase", "purchase_return"):
-            continue
-        leader = _resolve(t["item_name"])
-        if not _included(leader, t["item_name"]):
-            continue
-        sign = -1 if t["type"] == "purchase_return" else 1
-        month_purchases[leader].append({
-            "net_wt": abs(t.get("net_wt", 0) or 0) * sign,
-            "tunch": float(t.get("tunch", 0) or 0),
-            "labor": abs(t.get("labor", 0) or 0) * sign,
-            "total_amount": abs(t.get("total_amount", 0) or 0) * sign,
-        })
-
     cost_cache: dict = {}
 
     def _cost_basis(leader):
+        """Long-run CUMULATIVE cost basis from the ledger (constant across all periods).
+        Returns (purchase_tunch, purchase_labour_per_gram) or None to skip the item."""
         if leader in cost_cache:
             return cost_cache[leader]
-        purchases = month_purchases.get(leader, [])
-        if not purchases:
-            le = grp_ledger.get(leader)
-            if le:
-                purchases = [{
-                    "net_wt": le.get("total_purchased_kg", 0) * 1000,
-                    "tunch": le.get("purchase_tunch", 0),
-                    "labor": le.get("total_labour", 0),
-                    "total_amount": le.get("total_labour", 0),
-                }]
-            else:
-                cost_cache[leader] = None
-                return None
-        tot_abs = sum(abs(p["net_wt"]) for p in purchases)
-        if tot_abs < 0.001:
-            cost_cache[leader] = None
-            return None
-        avg_pt = sum(p["tunch"] * abs(p["net_wt"]) for p in purchases) / tot_abs
-        le = grp_ledger.get(leader)
-        if le and le.get("labour_per_kg", 0) > 0:
-            plpg = le["labour_per_kg"] / 1000
-        else:
-            plpg = sum(abs(p.get("total_amount", 0) or p.get("labor", 0)) for p in purchases) / tot_abs
-        cost_cache[leader] = (avg_pt, plpg)
+        cost_cache[leader] = ledger_cost_basis(grp_ledger, leader)
         return cost_cache[leader]
 
     return _resolve, _included, _cost_basis
 
 
-def _sale_silver_labour(sales: list[dict], avg_pt: float, plpg: float):
-    """Silver (kg) + labour (INR) profit for a bag of sale rows of ONE item, given a fixed
-    cost basis. ``sales`` rows already carry signed weight/amount (SR negative)."""
-    day_sw = sum(s["net_wt"] for s in sales)
-    tot_abs_sw = sum(abs(s["net_wt"]) for s in sales)
-    if tot_abs_sw < 0.001:
-        return 0.0, 0.0, day_sw
-    day_avg_st = sum(s["tunch"] * abs(s["net_wt"]) for s in sales) / tot_abs_sw
-    silver = (day_avg_st - avg_pt) * day_sw / 100 / 1000
-    sale_labour = 0.0
-    for s in sales:
-        amt = abs(s.get("total_amount", 0) or s.get("labor", 0))
-        sale_labour += -amt if s["net_wt"] < 0 else amt
-    labour = sale_labour - (plpg * abs(day_sw))
-    return silver, labour, day_sw
+def _sale_silver_labour(sales: list[dict], cost_tunch: float, cost_lpg: float):
+    """Per-ENTRY silver (kg) + labour (INR) profit for a bag of sale rows of ONE item.
+    ``sales`` rows already carry signed weight/amount (SR negative)."""
+    silver, labour, signed_wt, _ = aggregate_sale_profit(sales, cost_tunch, cost_lpg)
+    return silver, labour, signed_wt
 
 
 def _signed_sale_row(t: dict) -> dict:
@@ -246,16 +183,15 @@ def compute_daily_profits(transactions: list[dict], ledger_items: list[dict],
                           master_stamps: dict, year: int, month: int) -> list[dict]:
     """Daily silver / labour profit for each day of a month.
 
-    CRITICAL: silver & labour profit per day use a per-item **month-level** cost basis
-    (avg purchase tunch + purchase labour/kg) — exactly the same cost basis the monthly
-    summary (`_compute_item_profits`) uses. Because the purchase tunch is held CONSTANT
-    per item across every day, the daily values are additive: the sum of daily silver
-    profit equals the monthly total shown in the header.
+    Each day's profit is the SUM of that day's individual sale entries' profit, where every
+    sale entry's margin = (its actual sale tunch/labour) − (the item's long-run CUMULATIVE
+    ledger cost basis). Because the cost basis is constant across all periods and profit is
+    summed atom-by-atom (per sale entry), the daily values are perfectly additive — the sum
+    of daily profit equals the monthly total, which equals the yearly total.
 
-    The earlier implementation recomputed the purchase tunch from *each day's* purchases
-    (and fell back to the ledger only on no-purchase days). That is non-additive — the
-    per-day cost basis drifts from the month-level one — so daily sums diverged from the
-    monthly total (the reported "sum of daywise profit != total profit" bug).
+    (The earlier implementation recomputed the purchase tunch from each day's/month's own
+    purchases, which is non-additive AND conceptually wrong — goods sold today were bought
+    earlier, so the cost must be the long-run cumulative purchase rate.)
     """
     import calendar
     _resolve, _included, _cost_basis = _build_month_context(
@@ -308,9 +244,9 @@ def compute_date_profit_detail(month_transactions: list[dict], date: str,
                                top_n: int = 20) -> dict:
     """Top items & customers profit for a single ``date`` (YYYY-MM-DD).
 
-    Uses the SAME month-level cost basis as `compute_daily_profits`, so the per-item silver
-    profits shown on drilldown stay consistent with the day's total in the daily breakdown.
-    ``month_transactions`` are all transactions for the date's month (needed for cost basis).
+    Uses the same long-run cumulative-ledger cost basis + per-entry profit as
+    `compute_daily_profits`, so per-item silver profits on drilldown stay consistent with the
+    day's total. ``month_transactions`` are all transactions for the date's month.
     """
     _resolve, _included, _cost_basis = _build_month_context(
         month_transactions, ledger_items, groups, mappings, master_stamps)

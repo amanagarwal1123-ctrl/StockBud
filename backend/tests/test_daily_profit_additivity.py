@@ -26,9 +26,15 @@ def _txn(date, ttype, item, net_wt_g, tunch, amount):
             "fine": net_wt_g * tunch / 100, "party_name": "P"}
 
 
+LEDGER = [{
+    "item_name": "RING", "purchase_tunch": 54.0, "labour_per_kg": 240.0,
+    "total_purchased_kg": 18.0, "total_fine_kg": 9.72, "total_labour": 4320.0,
+}]
+
+
 def _monthly_total(transactions, master_stamps):
     mapping_dict, member_to_leader, _ = build_group_maps([], [])
-    grp_ledger = build_group_ledger([], [], [])
+    grp_ledger = build_group_ledger(LEDGER, [], [])
     results = _compute_item_profits(transactions, master_stamps, mapping_dict, member_to_leader, grp_ledger)
     silver = sum(r["silver_profit_kg"] for r in results.values())
     labor = sum(r["labor_profit_inr"] for r in results.values())
@@ -36,7 +42,7 @@ def _monthly_total(transactions, master_stamps):
 
 
 def _daily_total(transactions, master_stamps, year, month):
-    daily = compute_daily_profits(transactions, [], [], [], master_stamps, year, month)
+    daily = compute_daily_profits(transactions, LEDGER, [], [], master_stamps, year, month)
     silver = sum(d["silver_profit_kg"] for d in daily)
     labor = sum(d["labor_profit_inr"] for d in daily)
     return silver, labor, daily
@@ -96,9 +102,9 @@ def test_daily_sums_to_monthly_with_returns():
     ]
     m_silver, m_labor = _monthly_total(txns, MASTER)
     d_silver, d_labor, _ = _daily_total(txns, MASTER, 2026, 6)
-    # Tiny residual from |wt|-weighted avg tunch vs signed total when returns exist
-    assert abs(d_silver - m_silver) < 0.02, f"silver daily {d_silver} != monthly {m_silver}"
-    assert abs(d_labor - m_labor) < 5.0, f"labour daily {d_labor} != monthly {m_labor}"
+    # Per-entry summation is exact even with returns (no averaging residual)
+    assert abs(d_silver - m_silver) < 0.005, f"silver daily {d_silver} != monthly {m_silver}"
+    assert abs(d_labor - m_labor) < 1.0, f"labour daily {d_labor} != monthly {m_labor}"
 
 
 def test_excluded_items_skipped_in_daily():
@@ -125,7 +131,7 @@ def test_drilldown_items_sum_to_daily_total():
     _, _, daily = _daily_total(txns, MASTER, 2026, 6)
     by_date = {d["date"]: d for d in daily}
     for date in ("2026-06-01", "2026-06-02", "2026-06-03"):
-        detail = compute_date_profit_detail(txns, date, [], [], [], MASTER)
+        detail = compute_date_profit_detail(txns, date, LEDGER, [], [], MASTER)
         items_silver = round(sum(i["silver_profit_kg"] for i in detail["top_items"]), 3)
         items_labor = round(sum(i["labor_profit_inr"] for i in detail["top_items"]), 2)
         assert abs(items_silver - by_date[date]["silver_profit_kg"]) < 0.005, \
