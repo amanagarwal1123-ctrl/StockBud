@@ -46,6 +46,7 @@ from services.group_utils import build_group_maps, build_group_ledger, resolve_t
 from services.monthly_summary_service import (
     recompute_monthly_summaries, ensure_year_summary_fresh, get_year_meta
 )
+from services.profit_helpers import compute_daily_profits, compute_date_profit_detail
 
 # Simple TTL cache for heavy inventory computations
 import time
@@ -5277,114 +5278,30 @@ async def get_daily_profit(
     month: int = Query(...),
     current_user: dict = Depends(get_current_user)
 ):
-    """Get daily silver and labour profit for each day of the month."""
-    
-    start_date = f"{year}-{str(month).padStart(2, '0')}-01" if False else f"{year}-{month:02d}-01"
+    """Get daily silver and labour profit for each day of the month.
+
+    Uses the shared, ADDITIVE ``compute_daily_profits`` helper which applies a per-item
+    month-level cost basis (same as the monthly summary). This guarantees the sum of the
+    daily profits equals the monthly total shown in the header (Profit Analysis page).
+    """
     import calendar
     last_day = calendar.monthrange(year, month)[1]
     end_date = f"{year}-{month:02d}-{last_day} 23:59:59"
-    
-    # Load required data
+
+    # Load required data (mappings, groups, stamps, ledger, month transactions)
     mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
     all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
     master_items_list = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(None)
     master_stamps = {m['item_name']: m.get('stamp', 'Unassigned') for m in master_items_list}
-    p_mapping_dict, p_member_to_leader, _ = build_group_maps(all_groups, mappings)
     all_ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(None)
-    grp_ledger = build_group_ledger(all_ledger, all_groups, mappings)
-    
-    EXCLUDED_ITEMS = ["SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"]
-    
-    def _resolve(name):
-        return resolve_to_leader(name, p_mapping_dict, p_member_to_leader)
-    
     transactions = await db.transactions.find(
         {'date': {'$gte': f"{year}-{month:02d}-01", '$lte': end_date}},
         {"_id": 0}
     ).to_list(None)
-    
-    # Group by date
-    from collections import defaultdict
-    daily_txns = defaultdict(list)
-    for t in transactions:
-        d = t.get('date', '')[:10]  # YYYY-MM-DD
-        if d:
-            daily_txns[d].append(t)
-    
-    daily_profits = []
-    for day in range(1, last_day + 1):
-        date_str = f"{year}-{month:02d}-{day:02d}"
-        txns = daily_txns.get(date_str, [])
-        
-        if not txns:
-            daily_profits.append({"date": date_str, "silver_profit_kg": 0, "labor_profit_inr": 0, "sale_count": 0})
-            continue
-        
-        # Quick profit calculation for this day
-        item_data = defaultdict(lambda: {'purchases': [], 'sales': []})
-        sale_count = 0
-        for t in txns:
-            leader = _resolve(t['item_name'])
-            if leader in EXCLUDED_ITEMS:
-                continue
-            stamp = master_stamps.get(leader, master_stamps.get(p_mapping_dict.get(t['item_name'], t['item_name']), 'Unassigned'))
-            if not stamp or stamp == 'Unassigned':
-                continue
-            
-            sign = -1 if t['type'] in ('sale_return', 'purchase_return') else 1
-            td = {'net_wt': abs(t.get('net_wt', 0) or 0) * sign, 'tunch': float(t.get('tunch', 0) or 0),
-                  'labor': abs(t.get('labor', 0) or 0) * sign, 'total_amount': abs(t.get('total_amount', 0) or 0) * sign}
-            
-            if t['type'] in ['purchase', 'purchase_return']:
-                item_data[leader]['purchases'].append(td)
-            elif t['type'] == 'sale':
-                item_data[leader]['sales'].append(td)
-                sale_count += 1
-            elif t['type'] == 'sale_return':
-                item_data[leader]['sales'].append(td)
-        
-        day_silver = 0.0
-        day_labor = 0.0
-        for item_name, data in item_data.items():
-            purchases = data['purchases']
-            sales = data['sales']
-            if not sales:
-                continue
-            if not purchases:
-                li = grp_ledger.get(item_name)
-                if li:
-                    purchases = [{'net_wt': li.get('total_purchased_kg', 0) * 1000, 'tunch': li.get('purchase_tunch', 0),
-                                  'labor': li.get('total_labour', 0), 'total_amount': li.get('total_labour', 0)}]
-                else:
-                    continue
-            
-            total_pw = sum(p['net_wt'] for p in purchases)
-            total_sw = sum(s['net_wt'] for s in sales)
-            if abs(total_pw) < 0.001 or abs(total_sw) < 0.001:
-                continue
-            
-            avg_pt = sum(p['tunch'] * abs(p['net_wt']) for p in purchases) / sum(abs(p['net_wt']) for p in purchases)
-            avg_st = sum(s['tunch'] * abs(s['net_wt']) for s in sales) / sum(abs(s['net_wt']) for s in sales)
-            
-            day_silver += (avg_st - avg_pt) * total_sw / 100 / 1000
-            
-            sale_labour = sum(abs(s.get('total_amount', 0) or s.get('labor', 0)) * (-1 if s.get('net_wt', 0) < 0 else 1) for s in sales)
-            li = grp_ledger.get(item_name)
-            if li and li.get('labour_per_kg', 0) > 0:
-                plpg = li['labour_per_kg'] / 1000
-            elif purchases and sum(abs(p['net_wt']) for p in purchases) > 0:
-                plpg = sum(abs(p.get('total_amount', 0) or p.get('labor', 0)) for p in purchases) / sum(abs(p['net_wt']) for p in purchases)
-            else:
-                plpg = 0
-            day_labor += sale_labour - (plpg * abs(total_sw))
-        
-        daily_profits.append({
-            "date": date_str,
-            "silver_profit_kg": round(day_silver, 3),
-            "labor_profit_inr": round(day_labor, 2),
-            "sale_count": sale_count
-        })
-    
+
+    daily_profits = compute_daily_profits(
+        transactions, all_ledger, all_groups, mappings, master_stamps, year, month
+    )
     return {"year": year, "month": month, "daily": daily_profits}
 
 
@@ -5393,127 +5310,31 @@ async def get_daily_profit_detail(
     date: str = Query(...),
     current_user: dict = Depends(get_current_user)
 ):
-    """Get top 20 customers and top 20 items profit for a specific date."""
-    
-    end_date = date + ' 23:59:59'
+    """Get top 20 customers and top 20 items profit for a specific date.
+
+    Uses the shared month-level cost basis (compute_date_profit_detail) so per-item silver
+    profits stay consistent with the daily totals shown on the Profit Analysis page.
+    """
+    # date is YYYY-MM-DD; load the whole MONTH so the cost basis matches the daily/monthly calc
+    year = int(date[:4])
+    month = int(date[5:7])
+    import calendar
+    last_day = calendar.monthrange(year, month)[1]
+    month_start = f"{year}-{month:02d}-01"
+    month_end = f"{year}-{month:02d}-{last_day} 23:59:59"
+
     mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
     all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
     master_items_list = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(None)
     master_stamps = {m['item_name']: m.get('stamp', 'Unassigned') for m in master_items_list}
-    p_mapping_dict, p_member_to_leader, _ = build_group_maps(all_groups, mappings)
     all_ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(None)
-    grp_ledger = build_group_ledger(all_ledger, all_groups, mappings)
-    
-    EXCLUDED_ITEMS = ["SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"]
-    
-    def _resolve(name):
-        return resolve_to_leader(name, p_mapping_dict, p_member_to_leader)
-    
-    transactions = await db.transactions.find(
-        {'date': {'$gte': date, '$lte': end_date}},
-        {"_id": 0}
+    month_txns = await db.transactions.find(
+        {'date': {'$gte': month_start, '$lte': month_end}}, {"_id": 0}
     ).to_list(None)
-    
-    # Item-wise profit
-    from collections import defaultdict
-    item_data = defaultdict(lambda: {'purchases': [], 'sales': []})
-    customer_data = defaultdict(lambda: {'sales': [], 'total_net_wt': 0})
-    
-    for t in transactions:
-        leader = _resolve(t['item_name'])
-        if leader in EXCLUDED_ITEMS:
-            continue
-        stamp = master_stamps.get(leader, master_stamps.get(p_mapping_dict.get(t['item_name'], t['item_name']), 'Unassigned'))
-        if not stamp or stamp == 'Unassigned':
-            continue
-        
-        sign = -1 if t['type'] in ('sale_return', 'purchase_return') else 1
-        td = {'net_wt': abs(t.get('net_wt', 0) or 0) * sign, 'tunch': float(t.get('tunch', 0) or 0),
-              'labor': abs(t.get('labor', 0) or 0) * sign, 'total_amount': abs(t.get('total_amount', 0) or 0) * sign, 'item': leader}
-        
-        if t['type'] in ['purchase', 'purchase_return']:
-            item_data[leader]['purchases'].append(td)
-        elif t['type'] in ['sale', 'sale_return']:
-            item_data[leader]['sales'].append(td)
-            party = t.get('party_name', 'Unknown')
-            if party:
-                if 'items' not in customer_data[party]:
-                    customer_data[party]['items'] = defaultdict(list)
-                customer_data[party]['items'][leader].append(td)
-    
-    # Compute item profits
-    item_profits = []
-    # Also store per-item profit rates for customer attribution
-    item_profit_rates = {}
-    for item_name, data in item_data.items():
-        purchases = data['purchases']
-        sales = data['sales']
-        if not sales:
-            continue
-        if not purchases:
-            li = grp_ledger.get(item_name)
-            if li:
-                purchases = [{'net_wt': li.get('total_purchased_kg', 0) * 1000, 'tunch': li.get('purchase_tunch', 0),
-                              'labor': li.get('total_labour', 0), 'total_amount': li.get('total_labour', 0)}]
-            else:
-                continue
-        
-        total_pw = sum(p['net_wt'] for p in purchases)
-        total_sw = sum(s['net_wt'] for s in sales)
-        if abs(total_pw) < 0.001 or abs(total_sw) < 0.001:
-            continue
-        
-        avg_pt = sum(p['tunch'] * abs(p['net_wt']) for p in purchases) / sum(abs(p['net_wt']) for p in purchases)
-        avg_st = sum(s['tunch'] * abs(s['net_wt']) for s in sales) / sum(abs(s['net_wt']) for s in sales)
-        silver = (avg_st - avg_pt) * total_sw / 100 / 1000
-        
-        sale_labour = sum(abs(s.get('total_amount', 0) or s.get('labor', 0)) * (-1 if s.get('net_wt', 0) < 0 else 1) for s in sales)
-        li = grp_ledger.get(item_name)
-        if li and li.get('labour_per_kg', 0) > 0:
-            plpg = li['labour_per_kg'] / 1000
-        elif purchases and sum(abs(p['net_wt']) for p in purchases) > 0:
-            plpg = sum(abs(p.get('total_amount', 0) or p.get('labor', 0)) for p in purchases) / sum(abs(p['net_wt']) for p in purchases)
-        else:
-            plpg = 0
-        labor = sale_labour - (plpg * abs(total_sw))
-        
-        item_profits.append({"item_name": item_name, "silver_profit_kg": round(silver, 3), "labor_profit_inr": round(labor, 2), "net_wt_sold_kg": round(total_sw / 1000, 3)})
-        
-        # Store profit per gram for customer attribution
-        if abs(total_sw) > 0.001:
-            item_profit_rates[item_name] = {
-                'silver_per_gram': (avg_st - avg_pt) / 100 / 1000,  # kg profit per gram sold
-                'labor_per_gram': labor / abs(total_sw)  # INR profit per gram sold
-            }
-    
-    item_profits.sort(key=lambda x: x['silver_profit_kg'], reverse=True)
-    
-    # Compute customer profits using per-item profit rates
-    customer_profits = []
-    for party, cdata in customer_data.items():
-        cust_silver = 0.0
-        cust_labor = 0.0
-        for item_name, sales_list in cdata.get('items', {}).items():
-            rates = item_profit_rates.get(item_name)
-            if not rates:
-                continue
-            cust_net_wt = sum(s.get('net_wt', 0) for s in sales_list)
-            cust_silver += rates['silver_per_gram'] * cust_net_wt
-            cust_labor += rates['labor_per_gram'] * cust_net_wt
-        
-        if abs(cust_silver) > 0.0001 or abs(cust_labor) > 0.01:
-            customer_profits.append({
-                "party_name": party,
-                "silver_profit_kg": round(cust_silver, 3),
-                "labor_profit_inr": round(cust_labor, 2),
-            })
-    customer_profits.sort(key=lambda x: x['silver_profit_kg'], reverse=True)
-    
-    return {
-        "date": date,
-        "top_items": item_profits[:20],
-        "top_customers": customer_profits[:20]
-    }
+
+    return compute_date_profit_detail(
+        month_txns, date, all_ledger, all_groups, mappings, master_stamps, top_n=20
+    )
 
 
 

@@ -203,3 +203,20 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Mutable default arg** (`server.py` `/analytics/recompute-summaries`): `request: Dict = {}` → `Optional[Dict] = None` with safe init.
 - **Empty catch blocks** (3): `OrderManagement.jsx` overdue check, `Notifications.jsx` prefs read + markRead now log errors instead of silently swallowing.
 - **Investigated → false positives (intentionally NOT changed)**: (a) "9 undefined vars" — ruff F821/F823 + pylint E0606/E0601/E0602 report ZERO. (b) "84 incorrect is/==" — all are `is None`/`is True/False` (correct PEP8 idiom; `==` would add E711 errors). (c) "25 sensitive storage" — all `sessionStorage.getItem('token')` (app-wide JWT convention) + non-sensitive notif UI prefs; cookie migration = full auth rewrite, declined. (d) "74 missing hook deps" — project ESLint passes clean; mass useCallback changes risk infinite loops.
+
+
+## Daily Profit Additivity — "Sum of daywise profit != total profit" Fix (Jun 1, 2026)
+- **Problem reported (production)**: On Profit Analysis (Jun 2026), the sum of the daily Silver Profit rows did NOT equal the header Silver Profit total (daily summed ~17.97 kg vs header 10.998 kg). Labour matched. "Was correct till ~2 days ago."
+- **Root cause (code, not data)**: Two different cost bases for the same metric.
+  - Header total (`/analytics/monthly-profit`) reads pre-computed `monthly_summaries` built by `_compute_item_profits`, which uses a per-item **month-level** `avg_purchase_tunch` (constant across the month).
+  - `/analytics/daily-profit` recomputed `avg_purchase_tunch` from **each day's** purchases (and fell back to the ledger only on no-purchase days). Silver profit = `(avg_sale_tunch − avg_purchase_tunch) × wt`; a per-day purchase tunch is **non-additive**, so daily values can't sum to the monthly total. Labour matched because its `labour_per_kg` comes from the ledger (constant per item → additive). The gap widened after the recent upload added sale days with no same-day purchase (which used the ledger tunch, diverging from the month avg).
+- **Fix (`services/profit_helpers.py`)**: New shared, additive helpers:
+  - `_build_month_context()` — builds one per-item month-level cost basis (avg purchase tunch + purchase labour/kg) + resolve/include closures.
+  - `compute_daily_profits()` — per-day silver/labour using the CONSTANT per-item cost basis → sum of daily == monthly total by construction.
+  - `compute_date_profit_detail()` — per-date drilldown (top items/customers) using the SAME cost basis, so drilldown item silver sums to the day's total.
+  - `/analytics/daily-profit` and `/analytics/daily-profit-detail` endpoints rewired to these helpers (old inline per-day math deleted).
+- **Tests** (`tests/test_daily_profit_additivity.py`, 5): daily silver sums to `_compute_item_profits` total (no returns, exact); documents the OLD per-day method diverges; with returns within tolerance; excluded items skipped; drilldown items sum to the daily row.
+- **Verified live (preview, isolated injected item + recompute, cleaned up)**: header item silver/labour (3.27/13600) == daily-sum (3.27/13600); drilldown 06-03 silver (1.233) == daily row 06-03 (1.233). MATCH on all three views.
+- **Not the deploy's fault**: the Jun 1 auth deploy only touched login code; this averaging bug pre-existed and surfaced as data grew.
+- **ACTION REQUIRED BY USER**: REDEPLOY to apply to production.
+- **Scope note**: Other profit endpoints (`/analytics/profit`, `customer-profit`, `supplier-profit`, `historical-profit`) are single-period aggregates (no daily sub-rows to reconcile) → no additivity bug, left unchanged.
