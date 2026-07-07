@@ -273,7 +273,7 @@ class SeasonalMLService:
                  "tunch": 1, "total_amount": 1, "labor": 1}
         ).to_list(None)
         ledger_items = await self.db.purchase_ledger.find({}, {"_id": 0}).to_list(None)
-        groups = await self.db.item_groups.find({}, {"_id": 0}).to_list(1000)
+        groups = await self.db.item_groups.find({}, {"_id": 0}).to_list(None)
         mappings = await self.db.item_mappings.find({}, {"_id": 0}).to_list(None)
 
         item_margins = compute_item_margins(all_txns, ledger_items, groups, mappings)

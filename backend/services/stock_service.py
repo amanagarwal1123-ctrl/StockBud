@@ -28,7 +28,7 @@ async def get_book_closing_stock_as_of_date(verification_date: str):
     master_items = await db.master_items.find({}, {"_id": 0}).to_list(None)
     master_stamp_dict = {m['item_name']: m['stamp'] for m in master_items}
 
-    groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
 
     baselines_raw = await db.inventory_baselines.find({}, {"_id": 0}).to_list(None)
     baselines = {b['item_key']: b for b in baselines_raw}
@@ -259,7 +259,7 @@ async def get_current_inventory(as_of_date: str = None):
     master_items = await db.master_items.find({}, {"_id": 0}).to_list(None)
     master_stamp_dict = {m['item_name']: m['stamp'] for m in master_items}
 
-    groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
     ledger_items = await db.purchase_ledger.find({}, {"_id": 0}).to_list(None)
 
     # Load inventory baselines (physical stock overrides)
@@ -578,7 +578,7 @@ async def get_stamp_closing_stock(stamp: str, as_of_date: str):
     for txn, master in mapping_dict.items():
         reverse_map[master].add(txn)
 
-    groups = await db.item_groups.find({}, {'_id': 0}).to_list(1000)
+    groups = await db.item_groups.find({}, {'_id': 0}).to_list(None)
     all_group_members = set()
     for g in groups:
         all_group_members.update(g.get('members', []))

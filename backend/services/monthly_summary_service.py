@@ -144,7 +144,7 @@ async def _compute_year(db, year: int):
     
     # Load mappings and groups
     mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
-    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
     master_items = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(None)
     master_stamps = {m['item_name']: m.get('stamp', 'Unassigned') for m in master_items}
     

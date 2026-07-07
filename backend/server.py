@@ -1730,7 +1730,7 @@ async def get_all_entries(current_user: dict = Depends(get_current_user)):
     if current_user['role'] not in ['manager', 'admin']:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    entries = await db.stock_entries.find({}, {"_id": 0}).sort('entry_date', -1).to_list(1000)
+    entries = await db.stock_entries.find({}, {"_id": 0}).sort('entry_date', -1).to_list(None)
     return entries
 
 @api_router.delete("/executive/delete-entry/{stamp}/{username}")
@@ -1881,7 +1881,7 @@ async def get_approval_details(stamp: str, verification_date: Optional[str] = No
     verification_date = entry.get('verification_date', entry.get('entry_day', datetime.now(timezone.utc).strftime('%Y-%m-%d')))
     
     # Get ALL items in this stamp from master
-    master_items = await db.master_items.find({'stamp': stamp}, {"_id": 0}).to_list(1000)
+    master_items = await db.master_items.find({'stamp': stamp}, {"_id": 0}).to_list(None)
     master_item_names = {m['item_name'] for m in master_items}
     
     # Create map of entered weights
@@ -1942,7 +1942,7 @@ async def get_pending_approvals(current_user: dict = Depends(get_current_user)):
     if current_user['role'] not in ['manager', 'admin']:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    entries = await db.stock_entries.find({'status': 'pending'}, {"_id": 0}).to_list(100)
+    entries = await db.stock_entries.find({'status': 'pending'}, {"_id": 0}).to_list(None)
     return entries
 
 @api_router.get("/polythene/all")
@@ -1961,7 +1961,7 @@ async def get_item_polythene_history(item_name: str, current_user: dict = Depend
     entries = await db.polythene_adjustments.find(
         {'item_name': item_name},
         {"_id": 0}
-    ).sort('created_at', -1).to_list(1000)
+    ).sort('created_at', -1).to_list(None)
     
     return entries
 
@@ -2621,7 +2621,7 @@ async def upload_physical_stock_preview(
 
     # Build comprehensive name→base_key reverse lookup
     all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
-    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
     ps_mapping_dict, _, _ = build_group_maps(all_groups, all_mappings)
 
     # Step 1: direct base key lookup
@@ -3020,7 +3020,7 @@ async def fix_group_baselines(current_user: dict = Depends(get_current_user)):
     if current_user['role'] != 'admin':
         raise HTTPException(status_code=403, detail="Admin only")
 
-    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
     all_baselines = await db.inventory_baselines.find({}, {"_id": 0}).to_list(None)
 
     group_leaders = {g['group_name'] for g in all_groups}
@@ -3139,7 +3139,7 @@ async def restore_group_baselines(current_user: dict = Depends(get_current_user)
     if current_user['role'] != 'admin':
         raise HTTPException(status_code=403, detail="Admin only")
 
-    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
     group_members_map = {g['group_name']: g.get('members', []) for g in all_groups}
     master_items = await db.master_items.find({}, {"_id": 0}).to_list(None)
     master_stamp_dict = {m['item_name']: m['stamp'] for m in master_items}
@@ -3421,7 +3421,7 @@ async def get_stamp_breakdown(stamp: str, current_user: dict = Depends(get_curre
     current_net = sum(item.get('net_wt', 0) for item in stamp_items)
     
     # Get opening stock for breakdown display
-    opening = await db.opening_stock.find({"stamp": stamp}, {"_id": 0}).to_list(1000)
+    opening = await db.opening_stock.find({"stamp": stamp}, {"_id": 0}).to_list(None)
     opening_gross = sum(item.get('gr_wt', 0) for item in opening)
     opening_net = sum(item.get('net_wt', 0) for item in opening)
     
@@ -3674,7 +3674,7 @@ async def get_customer_profit(
     # Get purchase ledger — GROUP AWARE
     ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(None)
     all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
-    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
     grp_ledger = build_group_ledger(ledger, all_groups, all_mappings)
     mapping_dict, member_to_leader, _ = build_group_maps(all_groups, all_mappings)
     
@@ -3778,7 +3778,7 @@ async def get_supplier_profit(
     
     # Group-aware mappings
     all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
-    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
     s_mapping_dict, s_member_to_leader, _ = build_group_maps(all_groups, all_mappings)
     
     def _resolve_supplier(name):
@@ -4091,7 +4091,7 @@ async def get_master_items(search: Optional[str] = None, current_user: dict = De
     if search:
         query = {"item_name": {"$regex": search, "$options": "i"}}
     
-    items = await db.master_items.find(query, {"_id": 0}).sort("item_name", 1).to_list(1000)
+    items = await db.master_items.find(query, {"_id": 0}).sort("item_name", 1).to_list(None)
     
     # Return with cache-control headers to prevent browser caching of stamp data
     return JSONResponse(
@@ -4249,7 +4249,7 @@ async def calculate_profit(
     
     # Get item mappings + groups for group-aware resolution
     mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
-    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
     p_mapping_dict, p_member_to_leader, _ = build_group_maps(all_groups, mappings)
     
     def _resolve_profit(name):
@@ -4394,7 +4394,7 @@ async def sale_debug_breakdown(
     
     # Build the SAME filter as /analytics/monthly-profit (excluded + unassigned)
     EXCLUDED = {"SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"}
-    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
     m_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
     m_master = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(None)
     m_stamps = {m['item_name']: m.get('stamp', 'Unassigned') for m in m_master}
@@ -4491,7 +4491,7 @@ async def sales_reconciliation(
         "date": 1, "pc": 1}).to_list(None)
 
     EXCLUDED = {"SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"}
-    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
     rec_maps = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
     rec_master = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(None)
     rec_stamps = {m['item_name']: (m.get('stamp') or 'Unassigned') for m in rec_master}
@@ -4767,7 +4767,7 @@ async def get_sales_report(
     
     # Build resolution context
     EXCLUDED = {"SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"}
-    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
     mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
     master_list = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(None)
     stamp_lookup = {m['item_name']: (m.get('stamp') or 'Unassigned') for m in master_list}
@@ -5109,7 +5109,7 @@ async def get_monthly_profit(
     
     # Build the same filter the profit pipeline uses
     EXCLUDED_ITEMS = {"SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"}
-    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
     ms_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
     ms_master = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(None)
     ms_stamps = {m['item_name']: m.get('stamp', 'Unassigned') for m in ms_master}
@@ -5252,7 +5252,7 @@ async def get_daily_profit(
 
     # Load required data (mappings, groups, stamps, ledger, month transactions)
     mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
-    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
     master_items_list = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(None)
     master_stamps = {m['item_name']: m.get('stamp', 'Unassigned') for m in master_items_list}
     all_ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(None)
@@ -5286,7 +5286,7 @@ async def get_daily_profit_detail(
     month_end = f"{year}-{month:02d}-{last_day} 23:59:59"
 
     mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
-    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
     master_items_list = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(None)
     master_stamps = {m['item_name']: m.get('stamp', 'Unassigned') for m in master_items_list}
     all_ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(None)
@@ -5644,11 +5644,11 @@ async def debug_item_closing(item_name: str, as_of_date: str = None, current_use
     stamp = master_item.get('stamp', 'Unassigned')
 
     # Opening stock
-    opening_docs = await db.opening_stock.find({'item_name': item_name}, {'_id': 0}).to_list(10)
+    opening_docs = await db.opening_stock.find({'item_name': item_name}, {'_id': 0}).to_list(None)
     opening_gr = sum(d.get('gr_wt', 0) for d in opening_docs)
 
     # Find all names that map to this item
-    mappings = await db.item_mappings.find({'master_name': item_name}, {'_id': 0}).to_list(100)
+    mappings = await db.item_mappings.find({'master_name': item_name}, {'_id': 0}).to_list(None)
     all_names = [item_name] + [m['transaction_name'] for m in mappings]
 
     # Transactions
@@ -5674,7 +5674,7 @@ async def debug_item_closing(item_name: str, as_of_date: str = None, current_use
     poly_query = {'item_name': {'$in': all_names}}
     if as_of_date:
         poly_query['date'] = {'$lte': as_of_date + ' 23:59:59'}
-    polythene = await db.polythene_adjustments.find(poly_query, {'_id': 0}).to_list(100)
+    polythene = await db.polythene_adjustments.find(poly_query, {'_id': 0}).to_list(None)
     poly_total = 0
     for p in polythene:
         pw = p['poly_weight'] * 1000  # kg to grams
@@ -5812,7 +5812,7 @@ async def get_item_detail(item_name: str, current_user: dict = Depends(get_curre
     transactions = await db.transactions.find(
         {"item_name": {"$in": search_names}}, 
         {"_id": 0}
-    ).sort("date", -1).to_list(1000)
+    ).sort("date", -1).to_list(None)
     
     # Calculate statistics
     purchases = [t for t in transactions if t['type'] in ['purchase', 'purchase_return']]
@@ -5969,7 +5969,7 @@ async def categorize_items(current_user: dict = Depends(get_current_user)):
     # 1. Load mappings + groups for item resolution
     all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
     mapping_dict = {m['transaction_name']: m['master_name'] for m in all_mappings}
-    groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
     member_to_group = {}
     for g in groups:
         for member in g.get('members', []):
@@ -6237,7 +6237,7 @@ async def update_item_buffer(item_name: str, minimum_stock_kg: float = Query(...
 @api_router.get("/item-groups")
 async def get_item_groups(current_user: dict = Depends(get_current_user)):
     """Get all item groups with their members and mapped items"""
-    groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
     # Also get item mappings to show which items map to each member
     mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
     mapping_by_master = defaultdict(list)
@@ -6278,7 +6278,7 @@ async def delete_item_group(group_name: str, current_user: dict = Depends(get_cu
 async def suggest_item_groups(current_user: dict = Depends(get_current_user)):
     """List all master items + auto-detected groups from mappings"""
     items = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(None)
-    existing = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    existing = await db.item_groups.find({}, {"_id": 0}).to_list(None)
     grouped_items = set()
     for g in existing:
         grouped_items.update(g.get('members', []))
@@ -6345,7 +6345,7 @@ async def get_stamp_detail(stamp_name: str, current_user: dict = Depends(get_cur
 @api_router.get("/stamp-assignments")
 async def get_stamp_assignments(current_user: dict = Depends(get_current_user)):
     """Get all stamp-to-user assignments"""
-    assignments = await db.stamp_assignments.find({}, {"_id": 0}).to_list(100)
+    assignments = await db.stamp_assignments.find({}, {"_id": 0}).to_list(None)
     return {"assignments": assignments}
 
 @api_router.post("/stamp-assignments")
@@ -6471,7 +6471,7 @@ async def check_overdue_orders(current_user: dict = Depends(get_current_user)):
     overdue = await db.orders.find({
         'status': 'ordered',
         'ordered_at': {'$lt': cutoff}
-    }, {"_id": 0}).to_list(100)
+    }, {"_id": 0}).to_list(None)
     
     # Generate notifications for overdue orders
     for order in overdue:
@@ -6538,7 +6538,7 @@ async def check_stock_alerts(current_user: dict = Depends(get_current_user)):
     inv_dict.update({item['item_name']: item for item in inv_response.get('negative_items', [])})
     
     # Get stamp assignments
-    assignments = await db.stamp_assignments.find({}, {"_id": 0}).to_list(100)
+    assignments = await db.stamp_assignments.find({}, {"_id": 0}).to_list(None)
     stamp_user = {a['stamp']: a['assigned_user'] for a in assignments}
     
     alerts = 0
@@ -6641,7 +6641,7 @@ async def auto_stock_alerts(current_user: dict = Depends(get_current_user)):
             inv_dict = {item['item_name']: item for item in inv_response['inventory']}
             inv_dict.update({item['item_name']: item for item in inv_response.get('negative_items', [])})
             
-            assignments = await db.stamp_assignments.find({}, {"_id": 0}).to_list(100)
+            assignments = await db.stamp_assignments.find({}, {"_id": 0}).to_list(None)
             stamp_user = {a['stamp']: a['assigned_user'] for a in assignments}
             
             # Clear old stock alerts (only stock category)
@@ -6692,7 +6692,7 @@ async def auto_stock_alerts(current_user: dict = Depends(get_current_user)):
     if role != 'admin':
         query['target_user'] = username
     
-    alerts = await db.notifications.find(query, {"_id": 0}).sort("severity", 1).to_list(100)
+    alerts = await db.notifications.find(query, {"_id": 0}).sort("severity", 1).to_list(None)
     
     return {"alerts": alerts, "count": len(alerts)}
 
@@ -6715,7 +6715,7 @@ async def get_historical_profit(
 
     # 1. Load item mappings + groups for group-aware resolution
     all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
-    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
     h_mapping_dict, h_member_to_leader, _ = build_group_maps(all_groups, all_mappings)
     def resolve(name):
         return resolve_to_leader(name, h_mapping_dict, h_member_to_leader)
@@ -6993,7 +6993,7 @@ async def get_visualization_data(
     if start_date and end_date:
         query['date'] = {'$gte': start_date, '$lte': end_date + ' 23:59:59'}
     
-    transactions = await db.transactions.find(query, {"_id": 0}).to_list(50000)
+    transactions = await db.transactions.find(query, {"_id": 0}).to_list(None)
     
     # Get buffer info for tier colors
     buffers = await db.item_buffers.find({}, {"_id": 0}).to_list(None)
@@ -7002,7 +7002,7 @@ async def get_visualization_data(
     # Load mappings + groups for resolving to leaders
     all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
     mapping_dict = {m['transaction_name']: m['master_name'] for m in all_mappings}
-    groups = await db.item_groups.find({}, {"_id": 0}).to_list(1000)
+    groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
     member_to_leader = {}
     for g in groups:
         for member in g.get('members', []):
@@ -7230,7 +7230,7 @@ async def get_historical_summary(current_user: dict = Depends(get_current_user))
             }},
             {"$sort": {"_id.year": 1, "_id.type": 1}}
         ]
-        results = await db.historical_transactions.aggregate(pipeline).to_list(100)
+        results = await db.historical_transactions.aggregate(pipeline).to_list(None)
         
         summary = {}
         for r in results:

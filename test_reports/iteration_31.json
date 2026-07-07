@@ -1,0 +1,38 @@
+{
+  "summary": "Backend regression testing after removal of hardcoded .to_list(1000)/.to_list(50000) limits in server.py and services/*.py. Created new pytest suite /app/backend/tests/test_unbounded_limits.py with 7 tests. All 7 passed. No 500s, no timeouts, all endpoints respond in <1s despite unbounded queries against 11,767-transaction DB.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/analytics/monthly-profit & /api/analytics/daily-profit", "issue": "For months 2026-01/02/03 (the only months with data - 10,930 sales exist) both silver_profit_kg and labor_profit_inr return 0 even after POST /api/analytics/recompute-summaries (recomputed=1575). Additivity technically holds (0==0) so the limit-fix does not regress. However zero profit against 10.9k sale records suggests purchase_ledger / cost-basis engine may be empty or misaligned with sales data in the test DB. This is NOT caused by the current limit-removal fix (pre-existing data or profit_helpers cost-basis issue). Worth investigating separately."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_unbounded_limits.py",
+    "/app/test_reports/pytest/pytest_unbounded.xml"
+  ],
+  "tests_executed": [
+    {"name": "test_admin_login_returns_jwt", "result": "PASS"},
+    {"name": "test_inventory_current", "result": "PASS", "notes": "78 items, 0.22s"},
+    {"name": "test_dashboard_stats (/api/stats)", "result": "PASS", "notes": "total_transactions=11767, purchases=418, sales=10930, parties=1408, items=364, date_range 2026-01-15..2026-03-02 - reflects FULL data, no truncation"},
+    {"name": "test_item_detail_high_volume", "result": "PASS", "notes": "SNT 40-256, Test Master Item, ITEM-ALPHA all returned 200 with full statistics keys, elapsed <0.25s each"},
+    {"name": "test_visualization_data (/api/analytics/visualization)", "result": "PASS", "notes": "0.19s, keys: sales_by_item, sales_by_party, purchases_by_supplier, tier_distribution, sales_trend, trend_granularity, stock_health"},
+    {"name": "test_profit_additivity", "result": "PASS", "notes": "For 2026-01/02/03: monthly silver=0, labor=0; sum(daily) silver=0, labor=0. Additivity preserved (0==0). See minor issue re actual profit values."},
+    {"name": "test_physical_stock_endpoints", "result": "PASS", "notes": "18 verification dates listed; compare for 2026-03-31 returned 200 with summary/matches/discrepancies/only_in_book/only_in_physical keys"}
+  ],
+  "action_items": [
+    "Investigate why /api/analytics/monthly-profit and /api/analytics/daily-profit return silver_profit_kg=0 and labor_profit_inr=0 for months that contain 10,930 sales (2026-01..2026-03). Possibly missing purchase_ledger entries for the imported items, or profit_helpers cost-basis lookup mismatch. Not a regression from the limit fix but noteworthy for data integrity."
+  ],
+  "critical_code_review_comments": [
+    "server.py is very large (>6900 lines with 20+ occurrences of the same `db.item_groups.find().to_list(None)` boilerplate). Consider extracting an `_all_item_groups()` helper to enforce the unbounded contract in one place - reduces risk of a future dev reintroducing a truncating limit.",
+    "Endpoint naming inconsistency: request mentioned `/api/dashboard/stats` and `/api/visualization-data` but actual routes are `/api/stats` and `/api/analytics/visualization`. Consider aligning docs/frontend to avoid confusion."
+  ],
+  "updated_files": ["/app/backend/tests/test_unbounded_limits.py"],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "N/A (skipped per request)"},
+  "test_credentials": "admin/admin123 (verified working). TEST_EXEC/exec123 not exercised - only admin flows required.",
+  "seed_data_creation": "None - used existing test DB (11,767 transactions, 78 inventory items, 18 physical-stock verification dates).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The unbounded-limit fix is verified working. Test file /app/backend/tests/test_unbounded_limits.py is the canonical regression for this fix. If profit engine changes, revisit test_profit_additivity - it currently trivially passes because profit==0 for all months with data; strengthen it once profit calculations return non-zero. Correct endpoint paths: /api/stats (not /api/dashboard/stats), /api/analytics/visualization (not /api/visualization-data), /api/physical-stock/compare uses ?verification_date=YYYY-MM-DD single param.",
+  "rca of the issue": "N/A - fix verified, no regressions found."
+}
