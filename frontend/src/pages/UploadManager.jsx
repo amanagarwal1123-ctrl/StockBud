@@ -20,8 +20,35 @@ export default function UploadManager() {
     purchase: { start: '', end: '' },
     sale: { start: '', end: '' },
     branch_transfer: { start: '', end: '' },
+    master_stock: { start: new Date().toISOString().slice(0, 10) },
+    opening_stock: { start: new Date().toISOString().slice(0, 10) },
     physical_stock: { date: '' }
   });
+  const [effectiveDate, setEffectiveDate] = useState(null);
+  const [effectiveDateInput, setEffectiveDateInput] = useState('');
+
+  const fetchEffectiveDate = async () => {
+    try {
+      const res = await axios.get(`${API}/opening-stock/effective-date`);
+      setEffectiveDate(res.data.effective_date);
+      if (res.data.effective_date) setEffectiveDateInput(res.data.effective_date);
+    } catch { /* non-blocking */ }
+  };
+  useEffect(() => { fetchEffectiveDate(); }, []);
+
+  const saveEffectiveDate = async () => {
+    if (!effectiveDateInput) {
+      toast.error('Pick a date first');
+      return;
+    }
+    try {
+      const res = await axios.put(`${API}/opening-stock/effective-date`, { effective_date: effectiveDateInput });
+      setEffectiveDate(res.data.effective_date);
+      toast.success(`Opening stock is now anchored as on ${res.data.effective_date}. Transactions on or before this date no longer affect current stock.`);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Failed to save effective date');
+    }
+  };
 
   // Physical stock preview state
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -139,6 +166,7 @@ export default function UploadManager() {
     const activeEntry = typeUploads.find(u => u.status === 'uploading' || u.status === 'queued' || u.status === 'processing');
     const errorEntry = !activeEntry ? typeUploads.slice().reverse().find(u => u.status === 'error') : null;
     const needsDateRange = type === 'purchase' || type === 'sale' || type === 'branch_transfer';
+    const needsAsOnDate = type === 'master_stock' || type === 'opening_stock';
     const needsDate = type === 'physical_stock';
     const isPhysicalLoading = type === 'physical_stock' && previewLoading;
     const fileRef = useRef(null);
@@ -169,6 +197,12 @@ export default function UploadManager() {
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">To Date *</label>
                 <Input type="date" value={dateRanges[type]?.end || ''} onChange={(e) => setDateRanges(prev => ({ ...prev, [type]: { ...prev[type], end: e.target.value } }))} className="text-sm h-9" data-testid={`date-end-${type}`} required />
               </div>
+            </div>
+          )}
+          {needsAsOnDate && (
+            <div className="pb-3 border-b">
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Stock as on date * (transactions on/before this date will NOT affect current stock)</label>
+              <Input type="date" value={dateRanges[type]?.start || ''} onChange={(e) => setDateRanges(prev => ({ ...prev, [type]: { start: e.target.value } }))} className="text-sm h-9" data-testid={`as-on-date-${type}`} required />
             </div>
           )}
           {needsDate && (
@@ -246,8 +280,25 @@ export default function UploadManager() {
         </TabsList>
 
         <TabsContent value="master" className="space-y-6">
-          <div className="max-w-2xl">
-            <FileUploadCard type="master_stock" title="Master Stock (STOCK 2026)" description="Upload your FINAL verified stock with definitive item names and stamps. This replaces opening stock and becomes the reference for all future transactions." />
+          <div className="max-w-2xl space-y-4">
+            <FileUploadCard type="master_stock" title="Master Stock (STOCK 2026)" description="Upload your FINAL verified stock with definitive item names and stamps. This replaces opening stock and anchors your stock as on the chosen date — items not in the file start from zero." />
+            <Card className="border-primary/20 bg-primary/5" data-testid="effective-date-card">
+              <CardContent className="p-4 space-y-2">
+                <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+                  <Calendar className="h-4 w-4" />
+                  Opening Stock Effective Date
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {effectiveDate
+                    ? <>Stock is anchored as on <strong data-testid="effective-date-value">{effectiveDate}</strong>. Sales/purchases dated on or before this date do not change current stock.</>
+                    : <span className="text-orange-600" data-testid="effective-date-missing">Not set — all transactions (any date) currently affect stock. Set the date your opening/master stock was taken.</span>}
+                </p>
+                <div className="flex gap-2 items-center">
+                  <Input type="date" value={effectiveDateInput} onChange={(e) => setEffectiveDateInput(e.target.value)} className="text-sm h-9 bg-background max-w-[180px]" data-testid="effective-date-input" />
+                  <Button size="sm" onClick={saveEffectiveDate} className="h-9" data-testid="effective-date-save">Save</Button>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </TabsContent>
         <TabsContent value="transactions" className="space-y-6">
@@ -332,7 +383,7 @@ export default function UploadManager() {
                 </p>
               )}
               {(pendingFile.fileType === 'opening_stock' || pendingFile.fileType === 'master_stock') && (
-                <p className="text-sm text-orange-600">This will replace all existing data.</p>
+                <p className="text-sm text-orange-600">This will replace all existing data. Stock will be anchored as on <strong>{dateRanges[pendingFile.fileType]?.start || 'today'}</strong> — items not in this file become zero.</p>
               )}
               <div className="flex gap-2 justify-end pt-2">
                 <Button variant="outline" size="sm" onClick={cancelUpload} data-testid="upload-cancel-btn">Cancel</Button>

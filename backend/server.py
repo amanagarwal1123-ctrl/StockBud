@@ -43,7 +43,7 @@ from services.helpers import (
     normalize_stamp, get_column_value, parse_labor_value,
     normalize_date, stamp_sort_key, save_action, auto_normalize_stamps
 )
-from services.stock_service import get_current_inventory, get_effective_physical_base_for_date, _flat_base_from_inventory
+from services.stock_service import get_current_inventory, get_effective_physical_base_for_date, _flat_base_from_inventory, get_opening_effective_date
 from services.group_utils import build_group_maps, build_group_ledger, resolve_to_leader
 from services.monthly_summary_service import (
     recompute_monthly_summaries, ensure_year_summary_fresh, get_year_meta
@@ -947,9 +947,26 @@ def parse_excel_streaming(file_path: str, file_type: str) -> List[Dict]:
 
 # ==================== UPLOAD ENDPOINTS ====================
 
+async def _set_opening_effective_date(effective_date: str = None) -> str:
+    """Persist the opening stock effective date (defaults to today). Anchors current stock."""
+    eff = (effective_date or '').strip() or datetime.now(timezone.utc).date().isoformat()
+    try:
+        datetime.strptime(eff, '%Y-%m-%d')
+    except ValueError:
+        raise HTTPException(status_code=400, detail="effective_date must be YYYY-MM-DD")
+    await db.app_settings.update_one(
+        {'key': 'opening_stock_effective_date'},
+        {'$set': {'value': eff, 'updated_at': datetime.now(timezone.utc).isoformat()}},
+        upsert=True
+    )
+    _inv_cache.invalidate()
+    return eff
+
+
 @api_router.post("/opening-stock/upload")
-async def upload_opening_stock(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
-    """Upload opening stock - Parse and MERGE items by name (sum weights regardless of stamp)"""
+async def upload_opening_stock(file: UploadFile = File(...), effective_date: str = None, current_user: dict = Depends(get_current_user)):
+    """Upload opening stock - Parse and MERGE items by name (sum weights regardless of stamp).
+    Sets the opening stock effective date: stock is anchored to these values as of that date."""
     if current_user['role'] not in ['admin', 'manager']:
         raise HTTPException(status_code=403, detail="Admin or Manager only")
     content = await file.read()
@@ -1004,6 +1021,8 @@ async def upload_opening_stock(file: UploadFile = File(...), current_user: dict 
         total_gr_wt = sum(item['gr_wt'] for item in stock_items)
         
         await save_action('upload_opening_stock', f"Uploaded {len(stock_items)} merged opening stock items, total: {total_net_wt/1000:.3f} kg")
+
+        eff = await _set_opening_effective_date(effective_date)
         
         # Auto-normalize stamps after upload
         await auto_normalize_stamps()
@@ -1015,8 +1034,11 @@ async def upload_opening_stock(file: UploadFile = File(...), current_user: dict 
             "merged_items": len(stock_items),
             "total_net_wt_kg": round(total_net_wt/1000, 3),
             "total_gr_wt_kg": round(total_gr_wt/1000, 3),
-            "message": f"Merged {len(records)} rows into {len(stock_items)} items. Total: {total_net_wt/1000:.3f} kg"
+            "effective_date": eff,
+            "message": f"Merged {len(records)} rows into {len(stock_items)} items. Total: {total_net_wt/1000:.3f} kg (stock as on {eff})"
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error processing file: {str(e)}")
 
@@ -1547,11 +1569,12 @@ async def _process_upload(upload_id: str, meta: dict):
                 stock_items = [OpeningStock(**item).model_dump() for item in merged_items.values()]
                 await db.opening_stock.insert_many(stock_items)
                 total_net_wt = sum(i['net_wt'] for i in stock_items)
-                await save_action('upload_opening_stock', f"Uploaded {len(stock_items)} merged opening stock items")
+                eff = await _set_opening_effective_date(meta.get('start_date'))
+                await save_action('upload_opening_stock', f"Uploaded {len(stock_items)} merged opening stock items (as on {eff})")
                 await auto_normalize_stamps()
                 meta['status'] = 'complete'
-                meta['result'] = {"success": True, "count": len(stock_items),
-                                  "message": f"Opening stock uploaded: {len(stock_items)} items, {total_net_wt/1000:.3f} kg"}
+                meta['result'] = {"success": True, "count": len(stock_items), "effective_date": eff,
+                                  "message": f"Opening stock uploaded: {len(stock_items)} items, {total_net_wt/1000:.3f} kg (stock as on {eff})"}
             else:
                 verification_date = meta.get('verification_date') or datetime.now(timezone.utc).isoformat()[:10]
                 count, message = await _replace_physical_stock_for_date(records, verification_date)
@@ -2775,6 +2798,21 @@ async def get_transactions(type: Optional[str] = None, limit: int = 5000, curren
     transactions = await db.transactions.find(query, {"_id": 0}).sort("date", -1).to_list(limit)
     return transactions
 
+@api_router.get("/opening-stock/effective-date")
+async def get_opening_stock_effective_date_endpoint(current_user: dict = Depends(get_current_user)):
+    """The date the opening stock was taken 'as on'. Transactions on/before it don't affect stock."""
+    return {"effective_date": await get_opening_effective_date()}
+
+
+@api_router.put("/opening-stock/effective-date")
+async def set_opening_stock_effective_date_endpoint(payload: dict, current_user: dict = Depends(get_current_user)):
+    if current_user['role'] not in ['admin', 'manager']:
+        raise HTTPException(status_code=403, detail="Admin or Manager only")
+    eff = await _set_opening_effective_date(payload.get('effective_date'))
+    await save_action('set_opening_effective_date', f"Opening stock effective date set to {eff}")
+    return {"success": True, "effective_date": eff}
+
+
 @api_router.get("/inventory/current")
 async def get_current_inventory_endpoint(current_user: dict = Depends(get_current_user)):
     """Calculate current inventory: Opening Stock + Purchases - Sales (cached 30s)"""
@@ -3801,8 +3839,9 @@ async def undo_upload(batch_id: str, current_user: dict = Depends(get_current_us
 
 
 @api_router.post("/master-stock/upload")
-async def upload_master_stock(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
-    """Upload STOCK 2026 as master reference - FINAL item names and stamps"""
+async def upload_master_stock(file: UploadFile = File(...), effective_date: str = None, current_user: dict = Depends(get_current_user)):
+    """Upload STOCK 2026 as master reference - FINAL item names and stamps.
+    Also anchors stock: these values become the stock 'as on' effective_date."""
     if current_user['role'] not in ['admin', 'manager']:
         raise HTTPException(status_code=403, detail="Admin or Manager only")
     content = await file.read()
@@ -3863,13 +3902,17 @@ async def upload_master_stock(file: UploadFile = File(...), current_user: dict =
         await auto_normalize_stamps()
         
         total_net = sum(i['net_wt'] for i in opening_items)
-        
+        eff = await _set_opening_effective_date(effective_date)
+
         return {
             "success": True,
             "count": len(opening_items),
             "total_net_kg": round(total_net / 1000, 3),
-            "message": f"Master stock uploaded: {len(opening_items)} items, {total_net/1000:.3f} kg"
+            "effective_date": eff,
+            "message": f"Master stock uploaded: {len(opening_items)} items, {total_net/1000:.3f} kg (stock as on {eff})"
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error: {str(e)}")
 

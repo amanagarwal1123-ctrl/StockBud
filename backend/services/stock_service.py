@@ -3,6 +3,13 @@ from database import db
 from services.group_utils import build_group_maps, build_group_ledger
 
 
+async def get_opening_effective_date():
+    """Opening stock 'as on' date. When set, opening stock acts as an absolute anchor:
+    transactions on/before this date are considered baked into the opening stock."""
+    doc = await db.app_settings.find_one({'key': 'opening_stock_effective_date'}, {'_id': 0})
+    return (doc or {}).get('value') or None
+
+
 async def get_book_closing_stock_as_of_date(verification_date: str):
     """Compute the closing/book stock as of a specific date.
 
@@ -33,6 +40,13 @@ async def get_book_closing_stock_as_of_date(verification_date: str):
     baselines_raw = await db.inventory_baselines.find({}, {"_id": 0}).to_list(None)
     baselines = {b['item_key']: b for b in baselines_raw}
 
+    # Opening stock effective date: acts as a global anchor. Baselines older than it
+    # are superseded; transactions on/before it are baked into the opening stock.
+    oed = await get_opening_effective_date()
+    opening_applies = oed is None or oed <= verification_date
+    if oed and opening_applies:
+        baselines = {k: b for k, b in baselines.items() if b['baseline_date'] >= oed}
+
     mapping_dict, member_to_leader, group_members_map = build_group_maps(groups, mappings)
 
     group_names_set = {g['group_name'] for g in groups}
@@ -62,8 +76,8 @@ async def get_book_closing_stock_as_of_date(verification_date: str):
 
     inventory_map = {}
 
-    # Opening stock
-    for item in opening:
+    # Opening stock (only if its effective date has been reached as of this date)
+    for item in (opening if opening_applies else []):
         raw_name = item['item_name'].strip()
         display_name = _resolve(raw_name)
         key = display_name.strip().lower()
@@ -105,7 +119,8 @@ async def get_book_closing_stock_as_of_date(verification_date: str):
         display_name = _resolve(trans_name)
         key = display_name.strip().lower()
         bl = baseline_by_key.get(key)
-        if bl and trans.get('date', '') <= bl['baseline_date']:
+        cutoff = bl['baseline_date'] if bl else (oed if (oed and opening_applies) else None)
+        if cutoff and trans.get('date', '') <= cutoff:
             continue
         if key not in inventory_map:
             item_stamp = master_stamp_dict.get(
@@ -132,7 +147,8 @@ async def get_book_closing_stock_as_of_date(verification_date: str):
         master_item = mapping_dict.get(adj_item, adj_item)
         adj_key = master_item.strip().lower()
         bl = baseline_by_key.get(adj_key)
-        if bl and adj.get('date', '') <= bl['baseline_date']:
+        cutoff = bl['baseline_date'] if bl else (oed if (oed and opening_applies) else None)
+        if cutoff and adj.get('date', '') <= cutoff:
             continue
         pw = adj['poly_weight'] * 1000
         if adj['operation'] == 'add':
@@ -267,6 +283,13 @@ async def get_current_inventory(as_of_date: str = None):
     baselines_raw = await db.inventory_baselines.find(bl_filter, {"_id": 0}).to_list(None)
     baselines = {b['item_key']: b for b in baselines_raw}
 
+    # Opening stock effective date: acts as a global anchor. Baselines older than it
+    # are superseded; transactions on/before it are baked into the opening stock.
+    oed = await get_opening_effective_date()
+    opening_applies = oed is None or not as_of_date or oed <= as_of_date
+    if oed and opening_applies:
+        baselines = {k: b for k, b in baselines.items() if b['baseline_date'] >= oed}
+
     mapping_dict, member_to_leader, group_members = build_group_maps(groups, mappings)
     group_ledger = build_group_ledger(ledger_items, groups, mappings)
 
@@ -297,8 +320,8 @@ async def get_current_inventory(as_of_date: str = None):
     # Inventory map: keyed by INDIVIDUAL item (not group leader)
     inventory_map = {}
 
-    # --- Opening stock ---
-    for item in opening:
+    # --- Opening stock (only if its effective date has been reached as of this date) ---
+    for item in (opening if opening_applies else []):
         raw_name = item['item_name'].strip()
         display_name = _resolve(raw_name)
         key = display_name.strip().lower()
@@ -365,7 +388,8 @@ async def get_current_inventory(as_of_date: str = None):
         key = display_name.strip().lower()
 
         bl = baseline_by_key.get(key)
-        if bl and trans.get('date', '') <= bl['baseline_date']:
+        cutoff = bl['baseline_date'] if bl else (oed if (oed and opening_applies) else None)
+        if cutoff and trans.get('date', '') <= cutoff:
             continue
 
         if key not in inventory_map:
@@ -408,7 +432,8 @@ async def get_current_inventory(as_of_date: str = None):
         master_item_name = mapping_dict.get(adj_item_name, adj_item_name)
         adj_key = master_item_name.strip().lower()
         bl = baseline_by_key.get(adj_key)
-        if bl and adj.get('date', '') <= bl['baseline_date']:
+        cutoff = bl['baseline_date'] if bl else (oed if (oed and opening_applies) else None)
+        if cutoff and adj.get('date', '') <= cutoff:
             continue
         poly_weight = adj['poly_weight'] * 1000
         if adj['operation'] == 'add':
@@ -592,7 +617,10 @@ async def get_stamp_closing_stock(stamp: str, as_of_date: str):
     opening = await db.opening_stock.find({}, {'_id': 0}).to_list(None)
     item_gross = defaultdict(float)
 
-    for item in opening:
+    oed = await get_opening_effective_date()
+    opening_applies = oed is None or oed <= as_of_date
+
+    for item in (opening if opening_applies else []):
         raw_name = item['item_name'].strip()
         if raw_name in master_names:
             item_gross[raw_name] += item.get('gr_wt', 0)
@@ -612,6 +640,8 @@ async def get_stamp_closing_stock(stamp: str, as_of_date: str):
     ).to_list(None)
 
     for t in transactions:
+        if oed and opening_applies and t.get('date', '') <= oed:
+            continue
         raw_name = t.get('item_name', '').strip()
         target = None
         if raw_name in master_names:

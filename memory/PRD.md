@@ -286,3 +286,13 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **No numeric-only item names** exist in real data (new parser filter drops nothing real; stock engine already excluded integer names).
 - **Regression suite added**: `tests/test_itemwise_stock_formula.py` (~93s due to 30s inventory cache waits).
 - **Production note**: if stock still looks wrong on production, the DB there still contains the doubled ghost rows — REDEPLOY + re-upload each file once to self-repair (iter34 fix).
+
+## Opening Stock as Global Anchor — COMPLETE (Jun 16, 2026)
+- **User request**: uploading Opening/Master stock on a specific date must become the absolute baseline. Items not in the file → zero; transactions on/before that date must NOT alter current stock.
+- **Implementation** (was ~95% done by previous fork, finished here):
+  - Fixed critical interrupted-edit bug: `@api_router.post("/opening-stock/upload")` decorator was attached to the helper `_set_opening_effective_date` instead of `upload_opening_stock` (server.py ~line 950) → the upload endpoint was completely broken. Decorator moved to the correct function.
+  - `app_settings` doc `opening_stock_effective_date` stores the anchor; set automatically by `/api/opening-stock/upload?effective_date=` and `/api/master-stock/upload?effective_date=`, or manually via PUT `/api/opening-stock/effective-date`.
+  - `stock_service.py` (`get_current_inventory`, `get_book_closing_stock_as_of_date`, `get_stamp_closing_stock`): transactions/polythene with date <= anchor skipped; baselines older than anchor superseded; unlisted items start at 0.
+  - Frontend: Master Stock tab has "Stock as on date" picker (defaults today) + "Opening Stock Effective Date" card (GET/PUT, testids: effective-date-card/input/save/value/missing). Chunked path passes date via `start_date` in `/upload/init`; direct path via query param.
+- **Verified (self-test, all PASS, preview data backed up/restored)**: upload anchors date; pre-anchor purchase+sale ignored (opening 1000 + post-anchor 100 = 1100 exact); unlisted item = post-anchor txns only (50); moving anchor via PUT re-bakes all txns; master-stock upload also anchors; UI renders card correctly.
+- **Opening stock parser format reminder**: columns `Item Name, Stamp, Gr.Wt., Net.Wt.` with weights in KG. Master stock: `Item Name, Stamp, Gross weigth, Net Weight` in grams.

@@ -128,9 +128,9 @@ export function UploadProvider({ children }) {
         formData.append('file', file);
         const range = dateRanges[fileType] || {};
         let endpoint;
-        if (fileType === 'opening_stock') endpoint = `${API}/opening-stock/upload`;
+        if (fileType === 'opening_stock') endpoint = `${API}/opening-stock/upload${range.start ? `?effective_date=${range.start}` : ''}`;
         else if (fileType === 'physical_stock') endpoint = `${API}/physical-stock/upload?verification_date=${dateRanges.physical_stock?.date}`;
-        else if (fileType === 'master_stock') endpoint = `${API}/master-stock/upload`;
+        else if (fileType === 'master_stock') endpoint = `${API}/master-stock/upload${range.start ? `?effective_date=${range.start}` : ''}`;
         else endpoint = `${API}/transactions/upload/${fileType}?start_date=${range.start}&end_date=${range.end}`;
 
         response = await axios.post(endpoint, formData, {
