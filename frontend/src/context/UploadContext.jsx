@@ -21,13 +21,13 @@ export function UploadProvider({ children }) {
     setUploads(prev => prev.filter(u => u.id !== id));
   }, []);
 
-  // Safety: auto-clear stuck uploads > 10 minutes
+  // Safety: auto-clear stuck uploads > 30 minutes
   useEffect(() => {
     const interval = setInterval(() => {
       setUploads(prev => {
         const now = Date.now();
         return prev.filter(u => {
-          if (u.status === 'uploading' && u._startTime && (now - u._startTime > 600000)) {
+          if (u.status === 'uploading' && u._startTime && (now - u._startTime > 1800000)) {
             return false;
           }
           return true;
@@ -38,18 +38,28 @@ export function UploadProvider({ children }) {
   }, []);
 
   const pollUploadStatus = async (uploadId, trackId) => {
-    for (let attempt = 0; attempt < 180; attempt++) {
+    let notFoundStreak = 0;
+    for (let attempt = 0; attempt < 720; attempt++) {
       await new Promise(r => setTimeout(r, 5000));
+      let data;
       try {
         const res = await axios.get(`${API}/upload/status/${uploadId}`, { timeout: 10000 });
-        if (res.data.status === 'complete') return res;
-        if (res.data.status === 'error') throw new Error(res.data.detail || 'Processing failed');
-        updateUpload(trackId, { message: res.data.message || `Processing... (${(attempt + 1) * 5}s)` });
+        data = res.data;
+        notFoundStreak = 0;
       } catch (pollErr) {
-        if (pollErr.message?.includes('Processing failed')) throw pollErr;
+        if (pollErr.response?.status === 404) {
+          notFoundStreak++;
+          if (notFoundStreak >= 5) throw new Error('Upload session lost (server may have restarted). Please re-upload.');
+        }
+        continue;
       }
+      if (data.status === 'complete') return { data };
+      if (data.status === 'error') throw new Error(data.detail || 'Processing failed');
+      const secs = (attempt + 1) * 5;
+      const elapsed = secs < 120 ? `${secs}s` : `${Math.round(secs / 60)} min`;
+      updateUpload(trackId, { message: `${data.message || 'Processing...'} (${elapsed})` });
     }
-    throw new Error('Processing timed out after 15 minutes');
+    throw new Error('Processing timed out after 60 minutes. Check Recent Uploads later or re-upload.');
   };
 
   const uploadChunkWithRetry = async (url, formData, chunkIdx, totalChunks, trackId, maxRetries = 3) => {
@@ -143,7 +153,6 @@ export function UploadProvider({ children }) {
       const msg = error.message || error.response?.data?.detail || 'Upload failed';
       updateUpload(trackId, { status: 'error', message: msg });
       toast.error(msg);
-      setTimeout(() => removeUpload(trackId), 10000);
       throw error;
     }
   };
@@ -174,8 +183,8 @@ export function UploadProvider({ children }) {
       branch_transfer: 'Branch Transfer',
     };
 
-    // Add to UI state immediately as queued
-    setUploads(prev => [...prev, {
+    // Add to UI state immediately as queued (drop stale done/error entries for this type)
+    setUploads(prev => [...prev.filter(u => !(u.fileType === fileType && (u.status === 'done' || u.status === 'error'))), {
       id: trackId, fileType, fileName: file.name,
       label: fileTypeLabels[fileType] || fileType,
       percent: 0, message: 'Queued...', status: 'queued',

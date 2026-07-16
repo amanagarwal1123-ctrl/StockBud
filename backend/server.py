@@ -524,19 +524,36 @@ def parse_excel_file(file_content, file_type: str) -> List[Dict]:
         raise HTTPException(status_code=400, detail=f"Error parsing Excel file: {str(e)}")
 
 
-def parse_excel_streaming(file_path: str, file_type: str) -> List[Dict]:
-    """Memory-efficient Excel parser using openpyxl read-only/streaming mode.
-    Avoids loading entire DataFrame into memory — critical for large files on constrained pods."""
-    from openpyxl import load_workbook
+def _load_excel_rows(file_path: str) -> list:
+    """Load all rows of the first sheet as value tuples.
+    Uses python-calamine (Rust-based, ~20x faster than openpyxl) with openpyxl fallback."""
     try:
-        wb = load_workbook(file_path, read_only=True, data_only=True)
-        ws = wb.active
+        from python_calamine import CalamineWorkbook
+        wb = CalamineWorkbook.from_path(file_path)
+        rows = wb.get_sheet_by_index(0).to_python()
+        logger.info(f"[Excel] Loaded {len(rows)} rows via calamine")
+        return rows
+    except Exception as e:
+        logger.warning(f"[Excel] calamine failed ({e}), falling back to openpyxl")
+    from openpyxl import load_workbook
+    wb = load_workbook(file_path, read_only=True, data_only=True)
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    wb.close()
+    logger.info(f"[Excel] Loaded {len(rows)} rows via openpyxl")
+    return rows
 
-        # Step 1: Read first 20 rows to detect header
+
+def parse_excel_streaming(file_path: str, file_type: str) -> List[Dict]:
+    """Memory-efficient Excel parser for large files on constrained pods."""
+    try:
+        all_rows = _load_excel_rows(file_path)
+
+        # Step 1: Read first 25 rows to detect header
         header_names = None
         header_row_idx = None
         first_rows = []
-        for i, row in enumerate(ws.iter_rows(max_row=25, values_only=True)):
+        for i, row in enumerate(all_rows[:25]):
             str_vals = [str(v).strip() if v is not None else '' for v in row]
             first_rows.append(str_vals)
             if header_row_idx is None:
@@ -549,11 +566,6 @@ def parse_excel_streaming(file_path: str, file_type: str) -> List[Dict]:
             header_names = first_rows[0] if first_rows else []
             header_row_idx = 0
 
-        wb.close()
-
-        # Step 2: Re-open and stream all rows after header, converting each to a dict
-        wb = load_workbook(file_path, read_only=True, data_only=True)
-        ws = wb.active
         records = []
         KG_TO_GRAMS = 1000
 
@@ -582,7 +594,7 @@ def parse_excel_streaming(file_path: str, file_type: str) -> List[Dict]:
 
             col_map = {name: idx for idx, name in enumerate(header_names)}
 
-            for row_num, row in enumerate(ws.iter_rows(values_only=True)):
+            for row_num, row in enumerate(all_rows):
                 if row_num <= header_row_idx:
                     continue
                 def _get(col_name):
@@ -647,7 +659,7 @@ def parse_excel_streaming(file_path: str, file_type: str) -> List[Dict]:
 
             col_map = {name: idx for idx, name in enumerate(header_names)}
 
-            for row_num, row in enumerate(ws.iter_rows(values_only=True)):
+            for row_num, row in enumerate(all_rows):
                 if row_num <= header_row_idx:
                     continue
                 def _get(col_name):
@@ -702,7 +714,7 @@ def parse_excel_streaming(file_path: str, file_type: str) -> List[Dict]:
 
             col_map = {name: idx for idx, name in enumerate(header_names)}
 
-            for row_num, row in enumerate(ws.iter_rows(values_only=True)):
+            for row_num, row in enumerate(all_rows):
                 if row_num <= header_row_idx:
                     continue
                 def _get(col_name):
@@ -739,7 +751,7 @@ def parse_excel_streaming(file_path: str, file_type: str) -> List[Dict]:
             has_net = net_col is not None
             col_map = {name: idx for idx, name in enumerate(header_names)}
 
-            for row_num, row in enumerate(ws.iter_rows(values_only=True)):
+            for row_num, row in enumerate(all_rows):
                 if row_num <= header_row_idx:
                     continue
                 def _get(col_name):
@@ -767,7 +779,6 @@ def parse_excel_streaming(file_path: str, file_type: str) -> List[Dict]:
                     rec['net_wt'] = 0.0
                 records.append(rec)
 
-        wb.close()
         logger.info(f"[Streaming parser] Parsed {len(records)} {file_type} records from {file_path}")
         return records
     except Exception as e:
@@ -1052,6 +1063,16 @@ async def batch_insert(collection, documents: list):
     return total
 
 
+async def _backup_replaced_records(batch_id: str, old_records: list):
+    """Backup replaced records for undo, chunked to stay under Mongo's 16MB document limit"""
+    now = datetime.now(timezone.utc).isoformat()
+    for part, i in enumerate(range(0, len(old_records), 5000)):
+        await db.replaced_records.insert_one({
+            "batch_id": batch_id, "part": part,
+            "records": old_records[i:i + 5000], "replaced_at": now
+        })
+
+
 def _prepare_transactions(records: list, batch_id: str) -> list:
     """Prepare transaction dicts with defaults (skip per-row Pydantic for speed)"""
     now = datetime.now(timezone.utc).isoformat()
@@ -1073,7 +1094,7 @@ async def _save_upload_meta(upload_id: str, meta: dict):
     """Persist upload metadata to MongoDB (works across all pods)"""
     await db.upload_sessions.update_one(
         {"upload_id": upload_id},
-        {"$set": {**meta, "upload_id": upload_id}},
+        {"$set": {**meta, "upload_id": upload_id, "heartbeat": datetime.now(timezone.utc).isoformat()}},
         upsert=True
     )
 
@@ -1186,10 +1207,15 @@ async def _process_upload(upload_id: str, meta: dict):
         elif file_type == 'historical_purchase':
             parse_type = 'purchase'
 
-        # Use streaming parser for large file uploads (avoids loading entire file into memory)
-        # This is critical for deployed environments with limited memory
+        # Parse in thread pool with heartbeat updates so the client can detect a dead task
         loop = asyncio.get_event_loop()
-        records = await loop.run_in_executor(_parse_executor, parse_excel_streaming, tmp_path, parse_type)
+        parse_future = loop.run_in_executor(_parse_executor, parse_excel_streaming, tmp_path, parse_type)
+        parse_start = time.time()
+        while not parse_future.done():
+            await asyncio.sleep(5)
+            meta['progress'] = f'Parsing Excel file ({total_bytes // 1024} KB)... {int(time.time() - parse_start)}s elapsed'
+            await _save_upload_meta(upload_id, meta)
+        records = parse_future.result()
 
         logger.info(f"[Upload {upload_id}] Parsed {len(records) if records else 0} records")
 
@@ -1222,11 +1248,7 @@ async def _process_upload(upload_id: str, meta: dict):
                     {"type": {"$in": delete_types}, "date": {"$in": new_dates}}, {"_id": 0}
                 ).to_list(None)
                 if old_records:
-                    await db.replaced_records.insert_one({
-                        "batch_id": batch_id,
-                        "records": old_records,
-                        "replaced_at": datetime.now(timezone.utc).isoformat()
-                    })
+                    await _backup_replaced_records(batch_id, old_records)
                 delete_result = await db.transactions.delete_many({
                     "type": {"$in": delete_types},
                     "date": {"$in": new_dates}
@@ -1376,6 +1398,16 @@ async def get_upload_status(upload_id: str, current_user: dict = Depends(get_cur
         await db.upload_sessions.delete_one({"upload_id": upload_id})
         return {"status": "error", "detail": error_detail}
     else:
+        # Detect a dead background task (pod OOM/restart) via stale heartbeat
+        hb = meta.get('heartbeat')
+        if status == 'processing' and hb:
+            try:
+                hb_dt = datetime.fromisoformat(hb)
+                if (datetime.now(timezone.utc) - hb_dt).total_seconds() > 180:
+                    await db.upload_sessions.delete_one({"upload_id": upload_id})
+                    return {"status": "error", "detail": "Processing stopped unexpectedly (server restarted or ran out of memory). Please re-upload the file."}
+            except ValueError:
+                pass
         progress = meta.get('progress', 'Processing...')
         return {"status": "processing", "message": progress}
 
@@ -3498,13 +3530,14 @@ async def undo_upload(batch_id: str, current_user: dict = Depends(get_current_us
     # Delete all transactions with this batch_id
     delete_result = await db.transactions.delete_many({"batch_id": batch_id})
     
-    # Restore backed-up records if they exist
+    # Restore backed-up records if they exist (may be split across multiple chunked parts)
     restored_count = 0
-    backup = await db.replaced_records.find_one({"batch_id": batch_id}, {"_id": 0})
-    if backup and backup.get("records"):
-        await batch_insert(db.transactions, backup["records"])
-        restored_count = len(backup["records"])
-        await db.replaced_records.delete_one({"batch_id": batch_id})
+    backups = await db.replaced_records.find({"batch_id": batch_id}, {"_id": 0}).sort("part", 1).to_list(None)
+    old_recs = [r for b in backups for r in b.get("records", [])]
+    if old_recs:
+        await batch_insert(db.transactions, old_recs)
+        restored_count = len(old_recs)
+        await db.replaced_records.delete_many({"batch_id": batch_id})
     
     # Mark action as undone
     await db.action_history.update_one(

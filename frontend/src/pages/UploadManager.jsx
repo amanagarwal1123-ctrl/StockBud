@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react';
-import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle, Calendar, Loader2 } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Upload, FileSpreadsheet, CheckCircle2, XCircle, AlertCircle, Calendar, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -34,6 +34,22 @@ export default function UploadManager() {
   const uploadingTypes = new Set(
     uploads.filter(u => u.status === 'uploading' || u.status === 'queued' || u.status === 'processing').map(u => u.fileType)
   );
+
+  // Sync file-card state with real upload outcomes: tick only on success, clear on failure
+  useEffect(() => {
+    uploads.forEach(u => {
+      if (u.status === 'done') {
+        setUploadedFiles(prev => (prev[u.fileType] === u.fileName ? prev : { ...prev, [u.fileType]: u.fileName }));
+      } else if (u.status === 'error') {
+        setUploadedFiles(prev => {
+          if (!(u.fileType in prev)) return prev;
+          const next = { ...prev };
+          delete next[u.fileType];
+          return next;
+        });
+      }
+    });
+  }, [uploads]);
 
   const applyMasterDates = () => {
     if (!masterDateRange.start || !masterDateRange.end) {
@@ -101,7 +117,6 @@ export default function UploadManager() {
     if (!pendingFile) return;
     const { fileType, file } = pendingFile;
     enqueueUpload(fileType, file, dateRanges);
-    setUploadedFiles(prev => ({ ...prev, [fileType]: file.name }));
     setPendingFile(null);
   };
 
@@ -120,6 +135,9 @@ export default function UploadManager() {
 
   const FileUploadCard = ({ type, title, description }) => {
     const isTypeUploading = uploadingTypes.has(type);
+    const typeUploads = uploads.filter(u => u.fileType === type);
+    const activeEntry = typeUploads.find(u => u.status === 'uploading' || u.status === 'queued' || u.status === 'processing');
+    const errorEntry = !activeEntry ? typeUploads.slice().reverse().find(u => u.status === 'error') : null;
     const needsDateRange = type === 'purchase' || type === 'sale' || type === 'branch_transfer';
     const needsDate = type === 'physical_stock';
     const isPhysicalLoading = type === 'physical_stock' && previewLoading;
@@ -169,14 +187,25 @@ export default function UploadManager() {
                 <Loader2 className="h-10 w-10 text-primary animate-spin" />
                 <p className="font-medium text-sm">Generating preview...</p>
               </>
+            ) : activeEntry ? (
+              <div className="text-center" data-testid={`upload-progress-state-${type}`}>
+                <Loader2 className="h-10 w-10 text-primary animate-spin mx-auto" />
+                <p className="font-medium text-sm mt-2">{activeEntry.fileName}</p>
+                <p className="text-xs text-muted-foreground mt-1">{activeEntry.message || 'Uploading...'}</p>
+              </div>
+            ) : errorEntry ? (
+              <div className="text-center" data-testid={`upload-error-state-${type}`}>
+                <XCircle className="h-10 w-10 text-red-600 mx-auto" />
+                <p className="font-medium text-sm mt-2 text-red-600">Upload failed: {errorEntry.fileName}</p>
+                <p className="text-xs text-red-500/80 mt-1 max-w-xs mx-auto">{errorEntry.message}</p>
+                <p className="text-xs text-muted-foreground mt-1">Click to try again</p>
+              </div>
             ) : uploadedFiles[type] ? (
-              <>
-                <CheckCircle2 className="h-10 w-10 text-emerald-600" />
-                <div className="text-center">
-                  <p className="font-medium text-sm">{uploadedFiles[type]}</p>
-                  <p className="text-xs text-muted-foreground mt-1">Click to upload another file</p>
-                </div>
-              </>
+              <div className="text-center" data-testid={`upload-success-state-${type}`}>
+                <CheckCircle2 className="h-10 w-10 text-emerald-600 mx-auto" />
+                <p className="font-medium text-sm mt-2">{uploadedFiles[type]}</p>
+                <p className="text-xs text-muted-foreground mt-1">Click to upload another file</p>
+              </div>
             ) : (
               <>
                 <Upload className="h-10 w-10 text-muted-foreground" />
