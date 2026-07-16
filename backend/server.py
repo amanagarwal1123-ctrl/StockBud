@@ -1406,7 +1406,7 @@ async def get_upload_status(upload_id: str, current_user: dict = Depends(get_cur
                 if (datetime.now(timezone.utc) - hb_dt).total_seconds() > 180:
                     await db.upload_sessions.delete_one({"upload_id": upload_id})
                     return {"status": "error", "detail": "Processing stopped unexpectedly (server restarted or ran out of memory). Please re-upload the file."}
-            except ValueError:
+            except (ValueError, TypeError):
                 pass
         progress = meta.get('progress', 'Processing...')
         return {"status": "processing", "message": progress}

@@ -239,3 +239,16 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Pre-existing (NOT regressions)**: 124 data-dependent integration test failures (expect production items absent from local DB — verified failing identically before this fix via git stash). Local-DB profit values are 0 (local purchase_ledger doesn't align with imported sale item names) — production ledger is complete, logic verified in prior session.
 - **CHAIN MS-70 divergence**: still open — diagnosed as item alias/variant mismatch (`CHAIN MS-70 CASTING`, `CHAIN KJN-70` split book stock); needs the Alias/Suffix mapping feature. "999 customer" issue dropped per user.
 - **ACTION REQUIRED BY USER**: REDEPLOY to apply to production, then re-check CHAIN MS-70 physical vs book stock.
+
+## Large File Upload Timeout + False Green Tick Fix (Jun 8, 2026)
+- **Problem (production)**: 23MB sale xlsx chunked into 116 parts timed out at the frontend's hard 15-min poll cap ("Processing timed out after 15 minutes"), while the file card kept a green tick (it was set at click-time, never reverted).
+- **Root cause**: openpyxl parsing is pure-Python/single-threaded — a ~300K-row file on a constrained production pod exceeds 15 min. Green tick was set in `confirmUpload` before any result.
+- **Fixes**:
+  - `python-calamine` (Rust) parser in `parse_excel_streaming` with openpyxl fallback — verified 0 field diffs on 60K rows, ~6-20x faster (60K rows upload end-to-end in 9s).
+  - Heartbeat: `upload_sessions` gets `heartbeat` on every meta save + every 5s during parse; `/api/upload/status` returns error if heartbeat >180s stale (detects OOM/pod-restart instead of hanging forever).
+  - Frontend poll window 15→60 min with elapsed display; server error details now propagate correctly (previously swallowed unless containing 'Processing failed'); 5 consecutive 404s → "session lost" error.
+  - UploadManager cards: spinner+progress while active, RED XCircle + message + "Click to try again" on failure (`upload-error-state-{type}`), green tick ONLY on actual success (`upload-success-state-{type}`). Error entries persist until retry/dismiss.
+  - `replaced_records` undo backup chunked into 5000-record parts (Mongo 16MB doc limit would have crashed year-wide replacements); undo endpoint reads all parts.
+  - Stuck-upload auto-clear 10→30 min (10 min could kill slow 23MB chunk uploads mid-flight).
+- **Verified (iteration_32.json)**: 8/8 PASS — happy path, 60K double-upload + 12-part backup + undo restore, stale heartbeat → error, FE green-on-success, FE red-on-failure. Regression: /api/stats unchanged (11,767).
+- **ACTION REQUIRED BY USER**: REDEPLOY, then re-upload the 23MB sale file on production.
