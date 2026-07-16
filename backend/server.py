@@ -321,11 +321,23 @@ def parse_excel_file(file_content, file_type: str) -> List[Dict]:
             pc_col = _resolve_col(cols, ['Pc', 'pc', 'Pieces'])
 
             records = []
+            pf_state = {'date': '', 'refno': '', 'party': '', 'ttype': None}
             for r in raw_rows:
                 item_name = _safe_str(r.get(item_col) if item_col else None)
-                if len(item_name) < 2:
+                if len(item_name) < 2 or item_name.replace('.', '', 1).isdigit():
                     continue
-                trans_type = _safe_str(r.get(type_col) if type_col else None, 'P').upper()
+                date = normalize_date(r.get(date_col) if date_col else '')
+                refno = _safe_str(r.get(refno_col) if refno_col else None)
+                party = _safe_str(r.get(party_col) if party_col else None)
+                type_raw = r.get(type_col) if type_col else None
+                if date:
+                    pf_state['date'], pf_state['refno'], pf_state['party'], pf_state['ttype'] = date, refno, party, type_raw
+                else:
+                    date = pf_state['date']
+                    refno = refno or pf_state['refno']
+                    party = party or pf_state['party']
+                    type_raw = type_raw if (type_raw is not None and str(type_raw) != 'nan' and str(type_raw).strip()) else pf_state['ttype']
+                trans_type = _safe_str(type_raw, 'P').upper()
                 if trans_type.isdigit():
                     continue
 
@@ -341,10 +353,10 @@ def parse_excel_file(file_content, file_type: str) -> List[Dict]:
                 purchase_tunch = tunch_v + wstg_v
 
                 records.append({
-                    'date': normalize_date(r.get(date_col) if date_col else ''),
+                    'date': date,
                     'type': 'purchase' if trans_type in ('P', 'PURCHASE') else 'purchase_return',
-                    'refno': _safe_str(r.get(refno_col) if refno_col else None),
-                    'party_name': _safe_str(r.get(party_col) if party_col else None),
+                    'refno': refno,
+                    'party_name': party,
                     'item_name': item_name,
                     'stamp': normalize_stamp(r.get(stamp_col) if stamp_col else ''),
                     'tag_no': tag_no,
@@ -382,11 +394,23 @@ def parse_excel_file(file_content, file_type: str) -> List[Dict]:
             pc_col = _resolve_col(cols, ['Pc', 'pc'])
 
             records = []
+            sf_state = {'date': '', 'refno': '', 'party': '', 'ttype': None}
             for r in raw_rows:
                 item_name = _safe_str(r.get(item_col) if item_col else None)
-                if len(item_name) < 2:
+                if len(item_name) < 2 or item_name.replace('.', '', 1).isdigit():
                     continue
-                trans_type = _safe_str(r.get(type_col) if type_col else None, 'S').upper()
+                date = normalize_date(r.get(date_col) if date_col else '')
+                refno = _safe_str(r.get(refno_col) if refno_col else None)
+                party = _safe_str(r.get(party_col) if party_col else None)
+                type_raw = r.get(type_col) if type_col else None
+                if date:
+                    sf_state['date'], sf_state['refno'], sf_state['party'], sf_state['ttype'] = date, refno, party, type_raw
+                else:
+                    date = sf_state['date']
+                    refno = refno or sf_state['refno']
+                    party = party or sf_state['party']
+                    type_raw = type_raw if (type_raw is not None and str(type_raw) != 'nan' and str(type_raw).strip()) else sf_state['ttype']
+                trans_type = _safe_str(type_raw, 'S').upper()
                 if trans_type.isdigit():
                     continue
 
@@ -401,9 +425,9 @@ def parse_excel_file(file_content, file_type: str) -> List[Dict]:
 
                 records.append({
                     'type': 'sale' if trans_type in ('S', 'SALE') else 'sale_return',
-                    'date': normalize_date(r.get(date_col) if date_col else ''),
-                    'refno': _safe_str(r.get(refno_col) if refno_col else None),
-                    'party_name': _safe_str(r.get(party_col) if party_col else None),
+                    'date': date,
+                    'refno': refno,
+                    'party_name': party,
                     'item_name': item_name,
                     'stamp': normalize_stamp(r.get(stamp_col) if stamp_col else ''),
                     'tag_no': tag_no,
@@ -651,11 +675,25 @@ def _build_row_mapper(file_type: str, header_names: list):
         rate_col = _resolve_col(cols_set, ['Rate', 'rate'])
         pc_col = _resolve_col(cols_set, ['Pc', 'pc', 'Pieces'])
 
+        pf_state = {'date': '', 'refno': '', 'party': '', 'ttype': None}
+
         def mapper(row):
             item_name = _safe_str(_get(row, item_col))
             if len(item_name) < 2 or item_name.replace('.', '', 1).isdigit():
                 return None
-            trans_type = _safe_str(_get(row, type_col), 'P').upper()
+            date = normalize_date(_get(row, date_col) or '')
+            refno = _safe_str(_get(row, refno_col))
+            party = _safe_str(_get(row, party_col))
+            type_raw = _get(row, type_col)
+            if date:
+                pf_state['date'], pf_state['refno'], pf_state['party'], pf_state['ttype'] = date, refno, party, type_raw
+            else:
+                # Voucher continuation line (Tally omits repeated date/refno/party/type)
+                date = pf_state['date']
+                refno = refno or pf_state['refno']
+                party = party or pf_state['party']
+                type_raw = type_raw or pf_state['ttype']
+            trans_type = _safe_str(type_raw, 'P').upper()
             if trans_type.isdigit():
                 return None
             tag_no = _safe_str(_get(row, tag_col))
@@ -666,10 +704,10 @@ def _build_row_mapper(file_type: str, header_names: list):
             tunch_v = _safe_float(_get(row, tunch_col))
             wstg_v = _safe_float(_get(row, wstg_col))
             return {
-                'date': normalize_date(_get(row, date_col) or ''),
+                'date': date,
                 'type': 'purchase' if trans_type in ('P', 'PURCHASE') else 'purchase_return',
-                'refno': _safe_str(_get(row, refno_col)),
-                'party_name': _safe_str(_get(row, party_col)),
+                'refno': refno,
+                'party_name': party,
                 'item_name': item_name,
                 'stamp': normalize_stamp(_get(row, stamp_col) or ''),
                 'tag_no': tag_no,
@@ -706,11 +744,25 @@ def _build_row_mapper(file_type: str, header_names: list):
         taxable_col = _resolve_col(cols_set, ['Taxable Val.', 'Taxable Value'])
         pc_col = _resolve_col(cols_set, ['Pc', 'pc'])
 
+        sf_state = {'date': '', 'refno': '', 'party': '', 'ttype': None}
+
         def mapper(row):
             item_name = _safe_str(_get(row, item_col))
             if len(item_name) < 2 or item_name.replace('.', '', 1).isdigit():
                 return None
-            trans_type = _safe_str(_get(row, type_col), 'S').upper()
+            date = normalize_date(_get(row, date_col) or '')
+            refno = _safe_str(_get(row, refno_col))
+            party = _safe_str(_get(row, party_col))
+            type_raw = _get(row, type_col)
+            if date:
+                sf_state['date'], sf_state['refno'], sf_state['party'], sf_state['ttype'] = date, refno, party, type_raw
+            else:
+                # Voucher continuation line (Tally omits repeated date/refno/party/type)
+                date = sf_state['date']
+                refno = refno or sf_state['refno']
+                party = party or sf_state['party']
+                type_raw = type_raw or sf_state['ttype']
+            trans_type = _safe_str(type_raw, 'S').upper()
             if trans_type.isdigit():
                 return None
             tag_no = _safe_str(_get(row, tag_col))
@@ -720,9 +772,9 @@ def _build_row_mapper(file_type: str, header_names: list):
                 labor_val = float(on_val)
             return {
                 'type': 'sale' if trans_type in ('S', 'SALE') else 'sale_return',
-                'date': normalize_date(_get(row, date_col) or ''),
-                'refno': _safe_str(_get(row, refno_col)),
-                'party_name': _safe_str(_get(row, party_col)),
+                'date': date,
+                'refno': refno,
+                'party_name': party,
                 'item_name': item_name,
                 'stamp': normalize_stamp(_get(row, stamp_col) or ''),
                 'tag_no': tag_no,
@@ -748,6 +800,8 @@ def _build_row_mapper(file_type: str, header_names: list):
         gr_col = _resolve_col(cols_set, ['Gr.Wt.'])
         net_col = _resolve_col(cols_set, ['Net.Wt.'])
 
+        bf_state = {'date': ''}
+
         def mapper(row):
             item_name = _safe_str(_get(row, item_col))
             if len(item_name) < 2:
@@ -758,9 +812,14 @@ def _build_row_mapper(file_type: str, header_names: list):
             trans_type = _safe_str(_get(row, type_col)).upper()
             if not trans_type or trans_type in ('', 'NAN'):
                 return None
+            date = normalize_date(_get(row, date_col) or '')
+            if date:
+                bf_state['date'] = date
+            else:
+                date = bf_state['date']
             return {
                 'type': 'receive' if trans_type == 'R' else 'issue',
-                'date': normalize_date(_get(row, date_col) or ''),
+                'date': date,
                 'refno': _safe_str(_get(row, refno_col)),
                 'party_name': 'MMI Jewelly Branch',
                 'item_name': item_name,
@@ -1431,7 +1490,7 @@ async def _process_upload(upload_id: str, meta: dict):
                     # Replace old records for the uploaded dates (new batch excluded)
                     meta['progress'] = 'Replacing previous records for uploaded dates...'
                     await _save_upload_meta(upload_id, meta, expected_attempts=my_attempt)
-                    repl_q = {"type": {"$in": delete_types}, "date": {"$in": new_dates}, "batch_id": {"$ne": batch_id}}
+                    repl_q = {"type": {"$in": delete_types}, "date": {"$in": new_dates + ["", None]}, "batch_id": {"$ne": batch_id}}
                     old_records = await db.transactions.find(repl_q, {"_id": 0}).to_list(None)
                     if old_records:
                         await _backup_replaced_records(batch_id, old_records)
@@ -1835,20 +1894,12 @@ async def upload_transaction_file(
 
     new_dates = sorted(set(r.get('date', '') for r in records if r.get('date')))
     if new_dates:
-        # Backup replaced records for undo
-        old_records = await db.transactions.find(
-            {"type": {"$in": delete_types}, "date": {"$in": new_dates}}, {"_id": 0}
-        ).to_list(None)
+        # Backup replaced records for undo (dated + no-date ghost rows of this type)
+        repl_q = {"type": {"$in": delete_types}, "date": {"$in": new_dates + ["", None]}}
+        old_records = await db.transactions.find(repl_q, {"_id": 0}).to_list(None)
         if old_records:
-            await db.replaced_records.insert_one({
-                "batch_id": batch_id,
-                "records": old_records,
-                "replaced_at": datetime.now(timezone.utc).isoformat()
-            })
-        delete_result = await db.transactions.delete_many({
-            "type": {"$in": delete_types},
-            "date": {"$in": new_dates}
-        })
+            await _backup_replaced_records(batch_id, old_records)
+        delete_result = await db.transactions.delete_many(repl_q)
         deleted_count = delete_result.deleted_count
     
     # Prepare and batch-insert

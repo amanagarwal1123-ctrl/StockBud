@@ -1,0 +1,22 @@
+{
+  "summary": "Verified the re-upload idempotency fix end-to-end. Created new permanent regression suite tests/test_upload_idempotency.py (8 tests) covering: (a) Tally-style sale file with 3000 vouchers + continuation lines + numeric grand-total row uploaded twice via chunked flow -> identical record count & net_wt, zero date='' rows, message contains 'replaced N old records', grand-total row NOT inserted; (b) continuation lines inherit date+refno+party of preceding dated row; (c) sale_return (Type='R') voucher continuation lines inherited as sale_return; (d) legacy ghost repair - 150 seeded date='' sale docs purged by next sale upload; (e) purchase file with continuation lines is also idempotent; (f) /api/stats & /api/inventory/current return 200; (g) undo-upload restores replaced records from replaced_records after chunked replace. All 8/8 PASSED in 43s. Baseline preserved: total_transactions=11767 before and after; 0 no-date sale/purchase rows remain.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_upload_idempotency.py",
+    "/app/test_reports/pytest/idempotency.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is very large (>1800 lines) and mixes parsing, chunk pipeline, direct upload path, and route handlers. The forward-fill logic is now duplicated in 4 places (streaming purchase/sale mappers + pandas parse_excel_file purchase/sale). Recommend extracting a single _voucher_ffill(prev, cur, kind) helper to prevent future drift between the two ingestion paths.",
+    "The self-repair replace-scope filter {'$in': new_dates + ['', None]} unconditionally purges ALL no-date rows of that type on every same-type upload. This is intentional now, but once production is confirmed clean, consider tightening it (e.g. only when the incoming file also had continuation lines) to avoid a foot-gun where an unrelated future upload wipes rows an operator intentionally created with blank dates."
+  ],
+  "updated_files": ["/app/backend/tests/test_upload_idempotency.py"],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "not tested (backend-only request)"},
+  "test_credentials": "admin / admin123 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "TestLegacyGhostRepair seeds 150 legacy date='' sale docs under batch_id 'legacy-ghosts-TEST_IDEMPOT_<uuid>' then verifies they are purged; module-level fixture removes any residue.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Idempotent re-upload fix (Tally continuation lines / ghost date='' rows) is fully covered by /app/backend/tests/test_upload_idempotency.py - reuse for regression. Baseline txn count is 11767 (2026-01-15..2026-03-02); use 2025 dates for uploads. Chunked upload flow: POST /api/upload/init -> POST /api/upload/chunk/{id}?chunk_index=i (multipart file) -> POST /api/upload/finalize/{id} -> poll GET /api/upload/status/{id} every 3s; completion payload has status='complete', batch_id and human message like 'replaced N old records'.",
+  "rca of the issue": "Pre-existing parser flaw: Tally exports write vouchers as one dated header line followed by continuation lines that have only item+weights (no date/refno/party/type). Old code inserted continuation lines with date=''. The re-upload replace scope only deleted old records whose date was in the new file's date set, so no-date ghosts were never replaced and duplicated on every re-upload, inflating sales & dragging stock down. Fix: forward-fill voucher metadata into continuation lines in both streaming mappers and the pandas parse path, and widen replace scope to also match date IN {'',null} of the same type. Self-verified with 3000-voucher Tally file uploaded twice - counts and net_wt identical, message='replaced N old records', zero ghost rows."
+}
