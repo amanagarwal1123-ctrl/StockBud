@@ -1,0 +1,32 @@
+{
+  "summary": "Independently verified item-wise stock formula after iter33+iter34 changes. All 4 pytest regressions PASS. Formula stock = opening + purchase + purchase_return(signed) + receive - sale - sale_return(signed) - issue is computed CORRECTLY. No logical mistake introduced by the 2 recent changes. Environment fully restored to baseline (11,767 txns, admin login working).",
+  "verification_results": {
+    "part1_formula_check": "PASS - opening 100 + P 30 + PR(-5) + Rcv 10 - S 20 - SR(-3) - I 7 == 111kg (engine returned 111.0kg)",
+    "part2_old_vs_new_parser_equivalence": "PASS - OLD-style (date='' continuation) and NEW-style (inherited date) both compute 17kg identically",
+    "part3_baseline_behavior": "PASS - baseline 50kg with pre-baseline sale 5kg (skipped), post-baseline sale 4kg (counted), no-date sale 2kg (skipped) -> 46kg exactly",
+    "part4_regression_env": "PASS - /api/stats returns 11767 total_transactions after full cleanup; admin login (admin/admin123) works with $2b$ bcrypt hash",
+    "sign_logic_confirmed": "stock_service.py lines 389-400: purchase/purchase_return/receive ADD, everything else SUBTRACT. Combined with Tally's negative-weight returns, math resolves correctly (sale_return with net_wt=-3 subtracted -> +3, purchase_return with net_wt=-5 added -> -5)."
+  },
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_itemwise_stock_formula.py",
+    "/app/test_reports/pytest/itemwise_stock_formula.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "stock_service.py line 368 skips txns with date <= baseline_date; empty-string dates ('') compare < any real ISO date so are always skipped for baseline items - intentional and correct.",
+    "stock_service.py line 273-274 filters out items whose name.isdigit() - safe: real data has no numeric-only item names.",
+    "Inventory endpoint has 30s in-memory TTL cache (server.py L56-82, L2778) - test suite handles via time.sleep(31); noted in test docstring for future maintainers."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_itemwise_stock_formula.py (new)"
+  ],
+  "success_rate": {"backend": "100% (4/4 tests)", "frontend": "not tested (backend-only run)"},
+  "test_credentials": "admin / admin123 (from /app/memory/test_credentials.md convention)",
+  "seed_data_creation": "Tests self-clean QQTEST* items from transactions/opening_stock/inventory_baselines; baseline txn count 11767 preserved.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The stock formula is confirmed CORRECT after iter33 (streaming) + iter34 (continuation ffill + ghost purge). The ONLY behavioral change from the 2 recent modifications: continuation lines in raw parser output now carry inherited real dates instead of '' (ghost). This means for baseline items, post-baseline continuation-row weights now count (previously they were silently discarded as no-date). This is more correct, not a bug. E2E upload pipeline part was already verified via main-agent script /tmp/test_itemwise_stock.py; pytest file covers Parts 1/2/4 via direct-DB (fast, no upload). Regression pytest at /app/backend/tests/test_itemwise_stock_formula.py takes ~93s (three 31s cache waits).",
+  "rca_of_the_issue": "No bug present. User's suspicion of a calculation error in current stock formula is UNFOUNDED. Independent tests confirm: (a) formula math is correct with Tally-style signed returns, (b) OLD and NEW parser-shape data produce identical stock values for non-baseline items, (c) baseline items now correctly include post-baseline dated continuation-rows (previously discarded as no-date ghosts) - which is more accurate, not a regression."
+}
