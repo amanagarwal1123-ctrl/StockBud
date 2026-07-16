@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 33 (backend-only): verified streaming-insert pipeline, chunked branch_transfer (fix for latent 0-record bug), replace+undo chunked backup, attempts=3 exhaustion, unknown 404, and AUTO-RESUME after SIGKILL. All 6 pytest cases pass (test_streaming_pipeline_iter33.py). Auto-resume proof: 26MB/300K-row sale upload was killed at t+4.5s (fuser -k -9 8001/tcp + pkill spawn + supervisorctl restart); status endpoint surfaced 'Resuming after server restart...' at t+92s (past 90s stale threshold) and final status='complete' with EXACTLY 300000 records at t+110s (0 duplicates, upload_chunks cleaned). DB restored to baseline (total_transactions=11767).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "tests_executed": [
+    {"name": "test_sale_chunked_happy_path", "result": "PASS", "notes": "30K rows / 2.43MB / 13 chunks -> complete in 6.6s, exact count 30000, chunks cleaned"},
+    {"name": "test_replace_and_undo", "result": "PASS", "notes": "5K rows uploaded twice; s2 msg='replaced 5000 old records'; replaced_records chunked (part field present); undo restored to exactly 5000"},
+    {"name": "test_branch_transfer_chunked", "result": "PASS", "notes": "270KB / 8000 rows / OPENING BALANCE + Total both skipped -> 4000 issue + 4000 receive with party_name='MMI Jewelly Branch'. Confirms fix for previously-latent 0-record bug on chunked branch_transfer."},
+    {"name": "test_attempts_exhausted", "result": "PASS", "notes": "Session attempts=3 + stale heartbeat -> GET /api/upload/status returns status=error 'Automatic retries were exhausted — please re-upload the file.'"},
+    {"name": "test_unknown_upload_id_404", "result": "PASS", "notes": "/api/upload/status/does_not_exist_zzz -> 404"},
+    {"name": "test_regression_stats_and_inventory", "result": "PASS", "notes": "/api/stats total_transactions=11767 preserved; /api/inventory/current 200"},
+    {"name": "test_iter33_resume (SIGKILL auto-resume, standalone)", "result": "PASS", "notes": "26MB/300K rows; kill at t+4.5s; 'Resuming after server restart...' seen at t+92s; complete at t+110s with 300000 exact, upload_chunks=0, no duplicates. See /tmp/test_iter33_resume.py."}
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_streaming_pipeline_iter33.py",
+    "/app/test_reports/pytest/iter33.xml",
+    "/tmp/test_iter33_resume.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Streaming pipeline in _process_upload (server.py:1386-1414) is clean: batched flush every 5000 records via run_coroutine_threadsafe keeps memory bounded; batch_id assigned before inserts enables clean rollback.",
+    "_choose_excel_reader/_iter_excel_rows uses cgroup headroom for calamine-vs-openpyxl decision; sensible with a 30x compressed-size expansion heuristic + 150MB safety margin.",
+    "_try_resume_upload atomic claim (conditional attempt writes) + rollback-by-batch_id + replay-from-stored-chunks is the right shape. Confirmed 3-trigger recovery (startup, 120s sweep, status-poll) — status poll fired at t+92s in test.",
+    "Suggestion (nice-to-have, not blocking): the stale-heartbeat/attempts-exhausted parse still uses `except ValueError:` on datetime.fromisoformat (server.py ~line 1409 area). If heartbeat is ever stored non-string, TypeError would leak. Consider `except (ValueError, TypeError)`. Same suggestion as iter32.",
+    "server.py at 7625 lines — the upload/session subsystem (~500-600 lines) is a natural extraction candidate into services/uploads.py to reduce cognitive load."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_streaming_pipeline_iter33.py (new)",
+    "/tmp/test_iter33_resume.py (new)"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "not tested (skipped per request)"},
+  "test_credentials": "admin/admin123 (working)",
+  "seed_data_creation": "/tmp/iter33_sale_30k.xlsx (30K rows 2025), /tmp/iter33_sale_5k.xlsx (5K rows 2025), /tmp/iter33_bt.xlsx (8K rows branch_transfer 2025 + OB/Total skip). Reused /tmp/huge_sale.xlsx (26MB/300K) for kill test. All test data cleaned after each test; DB baseline total_transactions=11767 restored.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All iteration-33 upload-hardening fixes are verified end-to-end including the SIGKILL/auto-resume path against 300K rows. Regression suites now: test_chunked_upload_e2e.py (iter32, 6 tests) + test_streaming_pipeline_iter33.py (iter33, 6 tests). Stand-alone resume proof at /tmp/test_iter33_resume.py. DB baseline is 11767 transactions (2026-01-15..2026-03-02); always upload with 2025 dates and clean up after."
+}

@@ -20,6 +20,8 @@ import math
 _parse_executor = ThreadPoolExecutor(max_workers=1)
 
 BATCH_INSERT_SIZE = 2000
+STALE_HEARTBEAT_SECONDS = 90
+MAX_UPLOAD_ATTEMPTS = 3
 
 from dotenv import load_dotenv
 ROOT_DIR = Path(__file__).parent
@@ -160,13 +162,29 @@ async def create_upload_indexes():
     # Performance index for party/date queries
     await db.transactions.create_index([("date", 1), ("type", 1), ("party_name", 1)])
 
-    # Mark any orphaned "processing" tasks as failed (from OOM/crash during previous run)
-    stale = await db.upload_sessions.update_many(
-        {"status": "processing"},
-        {"$set": {"status": "error", "error": "Server restarted during processing. Please re-upload."}}
-    )
-    if stale.modified_count > 0:
-        logger.info(f"Cleaned {stale.modified_count} stale upload tasks on startup")
+    # Recover 'processing' upload sessions from a previous run: resume from stored chunks
+    # if attempts remain, otherwise roll back partial writes and mark as failed.
+    async def _recover_upload_sessions():
+        try:
+            sessions = await db.upload_sessions.find({"status": "processing"}, {"_id": 0}).to_list(None)
+            stale_cutoff = (datetime.now(timezone.utc) - timedelta(seconds=STALE_HEARTBEAT_SECONDS)).isoformat()
+            for sess in sessions:
+                uid = sess["upload_id"]
+                if await _try_resume_upload(uid):
+                    continue
+                hb = sess.get("heartbeat")
+                if not hb or hb < stale_cutoff:
+                    await _fail_upload_session(sess, "Server restarted during processing. Please re-upload.")
+                    logger.info(f"[Upload {uid}] Marked failed on startup (attempts exhausted or no chunks)")
+        except Exception as e:
+            logger.error(f"Upload session recovery failed: {e}", exc_info=True)
+
+    await _recover_upload_sessions()
+
+    async def _delayed_upload_recovery():
+        await asyncio.sleep(STALE_HEARTBEAT_SECONDS + 30)
+        await _recover_upload_sessions()
+    asyncio.create_task(_delayed_upload_recovery())
 
     # --- Auth hardening (fixes production login) ---
     # 1) Resolve a STABLE JWT secret shared by all workers (prevents random-per-worker key
@@ -524,261 +542,344 @@ def parse_excel_file(file_content, file_type: str) -> List[Dict]:
         raise HTTPException(status_code=400, detail=f"Error parsing Excel file: {str(e)}")
 
 
-def _load_excel_rows(file_path: str) -> list:
-    """Load all rows of the first sheet as value tuples.
-    Uses python-calamine (Rust-based, ~20x faster than openpyxl) with openpyxl fallback."""
+def _memory_headroom_mb():
+    """Available memory headroom in MB from cgroup limits (None if unknown/unlimited)"""
     try:
-        from python_calamine import CalamineWorkbook
-        wb = CalamineWorkbook.from_path(file_path)
-        rows = wb.get_sheet_by_index(0).to_python()
-        logger.info(f"[Excel] Loaded {len(rows)} rows via calamine")
-        return rows
-    except Exception as e:
-        logger.warning(f"[Excel] calamine failed ({e}), falling back to openpyxl")
-    from openpyxl import load_workbook
-    wb = load_workbook(file_path, read_only=True, data_only=True)
-    ws = wb.active
-    rows = list(ws.iter_rows(values_only=True))
-    wb.close()
-    logger.info(f"[Excel] Loaded {len(rows)} rows via openpyxl")
-    return rows
+        with open('/sys/fs/cgroup/memory.max') as f:
+            limit = f.read().strip()
+        with open('/sys/fs/cgroup/memory.current') as f:
+            current = int(f.read().strip())
+        if limit == 'max':
+            return None
+        return (int(limit) - current) / (1024 * 1024)
+    except Exception:
+        pass
+    try:
+        with open('/sys/fs/cgroup/memory/memory.limit_in_bytes') as f:
+            limit = int(f.read().strip())
+        with open('/sys/fs/cgroup/memory/memory.usage_in_bytes') as f:
+            current = int(f.read().strip())
+        if limit > (1 << 60):
+            return None
+        return (limit - current) / (1024 * 1024)
+    except Exception:
+        return None
+
+
+def _choose_excel_reader(file_path: str) -> str:
+    """Pick calamine (fast, loads whole sheet) when memory allows, else openpyxl (slow, true streaming)"""
+    size_mb = os.path.getsize(file_path) / (1024 * 1024)
+    need_mb = size_mb * 30 + 150  # rough peak: ~30x compressed size as Python objects + safety margin
+    headroom = _memory_headroom_mb()
+    if headroom is not None:
+        choice = 'calamine' if headroom > need_mb else 'openpyxl'
+        logger.info(f"[Excel] file={size_mb:.1f}MB need~{need_mb:.0f}MB headroom={headroom:.0f}MB -> {choice}")
+        return choice
+    return 'calamine' if size_mb <= 10 else 'openpyxl'
+
+
+def _iter_excel_rows(file_path: str):
+    """Return rows of the first sheet: a list (calamine, freeable in place) or a generator (openpyxl streaming)"""
+    if _choose_excel_reader(file_path) == 'calamine':
+        try:
+            from python_calamine import CalamineWorkbook
+            rows = CalamineWorkbook.from_path(file_path).get_sheet_by_index(0).to_python()
+            logger.info(f"[Excel] Loaded {len(rows)} rows via calamine")
+            return rows
+        except Exception as e:
+            logger.warning(f"[Excel] calamine failed ({e}), falling back to openpyxl")
+    logger.info("[Excel] Using openpyxl streaming reader")
+
+    def _gen():
+        from openpyxl import load_workbook
+        wb = load_workbook(file_path, read_only=True, data_only=True)
+        ws = wb.active
+        try:
+            for row in ws.iter_rows(values_only=True):
+                yield row
+        finally:
+            wb.close()
+    return _gen()
+
+
+def _detect_header(head_rows: list):
+    """Detect the header row within the first rows of the sheet"""
+    header_names = None
+    header_row_idx = None
+    for i, row in enumerate(head_rows):
+        str_vals = [str(v).strip() if v is not None else '' for v in row]
+        if header_row_idx is None:
+            row_str = ' '.join(s.lower() for s in str_vals if s)
+            if 'item name' in row_str or 'particular' in row_str or 'party name' in row_str or 'lnarr' in row_str:
+                header_row_idx = i
+                header_names = str_vals
+    if header_names is None:
+        header_names = [str(v).strip() if v is not None else '' for v in (head_rows[0] if head_rows else [])]
+        header_row_idx = 0
+    return header_names, header_row_idx
+
+
+def _build_row_mapper(file_type: str, header_names: list):
+    """Return a mapper(row) -> record dict (or None to skip) for the given file type"""
+    KG_TO_GRAMS = 1000
+    cols_set = set(header_names)
+    col_map = {name: idx for idx, name in enumerate(header_names)}
+
+    def _get(row, col_name):
+        if not col_name or col_name not in col_map:
+            return None
+        idx = col_map[col_name]
+        return str(row[idx]).strip() if idx < len(row) and row[idx] is not None else None
+
+    if file_type == 'purchase':
+        item_col = _resolve_col(cols_set, ['Item Name', 'Particular', 'item name'])
+        type_col = _resolve_col(cols_set, ['Type', 'type'])
+        tag_col = _resolve_col(cols_set, ['Tag.No.', 'Tag No', 'tag no'])
+        wt_rs_col = _resolve_col(cols_set, ['Wt/Rs', 'Wt Rs'])
+        total_col = _resolve_col(cols_set, ['Total', 'total'])
+        tunch_col = _resolve_col(cols_set, ['Tunch', 'tunch'])
+        wstg_col = _resolve_col(cols_set, ['Wstg', 'wstg'])
+        date_col = _resolve_col(cols_set, ['Date', 'date'])
+        refno_col = _resolve_col(cols_set, ['Refno', 'refno', 'Ref No'])
+        party_col = _resolve_col(cols_set, ['Party Name', 'party name', 'Party'])
+        stamp_col = _resolve_col(cols_set, ['Stamp', 'stamp'])
+        gr_col = _resolve_col(cols_set, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'])
+        net_col = _resolve_col(cols_set, ['Net.Wt.', 'Net Wt'])
+        fine_col = _resolve_col(cols_set, ['Fine', 'Sil.Fine', 'Sil Fine', 'Silver Fine'])
+        dia_col = _resolve_col(cols_set, ['Dia.Wt.', 'Dia Wt'])
+        stn_col = _resolve_col(cols_set, ['Stn.Wt.', 'Stn Wt'])
+        rate_col = _resolve_col(cols_set, ['Rate', 'rate'])
+        pc_col = _resolve_col(cols_set, ['Pc', 'pc', 'Pieces'])
+
+        def mapper(row):
+            item_name = _safe_str(_get(row, item_col))
+            if len(item_name) < 2 or item_name.replace('.', '', 1).isdigit():
+                return None
+            trans_type = _safe_str(_get(row, type_col), 'P').upper()
+            if trans_type.isdigit():
+                return None
+            tag_no = _safe_str(_get(row, tag_col))
+            labor_val, labor_on = parse_labor_value(tag_no)
+            wt_rs = _get(row, wt_rs_col)
+            if wt_rs and str(wt_rs).replace('.', '').isdigit():
+                labor_val = float(wt_rs)
+            tunch_v = _safe_float(_get(row, tunch_col))
+            wstg_v = _safe_float(_get(row, wstg_col))
+            return {
+                'date': normalize_date(_get(row, date_col) or ''),
+                'type': 'purchase' if trans_type in ('P', 'PURCHASE') else 'purchase_return',
+                'refno': _safe_str(_get(row, refno_col)),
+                'party_name': _safe_str(_get(row, party_col)),
+                'item_name': item_name,
+                'stamp': normalize_stamp(_get(row, stamp_col) or ''),
+                'tag_no': tag_no,
+                'gr_wt': _safe_float(_get(row, gr_col)) * KG_TO_GRAMS,
+                'net_wt': _safe_float(_get(row, net_col)) * KG_TO_GRAMS,
+                'fine': _safe_float(_get(row, fine_col)) * KG_TO_GRAMS,
+                'labor': labor_val,
+                'labor_on': labor_on,
+                'dia_wt': _safe_float(_get(row, dia_col)) * KG_TO_GRAMS,
+                'stn_wt': _safe_float(_get(row, stn_col)) * KG_TO_GRAMS,
+                'tunch': str(tunch_v + wstg_v),
+                'rate': _safe_float(_get(row, rate_col)),
+                'total_pc': _safe_int(_get(row, pc_col)),
+                'total_amount': _safe_float(_get(row, total_col)),
+            }
+        return mapper
+
+    if file_type == 'sale':
+        item_col = _resolve_col(cols_set, ['Item Name', 'Particular', 'item name'])
+        type_col = _resolve_col(cols_set, ['Type', 'type'])
+        tag_col = _resolve_col(cols_set, ['Lbr. On Tag.No.', 'Tag.No.', 'Tag No'])
+        on_col = _resolve_col(cols_set, ['On', 'on'])
+        total_col = _resolve_col(cols_set, ['Total', 'total'])
+        tunch_col = _resolve_col(cols_set, ['Tunch', 'tunch'])
+        date_col = _resolve_col(cols_set, ['Date', 'date'])
+        refno_col = _resolve_col(cols_set, ['Refno', 'refno', 'Ref No'])
+        party_col = _resolve_col(cols_set, ['Party Name', 'party name', 'Party'])
+        stamp_col = _resolve_col(cols_set, ['Stamp', 'stamp'])
+        gr_col = _resolve_col(cols_set, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'])
+        net_col = _resolve_col(cols_set, ['Gold Std.', 'Net.Wt.', 'Net Wt'])
+        fine_col = _resolve_col(cols_set, ['Fine', 'Sil.Fine', 'Sil Fine'])
+        dia_col = _resolve_col(cols_set, ['Dia.Wt.', 'Dia Wt'])
+        stn_col = _resolve_col(cols_set, ['Stn.Wt.', 'Stn Wt'])
+        taxable_col = _resolve_col(cols_set, ['Taxable Val.', 'Taxable Value'])
+        pc_col = _resolve_col(cols_set, ['Pc', 'pc'])
+
+        def mapper(row):
+            item_name = _safe_str(_get(row, item_col))
+            if len(item_name) < 2 or item_name.replace('.', '', 1).isdigit():
+                return None
+            trans_type = _safe_str(_get(row, type_col), 'S').upper()
+            if trans_type.isdigit():
+                return None
+            tag_no = _safe_str(_get(row, tag_col))
+            labor_val, labor_on = parse_labor_value(tag_no)
+            on_val = _get(row, on_col)
+            if on_val and str(on_val).replace('.', '').isdigit():
+                labor_val = float(on_val)
+            return {
+                'type': 'sale' if trans_type in ('S', 'SALE') else 'sale_return',
+                'date': normalize_date(_get(row, date_col) or ''),
+                'refno': _safe_str(_get(row, refno_col)),
+                'party_name': _safe_str(_get(row, party_col)),
+                'item_name': item_name,
+                'stamp': normalize_stamp(_get(row, stamp_col) or ''),
+                'tag_no': tag_no,
+                'gr_wt': _safe_float(_get(row, gr_col)) * KG_TO_GRAMS,
+                'net_wt': _safe_float(_get(row, net_col)) * KG_TO_GRAMS,
+                'fine': _safe_float(_get(row, fine_col)) * KG_TO_GRAMS,
+                'labor': labor_val,
+                'labor_on': labor_on,
+                'dia_wt': _safe_float(_get(row, dia_col)) * KG_TO_GRAMS,
+                'stn_wt': _safe_float(_get(row, stn_col)) * KG_TO_GRAMS,
+                'tunch': str(_safe_float(_get(row, tunch_col))),
+                'total_amount': _safe_float(_get(row, total_col)),
+                'taxable_value': _safe_float(_get(row, taxable_col)),
+                'total_pc': _safe_int(_get(row, pc_col)),
+            }
+        return mapper
+
+    if file_type == 'branch_transfer':
+        item_col = _resolve_col(cols_set, ['Lnarr'])
+        type_col = _resolve_col(cols_set, ['Type'])
+        date_col = _resolve_col(cols_set, ['Date'])
+        refno_col = _resolve_col(cols_set, ['Refno'])
+        gr_col = _resolve_col(cols_set, ['Gr.Wt.'])
+        net_col = _resolve_col(cols_set, ['Net.Wt.'])
+
+        def mapper(row):
+            item_name = _safe_str(_get(row, item_col))
+            if len(item_name) < 2:
+                return None
+            low = item_name.lower()
+            if ('opening' in low and 'balance' in low) or 'total' in low or item_name.isdigit():
+                return None
+            trans_type = _safe_str(_get(row, type_col)).upper()
+            if not trans_type or trans_type in ('', 'NAN'):
+                return None
+            return {
+                'type': 'receive' if trans_type == 'R' else 'issue',
+                'date': normalize_date(_get(row, date_col) or ''),
+                'refno': _safe_str(_get(row, refno_col)),
+                'party_name': 'MMI Jewelly Branch',
+                'item_name': item_name,
+                'stamp': '',
+                'tag_no': '',
+                'gr_wt': _safe_float(_get(row, gr_col)) * KG_TO_GRAMS,
+                'net_wt': _safe_float(_get(row, net_col)) * KG_TO_GRAMS,
+                'fine': 0.0,
+                'labor': 0.0,
+                'labor_on': None,
+                'dia_wt': 0.0,
+                'stn_wt': 0.0,
+                'tunch': '0',
+                'rate': 0.0,
+                'total_pc': 0,
+                'total_amount': 0.0,
+                'taxable_value': 0.0,
+            }
+        return mapper
+
+    if file_type == 'opening_stock':
+        item_col = _resolve_col(cols_set, ['Item Name', 'Particular', 'item name'])
+        stamp_col = _resolve_col(cols_set, ['Stamp', 'stamp'])
+        unit_col = _resolve_col(cols_set, ['Unit', 'unit'])
+        gr_col = _resolve_col(cols_set, ['Gr.Wt.', 'Gr Wt', 'Gross Wt', 'Gross Weight'])
+        net_col = _resolve_col(cols_set, ['Net.Wt.', 'Net Wt', 'Net Weight'])
+        fine_col = _resolve_col(cols_set, ['Fine', 'Sil.Fine', 'Silver Fine'])
+        pc_col = _resolve_col(cols_set, ['Pc', 'pc', 'Pieces', 'Pcs'])
+        rate_col = _resolve_col(cols_set, ['Rate', 'rate'])
+        total_col = _resolve_col(cols_set, ['Total', 'total', 'Amount'])
+
+        def mapper(row):
+            item_name = _safe_str(_get(row, item_col))
+            if len(item_name) < 2:
+                return None
+            return {
+                'item_name': item_name,
+                'stamp': normalize_stamp(_get(row, stamp_col) or ''),
+                'unit': _safe_str(_get(row, unit_col)),
+                'pc': _safe_int(_get(row, pc_col)),
+                'gr_wt': _safe_float(_get(row, gr_col)) * KG_TO_GRAMS,
+                'net_wt': _safe_float(_get(row, net_col)) * KG_TO_GRAMS,
+                'fine': _safe_float(_get(row, fine_col)) * KG_TO_GRAMS,
+                'labor_wt': 0.0,
+                'labor_rs': 0.0,
+                'rate': _safe_float(_get(row, rate_col)),
+                'total': _safe_float(_get(row, total_col)),
+            }
+        return mapper
+
+    if file_type == 'physical_stock':
+        item_col = _resolve_col(cols_set, ['Item Name', 'Particular', 'item name', 'Stock'])
+        stamp_col = _resolve_col(cols_set, ['Stamp', 'stamp'])
+        gr_col = _resolve_col(cols_set, ['Gr.Wt.', 'Gr Wt', 'Gross Wt', 'Gross Weight'])
+        net_col = _resolve_col(cols_set, ['Net.Wt.', 'Net Wt', 'Net Weight', 'Gold Std.'])
+        pc_col = _resolve_col(cols_set, ['Pc', 'pc', 'Pieces', 'Pcs'])
+        fine_col = _resolve_col(cols_set, ['Sil.Fine', 'Fine', 'fine'])
+        has_net = net_col is not None
+
+        def mapper(row):
+            item_name = _safe_str(_get(row, item_col))
+            if len(item_name) < 2:
+                return None
+            if 'total' in item_name.lower():
+                return None
+            return {
+                'item_name': item_name,
+                'stamp': normalize_stamp(_get(row, stamp_col) or ''),
+                'gr_wt': _safe_float(_get(row, gr_col)) * KG_TO_GRAMS,
+                'has_net': has_net,
+                'pc': _safe_int(_get(row, pc_col)),
+                'fine': _safe_float(_get(row, fine_col)) * KG_TO_GRAMS,
+                'net_wt': _safe_float(_get(row, net_col)) * KG_TO_GRAMS if has_net else 0.0,
+            }
+        return mapper
+
+    raise ValueError(f"Unsupported file_type for Excel parsing: {file_type}")
+
+
+def _iter_excel_records(file_path: str, file_type: str, prog: dict = None):
+    """Yield parsed records one at a time with bounded memory (raw rows freed as consumed)"""
+    from itertools import islice
+    rows = _iter_excel_rows(file_path)
+    if isinstance(rows, list):
+        head = rows[:25]
+    else:
+        head = list(islice(rows, 25))
+    header_names, header_row_idx = _detect_header(head)
+    mapper = _build_row_mapper(file_type, header_names)
+    count = 0
+
+    def _emit(row):
+        nonlocal count
+        count += 1
+        if prog is not None and count % 20000 == 0:
+            prog['msg'] = f'Parsing rows... {count:,} processed'
+        return mapper(row)
+
+    if isinstance(rows, list):
+        for i in range(header_row_idx + 1, len(rows)):
+            rec = _emit(rows[i])
+            rows[i] = None
+            if rec is not None:
+                yield rec
+    else:
+        for row in head[header_row_idx + 1:]:
+            rec = _emit(row)
+            if rec is not None:
+                yield rec
+        for row in rows:
+            rec = _emit(row)
+            if rec is not None:
+                yield rec
 
 
 def parse_excel_streaming(file_path: str, file_type: str) -> List[Dict]:
-    """Memory-efficient Excel parser for large files on constrained pods."""
+    """Parse an Excel file fully into a records list (use _iter_excel_records for large files)"""
     try:
-        all_rows = _load_excel_rows(file_path)
-
-        # Step 1: Read first 25 rows to detect header
-        header_names = None
-        header_row_idx = None
-        first_rows = []
-        for i, row in enumerate(all_rows[:25]):
-            str_vals = [str(v).strip() if v is not None else '' for v in row]
-            first_rows.append(str_vals)
-            if header_row_idx is None:
-                row_str = ' '.join(s.lower() for s in str_vals if s)
-                if 'item name' in row_str or 'particular' in row_str or 'party name' in row_str or 'lnarr' in row_str:
-                    header_row_idx = i
-                    header_names = str_vals
-
-        if header_names is None:
-            header_names = first_rows[0] if first_rows else []
-            header_row_idx = 0
-
-        records = []
-        KG_TO_GRAMS = 1000
-
-        # Build column name set for resolver
-        cols_set = set(header_names)
-
-        if file_type == 'purchase':
-            item_col = _resolve_col(cols_set, ['Item Name', 'Particular', 'item name'])
-            type_col = _resolve_col(cols_set, ['Type', 'type'])
-            tag_col = _resolve_col(cols_set, ['Tag.No.', 'Tag No', 'tag no'])
-            wt_rs_col = _resolve_col(cols_set, ['Wt/Rs', 'Wt Rs'])
-            total_col = _resolve_col(cols_set, ['Total', 'total'])
-            tunch_col = _resolve_col(cols_set, ['Tunch', 'tunch'])
-            wstg_col = _resolve_col(cols_set, ['Wstg', 'wstg'])
-            date_col = _resolve_col(cols_set, ['Date', 'date'])
-            refno_col = _resolve_col(cols_set, ['Refno', 'refno', 'Ref No'])
-            party_col = _resolve_col(cols_set, ['Party Name', 'party name', 'Party'])
-            stamp_col = _resolve_col(cols_set, ['Stamp', 'stamp'])
-            gr_col = _resolve_col(cols_set, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'])
-            net_col = _resolve_col(cols_set, ['Net.Wt.', 'Net Wt'])
-            fine_col = _resolve_col(cols_set, ['Fine', 'Sil.Fine', 'Sil Fine', 'Silver Fine'])
-            dia_col = _resolve_col(cols_set, ['Dia.Wt.', 'Dia Wt'])
-            stn_col = _resolve_col(cols_set, ['Stn.Wt.', 'Stn Wt'])
-            rate_col = _resolve_col(cols_set, ['Rate', 'rate'])
-            pc_col = _resolve_col(cols_set, ['Pc', 'pc', 'Pieces'])
-
-            col_map = {name: idx for idx, name in enumerate(header_names)}
-
-            for row_num, row in enumerate(all_rows):
-                if row_num <= header_row_idx:
-                    continue
-                def _get(col_name):
-                    if not col_name or col_name not in col_map:
-                        return None
-                    idx = col_map[col_name]
-                    return str(row[idx]).strip() if idx < len(row) and row[idx] is not None else None
-
-                item_name = _safe_str(_get(item_col))
-                if len(item_name) < 2:
-                    continue
-                trans_type = _safe_str(_get(type_col), 'P').upper()
-                if trans_type.isdigit():
-                    continue
-                tag_no = _safe_str(_get(tag_col))
-                labor_val, labor_on = parse_labor_value(tag_no)
-                wt_rs = _get(wt_rs_col)
-                if wt_rs and str(wt_rs).replace('.', '').isdigit():
-                    labor_val = float(wt_rs)
-                total_amount = _safe_float(_get(total_col))
-                tunch_v = _safe_float(_get(tunch_col))
-                wstg_v = _safe_float(_get(wstg_col))
-                purchase_tunch = tunch_v + wstg_v
-                records.append({
-                    'date': normalize_date(_get(date_col) or ''),
-                    'type': 'purchase' if trans_type in ('P', 'PURCHASE') else 'purchase_return',
-                    'refno': _safe_str(_get(refno_col)),
-                    'party_name': _safe_str(_get(party_col)),
-                    'item_name': item_name,
-                    'stamp': normalize_stamp(_get(stamp_col) or ''),
-                    'tag_no': tag_no,
-                    'gr_wt': _safe_float(_get(gr_col)) * KG_TO_GRAMS,
-                    'net_wt': _safe_float(_get(net_col)) * KG_TO_GRAMS,
-                    'fine': _safe_float(_get(fine_col)) * KG_TO_GRAMS,
-                    'labor': labor_val,
-                    'labor_on': labor_on,
-                    'dia_wt': _safe_float(_get(dia_col)) * KG_TO_GRAMS,
-                    'stn_wt': _safe_float(_get(stn_col)) * KG_TO_GRAMS,
-                    'tunch': str(purchase_tunch),
-                    'rate': _safe_float(_get(rate_col)),
-                    'total_pc': _safe_int(_get(pc_col)),
-                    'total_amount': total_amount,
-                })
-        elif file_type == 'sale':
-            item_col = _resolve_col(cols_set, ['Item Name', 'Particular', 'item name'])
-            type_col = _resolve_col(cols_set, ['Type', 'type'])
-            tag_col = _resolve_col(cols_set, ['Lbr. On Tag.No.', 'Tag.No.', 'Tag No'])
-            on_col = _resolve_col(cols_set, ['On', 'on'])
-            total_col = _resolve_col(cols_set, ['Total', 'total'])
-            tunch_col = _resolve_col(cols_set, ['Tunch', 'tunch'])
-            date_col = _resolve_col(cols_set, ['Date', 'date'])
-            refno_col = _resolve_col(cols_set, ['Refno', 'refno', 'Ref No'])
-            party_col = _resolve_col(cols_set, ['Party Name', 'party name', 'Party'])
-            stamp_col = _resolve_col(cols_set, ['Stamp', 'stamp'])
-            gr_col = _resolve_col(cols_set, ['Gr.Wt.', 'Gr Wt', 'Gross Wt'])
-            net_col = _resolve_col(cols_set, ['Gold Std.', 'Net.Wt.', 'Net Wt'])
-            fine_col = _resolve_col(cols_set, ['Fine', 'Sil.Fine', 'Sil Fine'])
-            dia_col = _resolve_col(cols_set, ['Dia.Wt.', 'Dia Wt'])
-            stn_col = _resolve_col(cols_set, ['Stn.Wt.', 'Stn Wt'])
-            taxable_col = _resolve_col(cols_set, ['Taxable Val.', 'Taxable Value'])
-            pc_col = _resolve_col(cols_set, ['Pc', 'pc'])
-
-            col_map = {name: idx for idx, name in enumerate(header_names)}
-
-            for row_num, row in enumerate(all_rows):
-                if row_num <= header_row_idx:
-                    continue
-                def _get(col_name):
-                    if not col_name or col_name not in col_map:
-                        return None
-                    idx = col_map[col_name]
-                    return str(row[idx]).strip() if idx < len(row) and row[idx] is not None else None
-
-                item_name = _safe_str(_get(item_col))
-                if len(item_name) < 2:
-                    continue
-                trans_type = _safe_str(_get(type_col), 'S').upper()
-                if trans_type.isdigit():
-                    continue
-                tag_no = _safe_str(_get(tag_col))
-                labor_val, labor_on = parse_labor_value(tag_no)
-                on_val = _get(on_col)
-                if on_val and str(on_val).replace('.', '').isdigit():
-                    labor_val = float(on_val)
-                total_amount = _safe_float(_get(total_col))
-                sale_tunch = _safe_float(_get(tunch_col))
-                records.append({
-                    'type': 'sale' if trans_type in ('S', 'SALE') else 'sale_return',
-                    'date': normalize_date(_get(date_col) or ''),
-                    'refno': _safe_str(_get(refno_col)),
-                    'party_name': _safe_str(_get(party_col)),
-                    'item_name': item_name,
-                    'stamp': normalize_stamp(_get(stamp_col) or ''),
-                    'tag_no': tag_no,
-                    'gr_wt': _safe_float(_get(gr_col)) * KG_TO_GRAMS,
-                    'net_wt': _safe_float(_get(net_col)) * KG_TO_GRAMS,
-                    'fine': _safe_float(_get(fine_col)) * KG_TO_GRAMS,
-                    'labor': labor_val,
-                    'labor_on': labor_on,
-                    'dia_wt': _safe_float(_get(dia_col)) * KG_TO_GRAMS,
-                    'stn_wt': _safe_float(_get(stn_col)) * KG_TO_GRAMS,
-                    'tunch': str(sale_tunch),
-                    'total_amount': total_amount,
-                    'taxable_value': _safe_float(_get(taxable_col)),
-                    'total_pc': _safe_int(_get(pc_col)),
-                })
-        elif file_type == 'opening_stock':
-            item_col = _resolve_col(cols_set, ['Item Name', 'Particular', 'item name'])
-            stamp_col = _resolve_col(cols_set, ['Stamp', 'stamp'])
-            unit_col = _resolve_col(cols_set, ['Unit', 'unit'])
-            gr_col = _resolve_col(cols_set, ['Gr.Wt.', 'Gr Wt', 'Gross Wt', 'Gross Weight'])
-            net_col = _resolve_col(cols_set, ['Net.Wt.', 'Net Wt', 'Net Weight'])
-            fine_col = _resolve_col(cols_set, ['Fine', 'Sil.Fine', 'Silver Fine'])
-            pc_col = _resolve_col(cols_set, ['Pc', 'pc', 'Pieces', 'Pcs'])
-            rate_col = _resolve_col(cols_set, ['Rate', 'rate'])
-            total_col = _resolve_col(cols_set, ['Total', 'total', 'Amount'])
-
-            col_map = {name: idx for idx, name in enumerate(header_names)}
-
-            for row_num, row in enumerate(all_rows):
-                if row_num <= header_row_idx:
-                    continue
-                def _get(col_name):
-                    if not col_name or col_name not in col_map:
-                        return None
-                    idx = col_map[col_name]
-                    return str(row[idx]).strip() if idx < len(row) and row[idx] is not None else None
-
-                item_name = _safe_str(_get(item_col))
-                if len(item_name) < 2:
-                    continue
-                records.append({
-                    'item_name': item_name,
-                    'stamp': normalize_stamp(_get(stamp_col) or ''),
-                    'unit': _safe_str(_get(unit_col)),
-                    'pc': _safe_int(_get(pc_col)),
-                    'gr_wt': _safe_float(_get(gr_col)) * KG_TO_GRAMS,
-                    'net_wt': _safe_float(_get(net_col)) * KG_TO_GRAMS,
-                    'fine': _safe_float(_get(fine_col)) * KG_TO_GRAMS,
-                    'labor_wt': 0.0,
-                    'labor_rs': 0.0,
-                    'rate': _safe_float(_get(rate_col)),
-                    'total': _safe_float(_get(total_col)),
-                })
-
-        elif file_type == 'physical_stock':
-            item_col = _resolve_col(cols_set, ['Item Name', 'Particular', 'item name', 'Stock'])
-            stamp_col = _resolve_col(cols_set, ['Stamp', 'stamp'])
-            gr_col = _resolve_col(cols_set, ['Gr.Wt.', 'Gr Wt', 'Gross Wt', 'Gross Weight'])
-            net_col = _resolve_col(cols_set, ['Net.Wt.', 'Net Wt', 'Net Weight', 'Gold Std.'])
-            pc_col = _resolve_col(cols_set, ['Pc', 'pc', 'Pieces', 'Pcs'])
-            fine_col = _resolve_col(cols_set, ['Sil.Fine', 'Fine', 'fine'])
-
-            has_net = net_col is not None
-            col_map = {name: idx for idx, name in enumerate(header_names)}
-
-            for row_num, row in enumerate(all_rows):
-                if row_num <= header_row_idx:
-                    continue
-                def _get(col_name):
-                    if not col_name or col_name not in col_map:
-                        return None
-                    idx = col_map[col_name]
-                    return str(row[idx]).strip() if idx < len(row) and row[idx] is not None else None
-
-                item_name = _safe_str(_get(item_col))
-                if len(item_name) < 2:
-                    continue
-                if 'total' in item_name.lower():
-                    continue
-                rec = {
-                    'item_name': item_name,
-                    'stamp': normalize_stamp(_get(stamp_col) or ''),
-                    'gr_wt': _safe_float(_get(gr_col)) * KG_TO_GRAMS,
-                    'has_net': has_net,
-                    'pc': _safe_int(_get(pc_col)),
-                    'fine': _safe_float(_get(fine_col)) * KG_TO_GRAMS,
-                }
-                if has_net:
-                    rec['net_wt'] = _safe_float(_get(net_col)) * KG_TO_GRAMS
-                else:
-                    rec['net_wt'] = 0.0
-                records.append(rec)
-
+        records = list(_iter_excel_records(file_path, file_type))
         logger.info(f"[Streaming parser] Parsed {len(records)} {file_type} records from {file_path}")
         return records
     except Exception as e:
@@ -1090,12 +1191,16 @@ def _prepare_transactions(records: list, batch_id: str) -> list:
 
 # ==================== CHUNKED UPLOAD (MongoDB-backed for multi-pod deployments) ====================
 
-async def _save_upload_meta(upload_id: str, meta: dict):
-    """Persist upload metadata to MongoDB (works across all pods)"""
+async def _save_upload_meta(upload_id: str, meta: dict, expected_attempts: int = None):
+    """Persist upload metadata to MongoDB. When expected_attempts is given, write only
+    if this attempt still owns the session (prevents a superseded task clobbering a retry)."""
+    q = {"upload_id": upload_id}
+    if expected_attempts is not None:
+        q["attempts"] = expected_attempts
     await db.upload_sessions.update_one(
-        {"upload_id": upload_id},
+        q,
         {"$set": {**meta, "upload_id": upload_id, "heartbeat": datetime.now(timezone.utc).isoformat()}},
-        upsert=True
+        upsert=(expected_attempts is None)
     )
 
 async def _load_upload_meta(upload_id: str) -> dict:
@@ -1162,43 +1267,101 @@ async def upload_chunk(upload_id: str, chunk_index: int, file: UploadFile = File
     return {"received": meta['received'], "chunk_index": chunk_index}
 
 
+async def _rollback_partial_upload(meta: dict):
+    """Remove partially-inserted batch docs and restore any replaced records (crash/retry safety)"""
+    bid = meta.get('batch_id')
+    if not bid:
+        return
+    await db.transactions.delete_many({'batch_id': bid})
+    await db.historical_transactions.delete_many({'batch_id': bid})
+    backups = await db.replaced_records.find({'batch_id': bid}, {'_id': 0}).sort('part', 1).to_list(None)
+    old = [r for b in backups for r in b.get('records', [])]
+    if old:
+        await batch_insert(db.transactions, old)
+    await db.replaced_records.delete_many({'batch_id': bid})
+
+
+async def _fail_upload_session(meta: dict, error_msg: str):
+    """Mark a session as failed: rollback partial writes, drop chunks, set error status"""
+    uid = meta['upload_id']
+    await _rollback_partial_upload(meta)
+    await db.upload_chunks.delete_many({'upload_id': uid})
+    await db.upload_sessions.update_one(
+        {'upload_id': uid, 'status': 'processing'},
+        {'$set': {'status': 'error', 'error': error_msg}}
+    )
+
+
+async def _try_resume_upload(upload_id: str) -> bool:
+    """Atomically claim a dead 'processing' session and re-run it from its stored chunks.
+    Only claims when the heartbeat is stale (task truly dead) and attempts remain."""
+    from pymongo import ReturnDocument
+    now = datetime.now(timezone.utc)
+    stale_cutoff = (now - timedelta(seconds=STALE_HEARTBEAT_SECONDS)).isoformat()
+    doc = await db.upload_sessions.find_one_and_update(
+        {'upload_id': upload_id, 'status': 'processing',
+         'attempts': {'$lt': MAX_UPLOAD_ATTEMPTS}, 'heartbeat': {'$lt': stale_cutoff}},
+        {'$inc': {'attempts': 1},
+         '$set': {'heartbeat': now.isoformat(), 'progress': 'Resuming after server restart...'}},
+        return_document=ReturnDocument.AFTER
+    )
+    if not doc:
+        return False
+    if await db.upload_chunks.count_documents({'upload_id': upload_id}) == 0:
+        return False
+    meta = {k: v for k, v in doc.items() if k != '_id'}
+    await _rollback_partial_upload(meta)
+    meta.pop('batch_id', None)
+    logger.info(f"[Upload {upload_id}] Resuming after restart (attempt {meta.get('attempts')})")
+    asyncio.create_task(_process_upload(upload_id, meta))
+    return True
+
+
+async def _await_with_heartbeat(upload_id: str, meta: dict, my_attempt: int, prog: dict, fut):
+    """Await an executor future while writing heartbeat/progress and detecting supersession"""
+    while not fut.done():
+        await asyncio.sleep(5)
+        meta['progress'] = prog.get('msg', 'Processing...')
+        await _save_upload_meta(upload_id, meta, expected_attempts=my_attempt)
+        cur = await db.upload_sessions.find_one({"upload_id": upload_id}, {"attempts": 1})
+        if not cur or cur.get('attempts', 1) != my_attempt:
+            prog['abort'] = True
+    return fut.result()
+
+
 async def _process_upload(upload_id: str, meta: dict):
-    """Background task: reassemble chunks to temp file, parse, and insert into DB"""
+    """Background task: reassemble chunks to temp file, then stream-parse and insert into DB.
+    Memory-bounded (batched inserts during parse) and resumable (chunks kept until final state)."""
     import tempfile as _tempfile
     tmp_path = None
+    my_attempt = meta.get('attempts', 1)
+    prog = {'msg': 'Processing...'}
     try:
-        logger.info(f"[Upload {upload_id}] Starting processing, file_type={meta['file_type']}")
+        logger.info(f"[Upload {upload_id}] Starting processing, file_type={meta['file_type']}, attempt={my_attempt}")
         meta['progress'] = 'Reassembling file from chunks...'
-        await _save_upload_meta(upload_id, meta)
-        
-        # Write chunks directly to a temp file (avoids holding entire file in memory)
+        await _save_upload_meta(upload_id, meta, expected_attempts=my_attempt)
+
+        # Write chunks directly to a temp file (avoids holding entire file in memory).
+        # Chunks stay in MongoDB until success/final error so processing can be retried after a crash.
         tmp_fd, tmp_path = _tempfile.mkstemp(suffix='.xlsx')
-        chunk_count = 0
         total_bytes = 0
-        
         cursor = db.upload_chunks.find(
             {"upload_id": upload_id},
             {"chunk_index": 1, "data": 1, "_id": 0}
         ).sort("chunk_index", 1)
-        
         import os as _os
         with _os.fdopen(tmp_fd, 'wb') as f:
             async for chunk_doc in cursor:
                 data = chunk_doc['data']
                 f.write(data)
                 total_bytes += len(data)
-                chunk_count += 1
-        
-        logger.info(f"[Upload {upload_id}] Wrote {chunk_count} chunks to disk ({total_bytes} bytes)")
-        
-        # Delete chunks from MongoDB immediately to free DB space
-        await db.upload_chunks.delete_many({"upload_id": upload_id})
 
-        meta['progress'] = f'Parsing Excel file ({total_bytes // 1024} KB)...'
-        await _save_upload_meta(upload_id, meta)
+        logger.info(f"[Upload {upload_id}] Wrote {total_bytes} bytes to disk")
+        prog['msg'] = f'Parsing Excel file ({total_bytes // 1024} KB)...'
+        meta['progress'] = prog['msg']
+        await _save_upload_meta(upload_id, meta, expected_attempts=my_attempt)
 
         file_type = meta['file_type']
-
         parse_type = file_type
         if file_type in ('opening_stock', 'master_stock'):
             parse_type = 'opening_stock'
@@ -1207,130 +1370,153 @@ async def _process_upload(upload_id: str, meta: dict):
         elif file_type == 'historical_purchase':
             parse_type = 'purchase'
 
-        # Parse in thread pool with heartbeat updates so the client can detect a dead task
         loop = asyncio.get_event_loop()
-        parse_future = loop.run_in_executor(_parse_executor, parse_excel_streaming, tmp_path, parse_type)
-        parse_start = time.time()
-        while not parse_future.done():
-            await asyncio.sleep(5)
-            meta['progress'] = f'Parsing Excel file ({total_bytes // 1024} KB)... {int(time.time() - parse_start)}s elapsed'
-            await _save_upload_meta(upload_id, meta)
-        records = parse_future.result()
-
-        logger.info(f"[Upload {upload_id}] Parsed {len(records) if records else 0} records")
-
-        if not records:
-            meta['status'] = 'error'
-            meta['error'] = 'No valid records found in file'
-            await _save_upload_meta(upload_id, meta)
-            return
-
-        batch_id = str(uuid.uuid4())
         start_date = meta.get('start_date')
         end_date = meta.get('end_date')
-        rec_count = len(records)
-        meta['progress'] = f'Saving {rec_count} records to database...'
-        await _save_upload_meta(upload_id, meta)
 
-        if file_type in ('purchase', 'sale', 'branch_transfer'):
-            deleted_count = 0
-            # Map file_type to actual stored transaction types for deletion
-            if file_type == 'branch_transfer':
-                delete_types = ['issue', 'receive']
-            else:
-                delete_types = [file_type, f"{file_type}_return"]
-
-            # Only delete dates that exist in the NEW file (prevents losing data for dates not in the file)
-            new_dates = sorted(set(r.get('date', '') for r in records if r.get('date')))
-            if new_dates:
-                # Backup replaced records for undo
-                old_records = await db.transactions.find(
-                    {"type": {"$in": delete_types}, "date": {"$in": new_dates}}, {"_id": 0}
-                ).to_list(None)
-                if old_records:
-                    await _backup_replaced_records(batch_id, old_records)
-                delete_result = await db.transactions.delete_many({
-                    "type": {"$in": delete_types},
-                    "date": {"$in": new_dates}
-                })
-                deleted_count = delete_result.deleted_count
-
-            transactions = _prepare_transactions(records, batch_id)
-            await batch_insert(db.transactions, transactions)
-            dates_str = f"{new_dates[0]} to {new_dates[-1]}" if new_dates else "unknown"
-            message = f"Uploaded {len(transactions)} {file_type} records for {dates_str}"
-            if deleted_count > 0:
-                message += f" (replaced {deleted_count} old records)"
-            await save_action(f'upload_{file_type}', message, {
-                'batch_id': batch_id, 'file_type': file_type, 'count': len(transactions)
-            })
-            await auto_normalize_stamps()
-            # Trigger monthly summary recomputation in background (with logging + error handling)
-            asyncio.create_task(_safe_recompute_summaries())
-            meta['status'] = 'complete'
-            meta['result'] = {"success": True, "count": len(transactions), "replaced_count": deleted_count,
-                              "batch_id": batch_id, "message": message}
-
-        elif file_type == 'opening_stock':
-            merged_items = {}
-            for record in records:
-                key = record['item_name'].strip().lower()
-                if key not in merged_items:
-                    merged_items[key] = {'item_name': record['item_name'], 'stamp': record.get('stamp', ''),
-                        'unit': record.get('unit', ''), 'pc': 0, 'gr_wt': 0.0, 'net_wt': 0.0,
-                        'fine': 0.0, 'labor_wt': 0.0, 'labor_rs': 0.0, 'rate': record.get('rate', 0.0), 'total': 0.0}
-                merged_items[key]['gr_wt'] += record.get('gr_wt', 0)
-                merged_items[key]['net_wt'] += record.get('net_wt', 0)
-                merged_items[key]['fine'] += record.get('fine', 0)
-                merged_items[key]['pc'] += record.get('pc', 0)
-                merged_items[key]['total'] += record.get('total', 0)
-                if record.get('stamp') and not merged_items[key]['stamp']:
-                    merged_items[key]['stamp'] = record['stamp']
-            await db.opening_stock.delete_many({})
-            stock_items = [OpeningStock(**item).model_dump() for item in merged_items.values()]
-            await db.opening_stock.insert_many(stock_items)
-            total_net_wt = sum(i['net_wt'] for i in stock_items)
-            await save_action('upload_opening_stock', f"Uploaded {len(stock_items)} merged opening stock items")
-            await auto_normalize_stamps()
-            meta['status'] = 'complete'
-            meta['result'] = {"success": True, "count": len(stock_items),
-                              "message": f"Opening stock uploaded: {len(stock_items)} items, {total_net_wt/1000:.3f} kg"}
-
-        elif file_type == 'physical_stock':
-            verification_date = meta.get('verification_date') or datetime.now(timezone.utc).isoformat()[:10]
-            count, message = await _replace_physical_stock_for_date(records, verification_date)
-            meta['status'] = 'complete'
-            meta['result'] = {"success": True, "count": count,
-                              "verification_date": verification_date, "message": message}
-
-        elif file_type in ('historical_sale', 'historical_purchase'):
+        if file_type in ('purchase', 'sale', 'branch_transfer', 'historical_sale', 'historical_purchase'):
+            # Streaming pipeline: parse rows and insert in 5K batches -> memory stays bounded.
+            batch_id = str(uuid.uuid4())
+            meta['batch_id'] = batch_id
+            await _save_upload_meta(upload_id, meta, expected_attempts=my_attempt)
+            is_hist = file_type in ('historical_sale', 'historical_purchase')
+            target = db.historical_transactions if is_hist else db.transactions
             year = meta.get('year', '2025')
-            for record in records:
-                record['batch_id'] = batch_id
-                record['historical_year'] = year
-                record['is_historical'] = True
-            hist_docs = _prepare_transactions(records, batch_id)
-            logger.info(f"[Upload {upload_id}] Inserting {len(hist_docs)} historical records into DB...")
-            await batch_insert(db.historical_transactions, hist_docs)
-            actual_type = 'sale' if file_type == 'historical_sale' else 'purchase'
-            # Verify insertion
-            verify_count = await db.historical_transactions.count_documents({"batch_id": batch_id})
-            logger.info(f"[Upload {upload_id}] Verified {verify_count} records in DB for batch {batch_id}")
-            meta['status'] = 'complete'
-            meta['result'] = {"success": True, "count": verify_count, "year": year,
-                              "message": f"Uploaded {verify_count} historical {actual_type} records for {year}"}
+
+            def _pipeline():
+                saved = 0
+                dates = set()
+                batch = []
+
+                def flush():
+                    nonlocal saved, batch
+                    if not batch:
+                        return
+                    docs = _prepare_transactions(batch, batch_id)
+                    if is_hist:
+                        for d in docs:
+                            d['historical_year'] = year
+                            d['is_historical'] = True
+                    asyncio.run_coroutine_threadsafe(batch_insert(target, docs), loop).result()
+                    saved += len(docs)
+                    batch = []
+                    prog['msg'] = f'Saved {saved:,} records to database...'
+
+                for rec in _iter_excel_records(tmp_path, parse_type, prog):
+                    if prog.get('abort'):
+                        raise RuntimeError('superseded')
+                    if rec.get('date'):
+                        dates.add(rec['date'])
+                    batch.append(rec)
+                    if len(batch) >= 5000:
+                        flush()
+                flush()
+                return saved, sorted(dates)
+
+            pipeline_future = loop.run_in_executor(_parse_executor, _pipeline)
+            count, new_dates = await _await_with_heartbeat(upload_id, meta, my_attempt, prog, pipeline_future)
+            logger.info(f"[Upload {upload_id}] Streamed {count} records into DB (batch {batch_id})")
+
+            if count == 0:
+                meta['status'] = 'error'
+                meta['error'] = 'No valid records found in file'
+                await _save_upload_meta(upload_id, meta, expected_attempts=my_attempt)
+                await db.upload_chunks.delete_many({"upload_id": upload_id})
+                return
+
+            if not is_hist:
+                delete_types = ['issue', 'receive'] if file_type == 'branch_transfer' else [file_type, f"{file_type}_return"]
+                deleted_count = 0
+                if new_dates:
+                    # Replace old records for the uploaded dates (new batch excluded)
+                    meta['progress'] = 'Replacing previous records for uploaded dates...'
+                    await _save_upload_meta(upload_id, meta, expected_attempts=my_attempt)
+                    repl_q = {"type": {"$in": delete_types}, "date": {"$in": new_dates}, "batch_id": {"$ne": batch_id}}
+                    old_records = await db.transactions.find(repl_q, {"_id": 0}).to_list(None)
+                    if old_records:
+                        await _backup_replaced_records(batch_id, old_records)
+                    deleted_count = (await db.transactions.delete_many(repl_q)).deleted_count
+                dates_str = f"{new_dates[0]} to {new_dates[-1]}" if new_dates else "unknown"
+                message = f"Uploaded {count} {file_type} records for {dates_str}"
+                if deleted_count > 0:
+                    message += f" (replaced {deleted_count} old records)"
+                await save_action(f'upload_{file_type}', message, {
+                    'batch_id': batch_id, 'file_type': file_type, 'count': count
+                })
+                await auto_normalize_stamps()
+                asyncio.create_task(_safe_recompute_summaries())
+                meta['status'] = 'complete'
+                meta['result'] = {"success": True, "count": count, "replaced_count": deleted_count,
+                                  "batch_id": batch_id, "message": message}
+            else:
+                actual_type = 'sale' if file_type == 'historical_sale' else 'purchase'
+                verify_count = await target.count_documents({"batch_id": batch_id})
+                logger.info(f"[Upload {upload_id}] Verified {verify_count} historical records for batch {batch_id}")
+                meta['status'] = 'complete'
+                meta['result'] = {"success": True, "count": verify_count, "year": year,
+                                  "message": f"Uploaded {verify_count} historical {actual_type} records for {year}"}
+
+        elif file_type in ('opening_stock', 'master_stock', 'physical_stock'):
+            # Small files: parse fully, then process
+            parse_future = loop.run_in_executor(_parse_executor, parse_excel_streaming, tmp_path, parse_type)
+            records = await _await_with_heartbeat(upload_id, meta, my_attempt, prog, parse_future)
+            logger.info(f"[Upload {upload_id}] Parsed {len(records) if records else 0} records")
+
+            if not records:
+                meta['status'] = 'error'
+                meta['error'] = 'No valid records found in file'
+                await _save_upload_meta(upload_id, meta, expected_attempts=my_attempt)
+                await db.upload_chunks.delete_many({"upload_id": upload_id})
+                return
+
+            if file_type in ('opening_stock', 'master_stock'):
+                merged_items = {}
+                for record in records:
+                    key = record['item_name'].strip().lower()
+                    if key not in merged_items:
+                        merged_items[key] = {'item_name': record['item_name'], 'stamp': record.get('stamp', ''),
+                            'unit': record.get('unit', ''), 'pc': 0, 'gr_wt': 0.0, 'net_wt': 0.0,
+                            'fine': 0.0, 'labor_wt': 0.0, 'labor_rs': 0.0, 'rate': record.get('rate', 0.0), 'total': 0.0}
+                    merged_items[key]['gr_wt'] += record.get('gr_wt', 0)
+                    merged_items[key]['net_wt'] += record.get('net_wt', 0)
+                    merged_items[key]['fine'] += record.get('fine', 0)
+                    merged_items[key]['pc'] += record.get('pc', 0)
+                    merged_items[key]['total'] += record.get('total', 0)
+                    if record.get('stamp') and not merged_items[key]['stamp']:
+                        merged_items[key]['stamp'] = record['stamp']
+                await db.opening_stock.delete_many({})
+                stock_items = [OpeningStock(**item).model_dump() for item in merged_items.values()]
+                await db.opening_stock.insert_many(stock_items)
+                total_net_wt = sum(i['net_wt'] for i in stock_items)
+                await save_action('upload_opening_stock', f"Uploaded {len(stock_items)} merged opening stock items")
+                await auto_normalize_stamps()
+                meta['status'] = 'complete'
+                meta['result'] = {"success": True, "count": len(stock_items),
+                                  "message": f"Opening stock uploaded: {len(stock_items)} items, {total_net_wt/1000:.3f} kg"}
+            else:
+                verification_date = meta.get('verification_date') or datetime.now(timezone.utc).isoformat()[:10]
+                count, message = await _replace_physical_stock_for_date(records, verification_date)
+                meta['status'] = 'complete'
+                meta['result'] = {"success": True, "count": count,
+                                  "verification_date": verification_date, "message": message}
         else:
             meta['status'] = 'error'
             meta['error'] = f"Unsupported file_type: {file_type}"
 
-        await _save_upload_meta(upload_id, meta)
+        await _save_upload_meta(upload_id, meta, expected_attempts=my_attempt)
+        await db.upload_chunks.delete_many({"upload_id": upload_id})
 
     except Exception as e:
+        if prog.get('abort') or str(e) == 'superseded':
+            logger.info(f"[Upload {upload_id}] attempt {my_attempt} superseded by a newer attempt, exiting quietly")
+            return
         logger.error(f"[Upload {upload_id}] FAILED: {e}", exc_info=True)
         meta['status'] = 'error'
         meta['error'] = str(e)
         try:
-            await _save_upload_meta(upload_id, meta)
+            await _save_upload_meta(upload_id, meta, expected_attempts=my_attempt)
+            await _rollback_partial_upload(meta)
+            await db.upload_chunks.delete_many({"upload_id": upload_id})
         except Exception:
             pass
     finally:
@@ -1369,6 +1555,7 @@ async def finalize_chunked_upload(upload_id: str, background_tasks: BackgroundTa
 
     # Mark as processing and kick off background task
     meta['status'] = 'processing'
+    meta['attempts'] = 1
     await _save_upload_meta(upload_id, meta)
 
     background_tasks.add_task(_process_upload, upload_id, meta)
@@ -1398,16 +1585,21 @@ async def get_upload_status(upload_id: str, current_user: dict = Depends(get_cur
         await db.upload_sessions.delete_one({"upload_id": upload_id})
         return {"status": "error", "detail": error_detail}
     else:
-        # Detect a dead background task (pod OOM/restart) via stale heartbeat
+        # Stale heartbeat = the background task died (pod OOM/restart). Try to auto-resume
+        # from the stored chunks; only fail out once retry attempts are exhausted.
         hb = meta.get('heartbeat')
+        stale = False
         if status == 'processing' and hb:
             try:
-                hb_dt = datetime.fromisoformat(hb)
-                if (datetime.now(timezone.utc) - hb_dt).total_seconds() > 180:
-                    await db.upload_sessions.delete_one({"upload_id": upload_id})
-                    return {"status": "error", "detail": "Processing stopped unexpectedly (server restarted or ran out of memory). Please re-upload the file."}
+                stale = (datetime.now(timezone.utc) - datetime.fromisoformat(hb)).total_seconds() > STALE_HEARTBEAT_SECONDS
             except (ValueError, TypeError):
-                pass
+                stale = False
+        if stale:
+            if await _try_resume_upload(upload_id):
+                return {"status": "processing", "message": "Resuming after server restart..."}
+            await _fail_upload_session(meta, "Processing stopped unexpectedly and could not be resumed. Please re-upload the file.")
+            await db.upload_sessions.delete_one({"upload_id": upload_id})
+            return {"status": "error", "detail": "Processing stopped unexpectedly (server may have run out of memory). Automatic retries were exhausted — please re-upload the file."}
         progress = meta.get('progress', 'Processing...')
         return {"status": "processing", "message": progress}
 
