@@ -275,3 +275,14 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Verified (iteration_34.json, 8/8 PASS)**: re-upload now perfectly idempotent (identical counts + net_wt, 0 ghosts, grand-total rows excluded, sale_return inheritance correct); 150 seeded legacy ghosts purged by one upload; undo works; baseline 11,767 intact. Regression suite: `tests/test_upload_idempotency.py`. All prior suites 24/24.
 - **RECOVERY FOR PRODUCTION**: REDEPLOY, then re-upload the purchase file once and the sale file once. Each upload purges its type's doubled ghosts and re-inserts clean dated records → stock returns to correct values automatically. Note: continuation lines now carry real dates, so daily/monthly analytics will include them (more accurate than before).
 - **Testing-agent suggestion (future)**: extract shared _voucher_ffill helper (ffill logic duplicated in 4 places); consider tightening the ghost purge once production is clean.
+
+## Item-wise Current Stock Formula Verification (Jun 8, 2026)
+- **User suspicion**: logical mistake in current stock (= old + purchase + received − sales − issue), introduced by the last 2 changes.
+- **Verification (dummy data, iteration_35.json — 4/4 PASS, independent)**:
+  1. Formula check: opening 100 + P 30 + PR(−5) + Rcv 10 − S 20 − SR(−3) − I 7 = 111kg → engine returns exactly 111. NOTE: Tally exports RETURNS WITH NEGATIVE WEIGHTS (verified in real data: 234/238 sale_returns, 28/29 purchase_returns negative), so stock_service's ADD-purchase-family / SUBTRACT-sale-family sign convention is correct.
+  2. OLD-style data (continuation date='' + default type) vs NEW-style (inherited date+type): IDENTICAL stock (17kg both) → the 2 changes did NOT alter stock math for normal items.
+  3. E2E through the new pipeline (P+S+BT files with continuation + negative return rows): matches hand-computation, idempotent on re-upload.
+  4. Baseline items (physical stock baselines): the ONLY behavior change — continuation rows dated after the baseline now count (previously silently skipped as no-date). More correct, not a bug.
+- **No numeric-only item names** exist in real data (new parser filter drops nothing real; stock engine already excluded integer names).
+- **Regression suite added**: `tests/test_itemwise_stock_formula.py` (~93s due to 30s inventory cache waits).
+- **Production note**: if stock still looks wrong on production, the DB there still contains the doubled ghost rows — REDEPLOY + re-upload each file once to self-repair (iter34 fix).
