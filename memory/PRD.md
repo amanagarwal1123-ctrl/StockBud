@@ -264,3 +264,14 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Verified (iteration_33.json, 7/7 PASS)**: 26MB/300K-row upload SIGKILLed mid-pipeline → 47K partial rolled back → 'Resuming after server restart...' at ~90s → complete with EXACTLY 300,000 records, no dupes, chunks cleaned. Plus happy path, replace+undo, branch_transfer, attempts exhaustion, 404, stats regression (11,767 baseline intact). Local pytest 18/18 + iter33 suite.
 - **Regression suites**: `tests/test_chunked_upload_e2e.py`, `tests/test_streaming_pipeline_iter33.py`, `tests/test_unbounded_limits.py`.
 - **ACTION REQUIRED BY USER**: REDEPLOY, then re-upload the 23MB sale file. Even if the pod restarts mid-processing, the upload now retries itself (up to 2 retries) and the card shows "Resuming after server restart...".
+
+## Stock Fudging on Re-upload — Ghost Continuation-Line Fix (Jun 8, 2026)
+- **User report**: re-uploading the same purchase/sale files changed Current Stock (gross 9399→7300kg). Reported as "what did you do wrong" — root cause was a PRE-EXISTING flaw, newly exposed because large re-uploads finally work.
+- **Root cause (reproduced locally)**: Tally exports contain voucher continuation lines (item+weights, EMPTY date/refno/party/type). They were stored with date=''. Replace-on-reupload only deletes old records whose date is in the new file → no-date "ghost" rows never replaced → duplicated on EVERY re-upload, inflating sales, dragging stock down. Repro: 5,189-row Tally-style file → 2nd upload grew DB to 7,378 rows / +5,491kg sales.
+- **Fixes** (`server.py`):
+  1. Forward-fill: continuation lines inherit date/refno/party/type from the previous dated row — in streaming mappers (purchase/sale; branch date-only) AND pandas `parse_excel_file` path.
+  2. Replace scope widened: `date $in new_dates + ['', None]` in both chunked (~1445) and direct (~1850) paths → legacy ghosts are self-repaired on the next upload of that type.
+  3. Direct path backup switched to chunked `_backup_replaced_records`.
+- **Verified (iteration_34.json, 8/8 PASS)**: re-upload now perfectly idempotent (identical counts + net_wt, 0 ghosts, grand-total rows excluded, sale_return inheritance correct); 150 seeded legacy ghosts purged by one upload; undo works; baseline 11,767 intact. Regression suite: `tests/test_upload_idempotency.py`. All prior suites 24/24.
+- **RECOVERY FOR PRODUCTION**: REDEPLOY, then re-upload the purchase file once and the sale file once. Each upload purges its type's doubled ghosts and re-inserts clean dated records → stock returns to correct values automatically. Note: continuation lines now carry real dates, so daily/monthly analytics will include them (more accurate than before).
+- **Testing-agent suggestion (future)**: extract shared _voucher_ffill helper (ffill logic duplicated in 4 places); consider tightening the ghost purge once production is clean.
