@@ -252,3 +252,15 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
   - Stuck-upload auto-clear 10→30 min (10 min could kill slow 23MB chunk uploads mid-flight).
 - **Verified (iteration_32.json)**: 8/8 PASS — happy path, 60K double-upload + 12-part backup + undo restore, stale heartbeat → error, FE green-on-success, FE red-on-failure. Regression: /api/stats unchanged (11,767).
 - **ACTION REQUIRED BY USER**: REDEPLOY, then re-upload the 23MB sale file on production.
+
+## Upload OOM/Restart Self-Healing — "Server restarted during processing" Fix (Jun 8, 2026)
+- **Problem (production)**: after redeploy, the 23MB sale file upload died with "Server restarted during processing. Please re-upload." — the background task was killed mid-processing (most likely pod OOM from calamine materializing ~300K rows in memory).
+- **Fixes ("one go" hardening, backend only)**:
+  1. **Adaptive Excel reader** (`_choose_excel_reader`): reads cgroup memory headroom; calamine (fast) when headroom > ~30× file size + 150MB, else true-streaming openpyxl (bounded memory, slower but safe on small pods).
+  2. **Streaming insert pipeline** (`_process_upload`): txn/historical uploads insert in 5,000-doc batches DURING parsing (`run_coroutine_threadsafe`), raw rows freed as consumed → memory bounded. New records inserted first under batch_id, then old records for uploaded dates backed up (chunked parts) + deleted excluding the new batch.
+  3. **Auto-resume after crash**: chunks stay in Mongo until final success/error; sessions carry `attempts` (max 3); stale heartbeat (>90s) → `_try_resume_upload` atomically claims, rolls back partial inserts (delete batch + restore backups), reprocesses from stored chunks. Triggered from startup recovery, a delayed 120s sweep, and the status-poll path. Exhausted attempts → rollback + error + chunk cleanup. Supersession guard prevents zombie attempts clobbering retries.
+  4. **branch_transfer streaming mapper added** — chunked branch uploads previously parsed 0 records (latent bug, now fixed + tested).
+  5. Sale/purchase mappers skip numeric-only item names (Tally grand-total rows).
+- **Verified (iteration_33.json, 7/7 PASS)**: 26MB/300K-row upload SIGKILLed mid-pipeline → 47K partial rolled back → 'Resuming after server restart...' at ~90s → complete with EXACTLY 300,000 records, no dupes, chunks cleaned. Plus happy path, replace+undo, branch_transfer, attempts exhaustion, 404, stats regression (11,767 baseline intact). Local pytest 18/18 + iter33 suite.
+- **Regression suites**: `tests/test_chunked_upload_e2e.py`, `tests/test_streaming_pipeline_iter33.py`, `tests/test_unbounded_limits.py`.
+- **ACTION REQUIRED BY USER**: REDEPLOY, then re-upload the 23MB sale file. Even if the pod restarts mid-processing, the upload now retries itself (up to 2 retries) and the card shows "Resuming after server restart...".
