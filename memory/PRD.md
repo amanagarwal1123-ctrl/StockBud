@@ -296,3 +296,15 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
   - Frontend: Master Stock tab has "Stock as on date" picker (defaults today) + "Opening Stock Effective Date" card (GET/PUT, testids: effective-date-card/input/save/value/missing). Chunked path passes date via `start_date` in `/upload/init`; direct path via query param.
 - **Verified (self-test, all PASS, preview data backed up/restored)**: upload anchors date; pre-anchor purchase+sale ignored (opening 1000 + post-anchor 100 = 1100 exact); unlisted item = post-anchor txns only (50); moving anchor via PUT re-bakes all txns; master-stock upload also anchors; UI renders card correctly.
 - **Opening stock parser format reminder**: columns `Item Name, Stamp, Gr.Wt., Net.Wt.` with weights in KG. Master stock: `Item Name, Stamp, Gross weigth, Net Weight` in grams.
+
+## Stock Delta Investigation + Stock Movement Audit Feature (Jul 17, 2026)
+- **User report**: stock jumped 7437.699 → 7451.759 kg net (+14.060) overnight after "updates from mobile"; asked whether all 6 txn types (sale/sale_return/purchase/purchase_return/issue/receive) are handled.
+- **Forensic findings (preview DB mirror of same uploads)**:
+  - The "mobile updates" were file uploads at 07:40–07:44 UTC Jul 17: sales Jun13–Jul13, sales Jul14–15, purchases Jun13–Jul15 (uploaded TWICE — idempotency cleanly deduped, net effect 0.000), plus 2025 full-year sale+purchase files.
+  - Verified via `replaced_records` lineage: no duplication; every overlapping upload replaced its exact date range.
+  - +14.06 kg = (fresh files' effect) − (old rows replaced) + new Jul 14–15 trading days. Not a calculation bug.
+  - Sign audit confirmed: purchase/purchase_return/receive ADD raw values, sale/sale_return/issue SUBTRACT raw values; returns stored NEGATIVE in Tally exports so math nets correctly. Header total sums ALL items incl. negatives.
+- **New feature: Stock Movement Audit** (so day-over-day changes are always explainable):
+  - Backend: GET `/api/stock-audit/uploads?limit=20` (admin-only) in server.py (before `_replace_physical_stock_for_date`). Per upload batch: rows inserted/replaced, per-type net kg breakdown, inserted vs replaced impact, `net_change_kg`, rows excluded by anchor/baselines (`rows_before_anchor`). Honors opening anchor + item baselines + EXCLUDED_ITEMS (same rules as Current Stock).
+  - Frontend: `/stock-audit` page (`pages/StockAudit.jsx`), sidebar Inventory → "Stock Audit" (Scale icon). Summary cards (uploads shown, combined net movement, anchor date) + Upload Impact History table with "new X − old Y" reconciliation line for replacements. testids: stock-audit-page/-upload-count/-total-movement/-anchor-date/-refresh-btn/-row-<batch8>.
+- **Tested**: iteration_36.json — 100% backend + frontend (10 pytest cases in `tests/test_stock_audit.py`); idempotent duplicates show 0.000; 403 for executive; /current-stock regression intact.
