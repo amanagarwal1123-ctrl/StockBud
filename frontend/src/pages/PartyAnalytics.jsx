@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Fragment } from 'react';
 import axios from 'axios';
 import { Users, TrendingUp, Award, Package, Calendar, Download, ChevronDown, ChevronUp } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -39,6 +39,11 @@ export default function PartyAnalytics() {
   const [partyBreakdown, setPartyBreakdown] = useState(null);
   const [breakdownLoading, setBreakdownLoading] = useState(false);
   const [chartMetric, setChartMetric] = useState('total_net_wt');
+
+  const [expandedProfitParty, setExpandedProfitParty] = useState(null);
+  const [profitBreakdown, setProfitBreakdown] = useState(null);
+  const [profitBreakdownLoading, setProfitBreakdownLoading] = useState(false);
+  const [profitMetric, setProfitMetric] = useState('silver_profit_kg');
 
   const custSort = useSortableData(partyData?.customers, 'total_net_wt', 'desc');
   const suppSort = useSortableData(partyData?.suppliers, 'total_net_wt', 'desc');
@@ -100,6 +105,7 @@ export default function PartyAnalytics() {
     setCustomerPage(1); setSupplierPage(1);
     setCustProfitPage(1); setSuppProfitPage(1);
     setExpandedParty(null); setPartyBreakdown(null);
+    setExpandedProfitParty(null); setProfitBreakdown(null);
     fetchAll(selectedYear, month);
   };
 
@@ -107,6 +113,7 @@ export default function PartyAnalytics() {
     const yr = Number(year);
     setSelectedYear(yr);
     setExpandedParty(null); setPartyBreakdown(null);
+    setExpandedProfitParty(null); setProfitBreakdown(null);
     fetchAll(yr, selectedMonth);
   };
 
@@ -126,6 +133,26 @@ export default function PartyAnalytics() {
       console.error('Error:', error);
     } finally {
       setBreakdownLoading(false);
+    }
+  };
+
+  const handleExpandProfitParty = async (partyName, partyType) => {
+    const key = `${partyType}__${partyName}`;
+    if (expandedProfitParty === key) {
+      setExpandedProfitParty(null);
+      setProfitBreakdown(null);
+      return;
+    }
+    setExpandedProfitParty(key);
+    setProfitBreakdown(null);
+    setProfitBreakdownLoading(true);
+    try {
+      const res = await axios.get(`${API}/analytics/party-monthly-profit/${encodeURIComponent(partyName)}?year=${selectedYear}&party_type=${partyType}`);
+      setProfitBreakdown(res.data);
+    } catch (error) {
+      console.error('Error:', error);
+    } finally {
+      setProfitBreakdownLoading(false);
     }
   };
 
@@ -439,16 +466,33 @@ export default function PartyAnalytics() {
                       <TableBody>
                         {custProfPag.items.length === 0 ? (
                           <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground text-xs">No data</TableCell></TableRow>
-                        ) : custProfPag.items.map((c, idx) => (
-                          <TableRow key={idx}>
-                            <TableCell className="text-xs py-1.5 text-muted-foreground">{custProfPag.startIdx + idx + 1}</TableCell>
-                            <TableCell className="text-xs py-1.5 font-medium truncate max-w-[150px]">{c.customer_name}</TableCell>
-                            <TableCell className="text-right font-mono text-xs py-1.5 text-green-600 font-semibold">{c.silver_profit_kg?.toFixed(3)}</TableCell>
-                            <TableCell className="text-right font-mono text-xs py-1.5 text-blue-600 font-semibold">{formatIndianCurrency(c.labour_profit_inr)}</TableCell>
-                            <TableCell className="text-right font-mono text-xs py-1.5">{c.total_sold_kg?.toFixed(3)}</TableCell>
-                            <TableCell className="text-right font-mono text-xs py-1.5">{c.transaction_count}</TableCell>
-                          </TableRow>
-                        ))}
+                        ) : custProfPag.items.map((c, idx) => {
+                          const rowKey = `customer__${c.customer_name}`;
+                          return (
+                          <Fragment key={rowKey}>
+                            <TableRow className="cursor-pointer hover:bg-muted/40" onClick={() => handleExpandProfitParty(c.customer_name, 'customer')} data-testid={`cust-profit-row-${custProfPag.startIdx + idx}`}>
+                              <TableCell className="text-xs py-1.5 text-muted-foreground">
+                                <span className="inline-flex items-center gap-1">
+                                  {expandedProfitParty === rowKey ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                                  {custProfPag.startIdx + idx + 1}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-xs py-1.5 font-medium truncate max-w-[150px]">{c.customer_name}</TableCell>
+                              <TableCell className="text-right font-mono text-xs py-1.5 text-green-600 font-semibold">{c.silver_profit_kg?.toFixed(3)}</TableCell>
+                              <TableCell className="text-right font-mono text-xs py-1.5 text-blue-600 font-semibold">{formatIndianCurrency(c.labour_profit_inr)}</TableCell>
+                              <TableCell className="text-right font-mono text-xs py-1.5">{c.total_sold_kg?.toFixed(3)}</TableCell>
+                              <TableCell className="text-right font-mono text-xs py-1.5">{c.transaction_count}</TableCell>
+                            </TableRow>
+                            {expandedProfitParty === rowKey && (
+                              <TableRow data-testid="cust-profit-expanded-row">
+                                <TableCell colSpan={6} className="bg-muted/20 p-3">
+                                  <PartyProfitChart data={profitBreakdown} loading={profitBreakdownLoading} metric={profitMetric} onMetricChange={setProfitMetric} partyType="customer" />
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </Fragment>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>
@@ -480,16 +524,33 @@ export default function PartyAnalytics() {
                       <TableBody>
                         {suppProfPag.items.length === 0 ? (
                           <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground text-xs">No data</TableCell></TableRow>
-                        ) : suppProfPag.items.map((s, idx) => (
-                          <TableRow key={idx}>
-                            <TableCell className="text-xs py-1.5 text-muted-foreground">{suppProfPag.startIdx + idx + 1}</TableCell>
-                            <TableCell className="text-xs py-1.5 font-medium truncate max-w-[150px]">{s.supplier_name}</TableCell>
-                            <TableCell className="text-right font-mono text-xs py-1.5 text-blue-600">{s.total_purchased_kg?.toFixed(3)}</TableCell>
-                            <TableCell className="text-right font-mono text-xs py-1.5 text-green-600 font-semibold">{s.silver_profit_kg?.toFixed(3)} kg</TableCell>
-                            <TableCell className="text-right font-mono text-xs py-1.5 text-primary font-semibold">{formatIndianCurrency(s.labor_profit_inr || 0)}</TableCell>
-                            <TableCell className="text-right font-mono text-xs py-1.5 text-muted-foreground">{s.items_count || 0}</TableCell>
-                          </TableRow>
-                        ))}
+                        ) : suppProfPag.items.map((s, idx) => {
+                          const rowKey = `supplier__${s.supplier_name}`;
+                          return (
+                          <Fragment key={rowKey}>
+                            <TableRow className="cursor-pointer hover:bg-muted/40" onClick={() => handleExpandProfitParty(s.supplier_name, 'supplier')} data-testid={`supp-profit-row-${suppProfPag.startIdx + idx}`}>
+                              <TableCell className="text-xs py-1.5 text-muted-foreground">
+                                <span className="inline-flex items-center gap-1">
+                                  {expandedProfitParty === rowKey ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                                  {suppProfPag.startIdx + idx + 1}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-xs py-1.5 font-medium truncate max-w-[150px]">{s.supplier_name}</TableCell>
+                              <TableCell className="text-right font-mono text-xs py-1.5 text-blue-600">{s.total_purchased_kg?.toFixed(3)}</TableCell>
+                              <TableCell className="text-right font-mono text-xs py-1.5 text-green-600 font-semibold">{s.silver_profit_kg?.toFixed(3)} kg</TableCell>
+                              <TableCell className="text-right font-mono text-xs py-1.5 text-primary font-semibold">{formatIndianCurrency(s.labor_profit_inr || 0)}</TableCell>
+                              <TableCell className="text-right font-mono text-xs py-1.5 text-muted-foreground">{s.items_count || 0}</TableCell>
+                            </TableRow>
+                            {expandedProfitParty === rowKey && (
+                              <TableRow data-testid="supp-profit-expanded-row">
+                                <TableCell colSpan={6} className="bg-muted/20 p-3">
+                                  <PartyProfitChart data={profitBreakdown} loading={profitBreakdownLoading} metric={profitMetric} onMetricChange={setProfitMetric} partyType="supplier" />
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </Fragment>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>
@@ -550,6 +611,55 @@ function PartyBreakdownChart({ data, loading, metric, onMetricChange, partyType 
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
             <XAxis dataKey="name" tick={{ fontSize: 10 }} />
             <YAxis tick={{ fontSize: 10 }} width={50} />
+            <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} formatter={(value) => [typeof value === 'number' ? value.toFixed(2) : value, activeMetric.label]} />
+            <Bar dataKey={activeMetric.key} fill={activeMetric.color} radius={[3, 3, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+/** Bar chart for party monthly PROFIT breakdown (silver / labour / weight) */
+function PartyProfitChart({ data, loading, metric, onMetricChange, partyType }) {
+  if (loading) return <div className="text-center py-4 text-xs text-muted-foreground" data-testid="party-profit-chart-loading">Loading chart...</div>;
+  if (!data || !data.months) return <div className="text-center py-4 text-xs text-muted-foreground">No data</div>;
+
+  const chartData = data.months.map(m => ({
+    name: MONTHS[m.month - 1],
+    silver_profit_kg: m.silver_profit_kg || 0,
+    labor_profit_inr: m.labor_profit_inr || 0,
+    net_wt_kg: m.net_wt_kg || 0,
+  }));
+
+  const metricOptions = [
+    { key: 'silver_profit_kg', label: 'Silver Profit (kg)', color: '#16a34a' },
+    { key: 'labor_profit_inr', label: 'Labour Profit (INR)', color: '#2563eb' },
+    { key: 'net_wt_kg', label: partyType === 'customer' ? 'Sold (kg)' : 'Purchased (kg)', color: '#d97706' },
+  ];
+
+  const activeMetric = metricOptions.find(m => m.key === metric) || metricOptions[0];
+
+  return (
+    <div className="space-y-2" data-testid="party-profit-chart">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs font-medium text-muted-foreground">Show:</span>
+        {metricOptions.map(opt => (
+          <Button
+            key={opt.key}
+            onClick={(e) => { e.stopPropagation(); onMetricChange(opt.key); }}
+            variant={metric === opt.key ? "default" : "outline"}
+            size="sm" className="h-6 text-[10px] px-2"
+            data-testid={`party-profit-metric-${opt.key}`}
+          >{opt.label}</Button>
+        ))}
+      </div>
+      <div className="h-40 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+            <YAxis tick={{ fontSize: 10 }} width={55} />
             <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} formatter={(value) => [typeof value === 'number' ? value.toFixed(2) : value, activeMetric.label]} />
             <Bar dataKey={activeMetric.key} fill={activeMetric.color} radius={[3, 3, 0, 0]} />
           </BarChart>

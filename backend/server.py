@@ -80,6 +80,24 @@ class InventoryCache:
             self._cache.clear()
 
 _inv_cache = InventoryCache(ttl_seconds=30)
+_inv_locks: Dict[str, asyncio.Lock] = {}
+
+
+async def get_current_inventory_cached(as_of_date: str = None):
+    """Cached + deduplicated inventory computation. Concurrent requests for the
+    same as_of_date share a single computation (protects small-memory pods)."""
+    key = f'current_inventory:{as_of_date or "latest"}'
+    cached = _inv_cache.get(key)
+    if cached is not None:
+        return cached
+    lock = _inv_locks.setdefault(key, asyncio.Lock())
+    async with lock:
+        cached = _inv_cache.get(key)
+        if cached is not None:
+            return cached
+        result = await get_current_inventory(as_of_date=as_of_date)
+        _inv_cache.set(key, result)
+        return result
 
 
 async def _safe_recompute_summaries(year: int = None):
@@ -2197,7 +2215,7 @@ async def get_approval_details(stamp: str, verification_date: Optional[str] = No
     
     # Calculate expected closing stock for the verification_date
     # Use get_current_inventory (baseline-aware) and extract stamp items
-    current_inv = await get_current_inventory(as_of_date=verification_date)
+    current_inv = await get_current_inventory_cached(as_of_date=verification_date)
     stamp_items_list = current_inv.get('by_stamp', {}).get(stamp, [])
     closing_stock = {}
     for si in stamp_items_list:
@@ -2824,12 +2842,7 @@ async def set_opening_stock_effective_date_endpoint(payload: dict, current_user:
 @api_router.get("/inventory/current")
 async def get_current_inventory_endpoint(current_user: dict = Depends(get_current_user)):
     """Calculate current inventory: Opening Stock + Purchases - Sales (cached 30s)"""
-    cached = _inv_cache.get('current_inventory')
-    if cached:
-        return cached
-    result = await get_current_inventory()
-    _inv_cache.set('current_inventory', result)
-    return result
+    return await get_current_inventory_cached()
 
 
 @api_router.get("/stock-audit/uploads")
@@ -3485,7 +3498,7 @@ async def fix_group_baselines(current_user: dict = Depends(get_current_user)):
         await db.inventory_baselines.delete_one({'item_key': bl_key})
 
         # Compute inventory as of baseline_date WITHOUT the baseline
-        inv = await get_current_inventory(as_of_date=baseline_date)
+        inv = await get_current_inventory_cached(as_of_date=baseline_date)
         all_inv_items = inv.get('inventory', []) + inv.get('negative_items', [])
 
         # Find the group item and get member-level breakdown
@@ -3610,7 +3623,7 @@ async def restore_group_baselines(current_user: dict = Depends(get_current_user)
 
         # Now compute book stock as of baseline_date WITHOUT any baselines
         _inv_cache.invalidate()
-        inv = await get_current_inventory(as_of_date=baseline_date)
+        inv = await get_current_inventory_cached(as_of_date=baseline_date)
 
         # Get member-level book stock from by_stamp (individual level)
         member_book = {}
@@ -3831,7 +3844,7 @@ async def get_stamp_breakdown(stamp: str, current_user: dict = Depends(get_curre
     """Get detailed breakdown for a specific stamp using the authoritative inventory calculation"""
     
     # Use the single source of truth: get_current_inventory
-    inventory_response = await get_current_inventory()
+    inventory_response = await get_current_inventory_cached()
     all_items = inventory_response.get('inventory', []) + inventory_response.get('negative_items', [])
     
     # Filter items in this stamp
@@ -3856,14 +3869,14 @@ async def get_stamp_breakdown(stamp: str, current_user: dict = Depends(get_curre
     purchases = await db.transactions.find({
         "item_name": {"$in": all_names},
         "type": {"$in": ["purchase", "purchase_return"]}
-    }, {"_id": 0}).to_list(None)
+    }, {"_id": 0, "gr_wt": 1, "net_wt": 1}).to_list(None)
     purchase_gross = sum(t.get('gr_wt', 0) for t in purchases)
     purchase_net = sum(t.get('net_wt', 0) for t in purchases)
     
     sales = await db.transactions.find({
         "item_name": {"$in": all_names},
         "type": {"$in": ["sale", "sale_return"]}
-    }, {"_id": 0}).to_list(None)
+    }, {"_id": 0, "gr_wt": 1, "net_wt": 1}).to_list(None)
     sale_gross = sum(t.get('gr_wt', 0) for t in sales)
     sale_net = sum(t.get('net_wt', 0) for t in sales)
     
@@ -4092,12 +4105,6 @@ async def get_customer_profit(
         end_date_with_time = end_date + ' 23:59:59'
         query['date'] = {'$gte': start_date, '$lte': end_date_with_time}
     
-    # Get all sales + returns
-    transactions = await db.transactions.find(
-        {**query, "type": {"$in": ["sale", "sale_return"]}},
-        {"_id": 0}
-    ).to_list(None)
-    
     # Get purchase ledger — GROUP AWARE
     ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(None)
     all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
@@ -4114,7 +4121,10 @@ async def get_customer_profit(
         'transaction_count': 0
     })
     
-    for txn in transactions:
+    _cp_proj = {"_id": 0, "party_name": 1, "item_name": 1, "type": 1,
+                "net_wt": 1, "tunch": 1, "total_amount": 1, "labor": 1}
+    async for txn in db.transactions.find(
+            {**query, "type": {"$in": ["sale", "sale_return"]}}, _cp_proj):
         customer = txn.get('party_name', 'Unknown')
         if not customer:
             continue
@@ -4200,9 +4210,6 @@ async def get_supplier_profit(
         end_date_with_time = end_date + ' 23:59:59'
         query['date'] = {'$gte': start_date, '$lte': end_date_with_time}
     
-    # Get all transactions
-    all_transactions = await db.transactions.find(query, {"_id": 0}).to_list(None)
-    
     # Group-aware mappings
     all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
     all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
@@ -4211,94 +4218,57 @@ async def get_supplier_profit(
     def _resolve_supplier(name):
         return resolve_to_leader(name, s_mapping_dict, s_member_to_leader)
     
-    # Group by supplier: track what each supplier sells us (resolved to leaders)
-    supplier_data = defaultdict(lambda: {
-        'supplier_name': '',
-        'items': defaultdict(lambda: {'purchases': [], 'sales': []}),
-        'total_purchased_kg': 0.0,
-        'silver_profit_kg': 0.0,
-        'labor_profit_inr': 0.0
-    })
-    
-    # Organize transactions — resolve item names to group leaders
-    for trans in all_transactions:
+    # Streamed single pass: per (supplier,item) purchase aggregates + per item sale aggregates
+    _sp_proj = {"_id": 0, "party_name": 1, "item_name": 1, "type": 1,
+                "net_wt": 1, "tunch": 1, "total_amount": 1, "labor": 1}
+    purch_agg = defaultdict(lambda: {'wt': 0.0, 'abs_wt': 0.0, 'tunch_wt': 0.0, 'labour': 0.0, 'n': 0})
+    sale_agg = defaultdict(lambda: {'wt': 0.0, 'abs_wt': 0.0, 'tunch_wt': 0.0, 'labour': 0.0, 'n': 0})
+    async for trans in db.transactions.find(query, _sp_proj):
         item_name = _resolve_supplier(trans.get('item_name', ''))
-        
+        net = trans.get('net_wt', 0) or 0
+        a = abs(net)
+        tv = abs(trans.get('total_amount', 0) or trans.get('labor', 0) or 0)
+        tn = float(trans.get('tunch', 0) or 0)
         if trans['type'] in ['purchase', 'purchase_return']:
             supplier = trans.get('party_name', 'Unknown')
-            if supplier:
-                supplier_data[supplier]['supplier_name'] = supplier
-                supplier_data[supplier]['items'][item_name]['purchases'].append(trans)
-                supplier_data[supplier]['total_purchased_kg'] += trans.get('net_wt', 0) / 1000
-        
+            if not supplier:
+                continue
+            p = purch_agg[(supplier, item_name)]
+            p['wt'] += net; p['abs_wt'] += a; p['tunch_wt'] += tn * a; p['labour'] += tv; p['n'] += 1
         elif trans['type'] in ['sale', 'sale_return']:
-            # Track sales for all items (to calculate profit later)
-            for supplier in supplier_data.keys():
-                if item_name in supplier_data[supplier]['items']:
-                    supplier_data[supplier]['items'][item_name]['sales'].append(trans)
-    
-    # Calculate profit per supplier
+            sagg = sale_agg[item_name]
+            sagg['wt'] += net; sagg['abs_wt'] += a; sagg['tunch_wt'] += tn * a; sagg['labour'] += tv; sagg['n'] += 1
+
+    supplier_totals = defaultdict(lambda: {'silver': 0.0, 'labor': 0.0, 'purchased_kg': 0.0, 'items': 0})
+    for (supplier, item_name), p in purch_agg.items():
+        sagg = sale_agg.get(item_name)
+        if not sagg or sagg['n'] == 0 or p['n'] == 0:
+            continue
+        st = supplier_totals[supplier]
+        st['items'] += 1
+        purchase_wt = p['wt']
+        sale_wt = sagg['wt']
+        if abs(purchase_wt) < 0.001 or abs(sale_wt) < 0.001:
+            continue
+        avg_purchase_tunch = p['tunch_wt'] / p['abs_wt'] if p['abs_wt'] else 0
+        avg_sale_tunch = sagg['tunch_wt'] / sagg['abs_wt'] if sagg['abs_wt'] else 0
+        purchase_labour_per_gram = p['labour'] / p['abs_wt'] if p['abs_wt'] else 0
+        sale_labour_per_gram = sagg['labour'] / sagg['abs_wt'] if sagg['abs_wt'] else 0
+        st['silver'] += (avg_sale_tunch - avg_purchase_tunch) * purchase_wt / 100 / 1000
+        st['labor'] += (sale_labour_per_gram - purchase_labour_per_gram) * purchase_wt
+        st['purchased_kg'] += purchase_wt / 1000
+
     supplier_profits = []
-    
-    for supplier, data in supplier_data.items():
-        supplier_silver_profit = 0.0
-        supplier_labor_profit = 0.0
-        total_purchased_from_supplier = 0.0
-        
-        for item_name, item_data in data['items'].items():
-            purchases = item_data['purchases']
-            sales = item_data['sales']
-            
-            # Skip if no purchases or sales
-            if not purchases or not sales:
-                continue
-            
-            # Calculate purchase weight from this supplier for this item
-            purchase_wt = sum(p.get('net_wt', 0) for p in purchases)
-            sale_wt = sum(s.get('net_wt', 0) for s in sales)
-            
-            if abs(purchase_wt) < 0.001 or abs(sale_wt) < 0.001:
-                continue
-            
-            # Calculate average tunch
-            avg_purchase_tunch = sum(float(p.get('tunch', 0) or 0) * abs(p.get('net_wt', 0)) for p in purchases) / sum(abs(p.get('net_wt', 0)) for p in purchases)
-            avg_sale_tunch = sum(float(s.get('tunch', 0) or 0) * abs(s.get('net_wt', 0)) for s in sales) / sum(abs(s.get('net_wt', 0)) for s in sales)
-            
-            # Calculate labour rates
-            # Use total_amount as the labour value (in silver trading, Total column = labour Rs)
-            purch_total_wt = sum(abs(p.get('net_wt', 0)) for p in purchases)
-            if purch_total_wt > 0:
-                purchase_labour_per_gram = sum(abs(p.get('total_amount', 0) or p.get('labor', 0)) for p in purchases) / purch_total_wt
-            else:
-                purchase_labour_per_gram = 0
-            
-            sale_total_wt = sum(abs(s.get('net_wt', 0)) for s in sales)
-            if sale_total_wt > 0:
-                sale_labour_per_gram = sum(abs(s.get('total_amount', 0) or s.get('labor', 0)) for s in sales) / sale_total_wt
-            else:
-                sale_labour_per_gram = 0
-            
-            # Calculate profit for THIS ITEM based on weight purchased from THIS SUPPLIER
-            # Silver profit = (sale_tunch - purchase_tunch) * weight_purchased_from_supplier / 100
-            item_silver_profit = (avg_sale_tunch - avg_purchase_tunch) * purchase_wt / 100 / 1000  # Convert to kg
-            
-            # Labor profit = (sale_labour - purchase_labour) * weight_purchased_from_supplier
-            item_labor_profit = (sale_labour_per_gram - purchase_labour_per_gram) * purchase_wt
-            
-            supplier_silver_profit += item_silver_profit
-            supplier_labor_profit += item_labor_profit
-            total_purchased_from_supplier += purchase_wt / 1000
-        
-        if total_purchased_from_supplier > 0:
+    for supplier, st in supplier_totals.items():
+        if st['purchased_kg'] > 0:
             supplier_profits.append({
                 'supplier_name': supplier,
-                'total_purchased_kg': round(total_purchased_from_supplier, 3),
-                'silver_profit_kg': round(supplier_silver_profit, 3),
-                'labor_profit_inr': round(supplier_labor_profit, 2),
-                'items_count': len([k for k, v in data['items'].items() if v['purchases'] and v['sales']])
+                'total_purchased_kg': round(st['purchased_kg'], 3),
+                'silver_profit_kg': round(st['silver'], 3),
+                'labor_profit_inr': round(st['labor'], 2),
+                'items_count': st['items']
             })
     
-    # Sort by total profit (silver + labor converted to kg equivalent)
     supplier_profits.sort(key=lambda x: x['silver_profit_kg'], reverse=True)
     
     return {
@@ -4317,11 +4287,8 @@ async def get_purchase_ledger(current_user: dict = Depends(get_current_user)):
 async def get_unmapped_items(current_user: dict = Depends(get_current_user)):
     """Get all unmapped items from transactions AND historical_transactions"""
     # Get item names from both collections
-    transactions = await db.transactions.find({}, {"_id": 0, "item_name": 1}).to_list(None)
-    historical_names = set()
-    async for doc in db.historical_transactions.find({}, {"_id": 0, "item_name": 1}):
-        historical_names.add(doc['item_name'])
-    trans_names = set(t['item_name'] for t in transactions) | historical_names
+    trans_names = set(await db.transactions.distinct('item_name')) | set(
+        await db.historical_transactions.distinct('item_name'))
     
     # Get all master item names
     master = await db.master_items.find({}, {"_id": 0, "item_name": 1}).to_list(None)
@@ -4543,8 +4510,6 @@ async def get_party_analysis(
         end_date_with_time = end_date + ' 23:59:59'
         query['date'] = {'$gte': start_date, '$lte': end_date_with_time}
     
-    transactions = await db.transactions.find(query, {"_id": 0}).to_list(None)
-    
     customers = defaultdict(lambda: {
         'party_name': '',
         'total_sales_value': 0.0,
@@ -4563,7 +4528,8 @@ async def get_party_analysis(
         'transaction_count': 0
     })
     
-    for trans in transactions:
+    _pa_proj = {"_id": 0, "party_name": 1, "type": 1, "net_wt": 1, "fine": 1, "gr_wt": 1, "total_amount": 1}
+    async for trans in db.transactions.find(query, _pa_proj):
         party = trans.get('party_name', 'Unknown')
         if not party:
             continue
@@ -4637,26 +4603,28 @@ async def get_sales_summary(
     
     # Get ALL sale transactions (S and SR). Apply signed canonicalization so
     # returns subtract regardless of whether DB stored them signed or unsigned.
-    sales_transactions = await db.transactions.find(query, {"_id": 0}).to_list(None)
-    
-    # Filter out excluded items
-    sales_transactions = [t for t in sales_transactions if t['item_name'] not in EXCLUDED_ITEMS]
-    
     def _s(t, field):
         v = abs(t.get(field, 0) or 0)
         return -v if t['type'] == 'sale_return' else v
     
-    total_net_wt = sum(_s(t, 'net_wt') for t in sales_transactions)
-    total_fine_wt = sum(_s(t, 'fine') for t in sales_transactions)
-    total_labor = sum(_s(t, 'total_amount') if t.get('total_amount') else _s(t, 'labor') for t in sales_transactions)
-    total_sales_value = sum(_s(t, 'total_amount') for t in sales_transactions)
+    _ss_proj = {"_id": 0, "item_name": 1, "type": 1, "net_wt": 1, "fine": 1, "total_amount": 1, "labor": 1}
+    total_net_wt = total_fine_wt = total_labor = total_sales_value = 0.0
+    txn_count = 0
+    async for t in db.transactions.find(query, _ss_proj):
+        if t.get('item_name') in EXCLUDED_ITEMS:
+            continue
+        txn_count += 1
+        total_net_wt += _s(t, 'net_wt')
+        total_fine_wt += _s(t, 'fine')
+        total_labor += _s(t, 'total_amount') if t.get('total_amount') else _s(t, 'labor')
+        total_sales_value += _s(t, 'total_amount')
     
     return {
         "total_net_wt_kg": round(total_net_wt / 1000, 3),
         "total_fine_wt_kg": round(total_fine_wt / 1000, 3),
         "total_labor": round(total_labor, 2),
         "total_sales_value": round(total_sales_value, 2),
-        "transaction_count": len(sales_transactions)
+        "transaction_count": txn_count
     }
 
 @api_router.get("/analytics/profit")
@@ -4688,40 +4656,39 @@ async def calculate_profit(
         end_date_with_time = end_date + ' 23:59:59'
         query['date'] = {'$gte': start_date, '$lte': end_date_with_time}
     
-    transactions = await db.transactions.find(query, {"_id": 0}).to_list(None)
-    
-    # Filter out excluded items AND items without stamps (unmapped)
-    filtered_transactions = []
-    for t in transactions:
-        trans_name = t['item_name']
-        leader_name = _resolve_profit(trans_name)
-        
-        # Skip if in excluded list
-        if leader_name in EXCLUDED_ITEMS:
-            continue
-        
-        # Skip if no stamp or Unassigned
-        item_stamp = master_stamps.get(leader_name, master_stamps.get(p_mapping_dict.get(trans_name, trans_name), 'Unassigned'))
-        if not item_stamp or item_stamp == 'Unassigned':
-            continue
-        
-        filtered_transactions.append(t)
-    
-    transactions = filtered_transactions
-    
     # Group-aware purchase ledger
     all_ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(None)
     grp_ledger = build_group_ledger(all_ledger, all_groups, mappings)
     
-    # Group transactions by LEADER item for profit calculation
+    # Single streamed pass: filter excluded/unstamped, group by leader, accumulate totals
+    _pf_proj = {"_id": 0, "item_name": 1, "type": 1, "date": 1,
+                "net_wt": 1, "tunch": 1, "total_amount": 1, "labor": 1}
     item_transactions = defaultdict(lambda: {'purchases': [], 'sales': []})
-    
-    for trans in transactions:
-        raw_name = trans.get('item_name', '')
-        if not raw_name:
+    total_sales_value = 0.0
+    total_purchase_value = 0.0
+    async for trans in db.transactions.find(query, _pf_proj):
+        trans_name = trans.get('item_name', '')
+        leader_name = _resolve_profit(trans_name)
+        
+        if leader_name in EXCLUDED_ITEMS:
             continue
-        # Resolve to GROUP LEADER for consistent grouping
-        item_name = _resolve_profit(raw_name)
+        
+        item_stamp = master_stamps.get(leader_name, master_stamps.get(p_mapping_dict.get(trans_name, trans_name), 'Unassigned'))
+        if not item_stamp or item_stamp == 'Unassigned':
+            continue
+        
+        # Signed value totals: returns subtract regardless of DB sign
+        _amt = abs(trans.get('total_amount', 0) or 0)
+        if trans['type'] in ('sale_return', 'purchase_return'):
+            _amt = -_amt
+        if trans['type'] in ['sale', 'sale_return']:
+            total_sales_value += _amt
+        elif trans['type'] in ['purchase', 'purchase_return']:
+            total_purchase_value += _amt
+        
+        if not trans_name:
+            continue
+        item_name = leader_name
         
         # Canonicalize signs: returns always carry negative regardless of DB storage
         sign = -1 if trans['type'] in ('sale_return', 'purchase_return') else 1
@@ -4777,13 +4744,6 @@ async def calculate_profit(
     # Sort by silver profit
     item_profits.sort(key=lambda x: x['silver_profit_kg'], reverse=True)
     
-    # Calculate total sales/purchases value (signed: returns subtract regardless of DB sign)
-    def _signed(t, field):
-        v = abs(t.get(field, 0) or 0)
-        is_ret = t['type'] in ('sale_return', 'purchase_return')
-        return -v if is_ret else v
-    total_sales_value = sum(_signed(t, 'total_amount') for t in transactions if t['type'] in ['sale', 'sale_return'])
-    total_purchase_value = sum(_signed(t, 'total_amount') for t in transactions if t['type'] in ['purchase', 'purchase_return'])
     
     return {
         "silver_profit_kg": round(total_silver_profit_kg, 3),
@@ -5788,6 +5748,34 @@ async def get_party_monthly_breakdown(
     return {"party_name": party_name, "year": year, "party_type": party_type, "months": months}
 
 
+@api_router.get("/analytics/party-monthly-profit/{party_name}")
+async def get_party_monthly_profit(
+    party_name: str,
+    year: int = Query(...),
+    party_type: str = Query("customer"),
+    current_user: dict = Depends(get_current_user)
+):
+    """Monthly PROFIT breakdown for a customer/supplier (silver, labour, weight) — reads pre-computed summaries."""
+    await ensure_year_summary_fresh(db, year)
+    stype = "party_customer_profit" if party_type == "customer" else "party_supplier_profit"
+    docs = await db.monthly_summaries.find(
+        {"year": year, "summary_type": stype, "name": party_name},
+        {"_id": 0}
+    ).to_list(None)
+    
+    months = []
+    for mnum in range(1, 13):
+        doc = next((d for d in docs if d['month'] == mnum), None)
+        months.append({
+            "month": mnum,
+            "silver_profit_kg": doc.get('silver_profit_kg', 0) if doc else 0,
+            "labor_profit_inr": doc.get('labor_profit_inr', 0) if doc else 0,
+            "net_wt_kg": (doc.get('sold_kg', 0) if party_type == "customer" else doc.get('purchased_kg', 0)) if doc else 0,
+        })
+    
+    return {"party_name": party_name, "year": year, "party_type": party_type, "months": months}
+
+
 @api_router.get("/analytics/dashboard-year-summary")
 async def get_dashboard_year_summary(
     year: int = Query(...),
@@ -6260,7 +6248,7 @@ async def get_item_detail(item_name: str, current_user: dict = Depends(get_curre
     avg_sale_labour = (sum(_get_labour(t) for t in sales) / (abs_sale_wt / 1000)) if abs_sale_wt > 0 else 0
     
     # Get ACCURATE current stock from get_current_inventory() (matches Current Stock page)
-    inv_response = await get_current_inventory()
+    inv_response = await get_current_inventory_cached()
     current_stock_kg = 0
     current_gr_wt_kg = 0
     item_fine = 0
@@ -6409,7 +6397,7 @@ async def categorize_items(current_user: dict = Depends(get_current_user)):
     # 2. Master items + current inventory
     master_items = await db.master_items.find({}, {"_id": 0}).to_list(None)
     master_dict = {m['item_name']: m for m in master_items}
-    inv_response = await get_current_inventory()
+    inv_response = await get_current_inventory_cached()
     inv_dict = {item['item_name']: item for item in inv_response['inventory']}
     inv_dict.update({item['item_name']: item for item in inv_response.get('negative_items', [])})
 
@@ -6616,7 +6604,7 @@ async def get_item_buffers(
     items = await db.item_buffers.find(query, {"_id": 0}).sort("tier_num", 1).to_list(None)
     
     # Refresh current stock and status using INDIVIDUAL item data (not group totals)
-    inv_response = await get_current_inventory()
+    inv_response = await get_current_inventory_cached()
     # Build dict from by_stamp (individual level) for accurate per-item stock
     inv_dict = {}
     for stamp_items in inv_response.get('by_stamp', {}).values():
@@ -6737,7 +6725,7 @@ async def get_stamp_detail(stamp_name: str, current_user: dict = Depends(get_cur
     master_items = await db.master_items.find(
         {"stamp": stamp_name}, {"_id": 0}
     ).to_list(None)
-    inv_response = await get_current_inventory()
+    inv_response = await get_current_inventory_cached()
     
     # Use stamp_items (ungrouped, per-stamp) for correct per-stamp lookup
     inv_dict = {}
@@ -6960,7 +6948,7 @@ async def check_stock_alerts(current_user: dict = Depends(get_current_user)):
     if not buffers:
         return {"success": True, "alerts_generated": 0, "message": "No buffer data. Run categorization first."}
     
-    inv_response = await get_current_inventory()
+    inv_response = await get_current_inventory_cached()
     inv_dict = {item['item_name']: item for item in inv_response['inventory']}
     inv_dict.update({item['item_name']: item for item in inv_response.get('negative_items', [])})
     
@@ -7064,7 +7052,7 @@ async def auto_stock_alerts(current_user: dict = Depends(get_current_user)):
         # Run the stock alert check
         buffers = await db.item_buffers.find({}, {"_id": 0}).to_list(None)
         if buffers:
-            inv_response = await get_current_inventory()
+            inv_response = await get_current_inventory_cached()
             inv_dict = {item['item_name']: item for item in inv_response['inventory']}
             inv_dict.update({item['item_name']: item for item in inv_response.get('negative_items', [])})
             
@@ -7420,7 +7408,9 @@ async def get_visualization_data(
     if start_date and end_date:
         query['date'] = {'$gte': start_date, '$lte': end_date + ' 23:59:59'}
     
-    transactions = await db.transactions.find(query, {"_id": 0}).to_list(None)
+    _vz_proj = {"_id": 0, "date": 1, "type": 1, "item_name": 1, "party_name": 1,
+                "net_wt": 1, "gr_wt": 1, "fine": 1, "total_amount": 1, "labor": 1, "tunch": 1}
+    transactions = await db.transactions.find(query, _vz_proj).to_list(None)
     
     # Get buffer info for tier colors
     buffers = await db.item_buffers.find({}, {"_id": 0}).to_list(None)

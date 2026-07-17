@@ -25,7 +25,7 @@ EXCLUDED_ITEMS = ["SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "
 # summaries from an older logic version are treated as stale and auto-recomputed on the
 # next read (no manual "recompute" needed after a deploy).
 # v2: cumulative-ledger cost basis + per-entry (atom-by-atom) silver/labour profit.
-PROFIT_LOGIC_VERSION = 2
+PROFIT_LOGIC_VERSION = 3
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +166,8 @@ async def _compute_year(db, year: int):
         ).to_list(None)
         item_profits = _compute_item_profits(txns, master_stamps, p_mapping_dict, p_member_to_leader, grp_ledger)
         party_data = _compute_party_data(txns)
+        cust_profits = _compute_customer_profit_month(txns, grp_ledger, p_mapping_dict, p_member_to_leader)
+        supp_profits = _compute_supplier_profit_month(txns, p_mapping_dict, p_member_to_leader)
         
         summaries = []
         
@@ -215,6 +217,32 @@ async def _compute_year(db, year: int):
                 "computed_at": datetime.now(timezone.utc).isoformat()
             })
         
+        for party_name, data in cust_profits.items():
+            summaries.append({
+                "year": year,
+                "month": month,
+                "summary_type": "party_customer_profit",
+                "name": party_name,
+                "silver_profit_kg": round(data['silver'], 3),
+                "labor_profit_inr": round(data['labour'], 2),
+                "sold_kg": round(data['sold_kg'], 3),
+                "transaction_count": data['n'],
+                "computed_at": datetime.now(timezone.utc).isoformat()
+            })
+        
+        for party_name, data in supp_profits.items():
+            summaries.append({
+                "year": year,
+                "month": month,
+                "summary_type": "party_supplier_profit",
+                "name": party_name,
+                "silver_profit_kg": round(data['silver'], 3),
+                "labor_profit_inr": round(data['labor'], 2),
+                "purchased_kg": round(data['purchased_kg'], 3),
+                "items_count": data['items'],
+                "computed_at": datetime.now(timezone.utc).isoformat()
+            })
+        
         if summaries:
             await db.monthly_summaries.insert_many(summaries)
             docs_written += len(summaries)
@@ -232,6 +260,79 @@ async def _compute_year(db, year: int):
     docs_written += 1
     
     return docs_written
+
+
+def _compute_customer_profit_month(transactions, grp_ledger, mapping_dict, member_to_leader):
+    """Per-customer profit for one month (mirrors /analytics/customer-profit math)."""
+    res = defaultdict(lambda: {'silver': 0.0, 'labour': 0.0, 'sold_kg': 0.0, 'n': 0})
+    for txn in transactions:
+        if txn['type'] not in ('sale', 'sale_return'):
+            continue
+        customer = txn.get('party_name', 'Unknown')
+        if not customer:
+            continue
+        raw_item_name = txn.get('item_name', '')
+        leader_name = resolve_to_leader(raw_item_name, mapping_dict, member_to_leader)
+        txn_tunch = float(txn.get('tunch', 0) or 0)
+        txn_net_wt = txn.get('net_wt', 0)
+        txn_total = txn.get('total_amount', 0) or txn.get('labor', 0)
+        ledger_item = grp_ledger.get(leader_name) or grp_ledger.get(raw_item_name)
+        purchase_tunch = ledger_item.get('purchase_tunch', 0) if ledger_item else 0
+        purchase_cost_per_gram = (ledger_item.get('labour_per_kg', 0) / 1000) if ledger_item else 0
+        if txn['type'] == 'sale_return':
+            abs_wt = abs(txn_net_wt)
+            abs_total = abs(txn_total)
+            silver_profit_kg = (purchase_tunch - txn_tunch) * abs_wt / 100 / 1000
+            labour_profit = (purchase_cost_per_gram * abs_wt) - abs_total
+            res[customer]['sold_kg'] -= abs_wt / 1000
+        else:
+            silver_profit_kg = (txn_tunch - purchase_tunch) * txn_net_wt / 100 / 1000
+            labour_profit = txn_total - (purchase_cost_per_gram * txn_net_wt)
+            res[customer]['sold_kg'] += txn_net_wt / 1000
+        res[customer]['silver'] += silver_profit_kg
+        res[customer]['labour'] += labour_profit
+        res[customer]['n'] += 1
+    return res
+
+
+def _compute_supplier_profit_month(transactions, mapping_dict, member_to_leader):
+    """Per-supplier profit for one month (mirrors /analytics/supplier-profit math)."""
+    purch_agg = defaultdict(lambda: {'wt': 0.0, 'abs_wt': 0.0, 'tunch_wt': 0.0, 'labour': 0.0, 'n': 0})
+    sale_agg = defaultdict(lambda: {'wt': 0.0, 'abs_wt': 0.0, 'tunch_wt': 0.0, 'labour': 0.0, 'n': 0})
+    for trans in transactions:
+        item_name = resolve_to_leader(trans.get('item_name', ''), mapping_dict, member_to_leader)
+        net = trans.get('net_wt', 0) or 0
+        a = abs(net)
+        tv = abs(trans.get('total_amount', 0) or trans.get('labor', 0) or 0)
+        tn = float(trans.get('tunch', 0) or 0)
+        if trans['type'] in ('purchase', 'purchase_return'):
+            supplier = trans.get('party_name', 'Unknown')
+            if not supplier:
+                continue
+            p = purch_agg[(supplier, item_name)]
+            p['wt'] += net; p['abs_wt'] += a; p['tunch_wt'] += tn * a; p['labour'] += tv; p['n'] += 1
+        elif trans['type'] in ('sale', 'sale_return'):
+            sagg = sale_agg[item_name]
+            sagg['wt'] += net; sagg['abs_wt'] += a; sagg['tunch_wt'] += tn * a; sagg['labour'] += tv; sagg['n'] += 1
+
+    res = defaultdict(lambda: {'silver': 0.0, 'labor': 0.0, 'purchased_kg': 0.0, 'items': 0})
+    for (supplier, item_name), p in purch_agg.items():
+        sagg = sale_agg.get(item_name)
+        if not sagg or sagg['n'] == 0 or p['n'] == 0:
+            continue
+        st = res[supplier]
+        st['items'] += 1
+        purchase_wt = p['wt']
+        if abs(purchase_wt) < 0.001 or abs(sagg['wt']) < 0.001:
+            continue
+        avg_p_tunch = p['tunch_wt'] / p['abs_wt'] if p['abs_wt'] else 0
+        avg_s_tunch = sagg['tunch_wt'] / sagg['abs_wt'] if sagg['abs_wt'] else 0
+        p_lpg = p['labour'] / p['abs_wt'] if p['abs_wt'] else 0
+        s_lpg = sagg['labour'] / sagg['abs_wt'] if sagg['abs_wt'] else 0
+        st['silver'] += (avg_s_tunch - avg_p_tunch) * purchase_wt / 100 / 1000
+        st['labor'] += (s_lpg - p_lpg) * purchase_wt
+        st['purchased_kg'] += purchase_wt / 1000
+    return {k: v for k, v in res.items() if v['purchased_kg'] > 0}
 
 
 def _compute_item_profits(transactions, master_stamps, mapping_dict, member_to_leader, grp_ledger):
