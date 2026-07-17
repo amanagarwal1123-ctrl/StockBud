@@ -337,9 +337,8 @@ export default function PartyAnalytics() {
                         ) : custPag.items.map((c, idx) => {
                           const key = `customer__${c.party_name}`;
                           return (
-                            <>
+                            <Fragment key={key}>
                               <TableRow
-                                key={c.party_name}
                                 className="cursor-pointer hover:bg-muted/50"
                                 onClick={() => handleExpandParty(c.party_name, 'customer')}
                                 data-testid={`customer-row-${idx}`}
@@ -361,7 +360,7 @@ export default function PartyAnalytics() {
                                   </TableCell>
                                 </TableRow>
                               )}
-                            </>
+                            </Fragment>
                           );
                         })}
                       </TableBody>
@@ -408,9 +407,8 @@ export default function PartyAnalytics() {
                         ) : suppPag.items.map((s, idx) => {
                           const key = `supplier__${s.party_name}`;
                           return (
-                            <>
+                            <Fragment key={key}>
                               <TableRow
-                                key={s.party_name}
                                 className="cursor-pointer hover:bg-muted/50"
                                 onClick={() => handleExpandParty(s.party_name, 'supplier')}
                                 data-testid={`supplier-row-${idx}`}
@@ -432,7 +430,7 @@ export default function PartyAnalytics() {
                                   </TableCell>
                                 </TableRow>
                               )}
-                            </>
+                            </Fragment>
                           );
                         })}
                       </TableBody>
