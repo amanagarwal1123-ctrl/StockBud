@@ -51,7 +51,7 @@ def headers():
     return {"Authorization": f"Bearer {_auth_token()}"}
 
 
-def _upload_chunked(path, file_type, headers, start="2025-01-01", end="2025-12-31"):
+def _upload_chunked(path, file_type, headers, start="2019-01-01", end="2019-12-31"):
     size = os.path.getsize(path)
     CHUNK = 256 * 1024
     n = max(1, math.ceil(size / CHUNK))
@@ -104,7 +104,7 @@ def _make_tally_sale(path, n_vouchers=3000, seed=11, sale_return_voucher_idx=7):
     random.seed(seed)
     total_rows = 0
     for v in range(n_vouchers):
-        d = datetime.date(2025, 1, 1) + datetime.timedelta(days=random.randint(0, 364))
+        d = datetime.date(2019, 1, 1) + datetime.timedelta(days=random.randint(0, 364))
         # Force >=2 lines for the sale_return voucher so we can validate inheritance
         if v == sale_return_voucher_idx:
             n_lines, vtype = 3, "R"
@@ -159,7 +159,7 @@ def _make_small_purchase(path):
     random.seed(3)
     rows = 0
     for v in range(60):
-        d = datetime.date(2025, 3, 1) + datetime.timedelta(days=v % 30)
+        d = datetime.date(2019, 3, 1) + datetime.timedelta(days=v % 30)
         # first line dated, then a continuation line for ~half of them
         n_lines = 2 if v % 2 == 0 else 1
         for line in range(n_lines):
@@ -204,7 +204,7 @@ def _cleanup_batches(batch_ids):
         return
     db.transactions.delete_many({"batch_id": {"$in": batch_ids}})
     db.replaced_records.delete_many({"batch_id": {"$in": batch_ids}})
-    db.action_history.delete_many({"description": {"$regex": "records for 2025"}})
+    db.action_history.delete_many({"description": {"$regex": "records for 2019"}})
 
 
 # ---------- tests ----------
