@@ -27,9 +27,6 @@ async def get_book_closing_stock_as_of_date(verification_date: str):
 
     opening = await db.opening_stock.find({}, {"_id": 0}).to_list(None)
     end_date = verification_date
-    transactions = await db.transactions.find(
-        {'date': {'$lte': end_date}}, {"_id": 0}
-    ).to_list(None)
 
     mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
     master_items = await db.master_items.find({}, {"_id": 0}).to_list(None)
@@ -52,7 +49,6 @@ async def get_book_closing_stock_as_of_date(verification_date: str):
     group_names_set = {g['group_name'] for g in groups}
 
     opening = [i for i in opening if i['item_name'] not in EXCLUDED_ITEMS and not i['item_name'].isdigit()]
-    transactions = [t for t in transactions if t['item_name'] not in EXCLUDED_ITEMS and not t['item_name'].isdigit()]
 
     def _resolve(raw_name):
         """Resolve transaction name to master name only. NO group merging."""
@@ -113,9 +109,13 @@ async def get_book_closing_stock_as_of_date(verification_date: str):
         inventory_map[key]['gr_wt'] += bl['gr_wt']
         inventory_map[key]['net_wt'] += bl['net_wt']
 
-    # Transactions
-    for trans in transactions:
-        trans_name = trans['item_name'].strip()
+    # Transactions (streamed with projection to keep memory flat)
+    _tx_proj = {'_id': 0, 'item_name': 1, 'type': 1, 'date': 1, 'stamp': 1, 'gr_wt': 1, 'net_wt': 1}
+    async for trans in db.transactions.find({'date': {'$lte': end_date}}, _tx_proj):
+        raw_item = trans.get('item_name') or ''
+        if raw_item in EXCLUDED_ITEMS or raw_item.isdigit():
+            continue
+        trans_name = raw_item.strip()
         display_name = _resolve(trans_name)
         key = display_name.strip().lower()
         bl = baseline_by_key.get(key)
@@ -269,7 +269,6 @@ async def get_current_inventory(as_of_date: str = None):
 
     opening = await db.opening_stock.find({}, {"_id": 0}).to_list(None)
     tx_filter = {'date': {'$lte': as_of_date}} if as_of_date else {}
-    transactions = await db.transactions.find(tx_filter, {"_id": 0}).to_list(None)
 
     mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
     master_items = await db.master_items.find({}, {"_id": 0}).to_list(None)
@@ -294,7 +293,6 @@ async def get_current_inventory(as_of_date: str = None):
     group_ledger = build_group_ledger(ledger_items, groups, mappings)
 
     opening = [item for item in opening if item['item_name'] not in EXCLUDED_ITEMS and not item['item_name'].isdigit()]
-    transactions = [t for t in transactions if t['item_name'] not in EXCLUDED_ITEMS and not t['item_name'].isdigit()]
 
     def _resolve(raw_name):
         """Resolve transaction name to master name ONLY. NO group leader merging.
@@ -381,9 +379,14 @@ async def get_current_inventory(as_of_date: str = None):
         inventory_map[key]['gr_wt'] += bl['gr_wt']
         inventory_map[key]['net_wt'] += bl['net_wt']
 
-    # --- Transactions ---
-    for trans in transactions:
-        trans_name = trans['item_name'].strip()
+    # --- Transactions (streamed with projection to keep memory flat) ---
+    _tx_proj = {'_id': 0, 'item_name': 1, 'type': 1, 'date': 1, 'stamp': 1,
+                'gr_wt': 1, 'net_wt': 1, 'fine': 1, 'total_pc': 1, 'labor': 1}
+    async for trans in db.transactions.find(tx_filter, _tx_proj):
+        raw_item = trans.get('item_name') or ''
+        if raw_item in EXCLUDED_ITEMS or raw_item.isdigit():
+            continue
+        trans_name = raw_item.strip()
         display_name = _resolve(trans_name)
         key = display_name.strip().lower()
 
@@ -634,12 +637,8 @@ async def get_stamp_closing_stock(stamp: str, as_of_date: str):
                     item_gross[resolved] += item.get('gr_wt', 0)
 
     end_date = as_of_date + ' 23:59:59'
-    transactions = await db.transactions.find(
-        {'date': {'$lte': end_date}},
-        {'_id': 0}
-    ).to_list(None)
-
-    for t in transactions:
+    _tx_proj = {'_id': 0, 'item_name': 1, 'type': 1, 'date': 1, 'gr_wt': 1}
+    async for t in db.transactions.find({'date': {'$lte': end_date}}, _tx_proj):
         if oed and opening_applies and t.get('date', '') <= oed:
             continue
         raw_name = t.get('item_name', '').strip()
@@ -687,3 +686,4 @@ async def get_stamp_closing_stock(stamp: str, as_of_date: str):
             item_gross[target] -= pw
 
     return {name: round(gr / 1000, 3) for name, gr in item_gross.items()}
+

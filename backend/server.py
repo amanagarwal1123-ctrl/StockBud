@@ -1245,14 +1245,26 @@ async def batch_insert(collection, documents: list):
     return total
 
 
-async def _backup_replaced_records(batch_id: str, old_records: list):
-    """Backup replaced records for undo, chunked to stay under Mongo's 16MB document limit"""
+async def _backup_replaced_records(batch_id: str, repl_q: dict) -> int:
+    """Backup replaced records for undo, streamed in 5000-row chunks to keep memory
+    flat and stay under Mongo's 16MB document limit. Returns rows backed up."""
     now = datetime.now(timezone.utc).isoformat()
-    for part, i in enumerate(range(0, len(old_records), 5000)):
+    part, buf, total = 0, [], 0
+    async for doc in db.transactions.find(repl_q, {"_id": 0}):
+        buf.append(doc)
+        if len(buf) >= 5000:
+            await db.replaced_records.insert_one({
+                "batch_id": batch_id, "part": part, "records": buf, "replaced_at": now
+            })
+            part += 1
+            total += len(buf)
+            buf = []
+    if buf:
         await db.replaced_records.insert_one({
-            "batch_id": batch_id, "part": part,
-            "records": old_records[i:i + 5000], "replaced_at": now
+            "batch_id": batch_id, "part": part, "records": buf, "replaced_at": now
         })
+        total += len(buf)
+    return total
 
 
 def _prepare_transactions(records: list, batch_id: str) -> list:
@@ -1513,9 +1525,7 @@ async def _process_upload(upload_id: str, meta: dict):
                     meta['progress'] = 'Replacing previous records for uploaded dates...'
                     await _save_upload_meta(upload_id, meta, expected_attempts=my_attempt)
                     repl_q = {"type": {"$in": delete_types}, "date": {"$in": new_dates + ["", None]}, "batch_id": {"$ne": batch_id}}
-                    old_records = await db.transactions.find(repl_q, {"_id": 0}).to_list(None)
-                    if old_records:
-                        await _backup_replaced_records(batch_id, old_records)
+                    await _backup_replaced_records(batch_id, repl_q)
                     deleted_count = (await db.transactions.delete_many(repl_q)).deleted_count
                 dates_str = f"{new_dates[0]} to {new_dates[-1]}" if new_dates else "unknown"
                 message = f"Uploaded {count} {file_type} records for {dates_str}"
@@ -1919,9 +1929,7 @@ async def upload_transaction_file(
     if new_dates:
         # Backup replaced records for undo (dated + no-date ghost rows of this type)
         repl_q = {"type": {"$in": delete_types}, "date": {"$in": new_dates + ["", None]}}
-        old_records = await db.transactions.find(repl_q, {"_id": 0}).to_list(None)
-        if old_records:
-            await _backup_replaced_records(batch_id, old_records)
+        await _backup_replaced_records(batch_id, repl_q)
         delete_result = await db.transactions.delete_many(repl_q)
         deleted_count = delete_result.deleted_count
     

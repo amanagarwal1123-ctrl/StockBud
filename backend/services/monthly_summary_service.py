@@ -133,15 +133,10 @@ async def ensure_year_summary_fresh(db, year: int):
 async def _compute_year(db, year: int):
     """Compute all summaries for a single year."""
     
-    start = f"{year}-01-01"
-    end = f"{year}-12-31 23:59:59"
-    
-    # Load all transactions for this year
-    transactions = await db.transactions.find(
-        {'date': {'$gte': start, '$lte': end}},
-        {"_id": 0}
-    ).to_list(None)
-    
+    # Projection keeps memory bounded; transactions are fetched month-by-month below
+    _tx_proj = {"_id": 0, "date": 1, "item_name": 1, "type": 1, "net_wt": 1, "gr_wt": 1,
+                "fine": 1, "tunch": 1, "labor": 1, "total_amount": 1, "party_name": 1}
+
     # Load mappings and groups
     mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
     all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
@@ -157,26 +152,18 @@ async def _compute_year(db, year: int):
     def _resolve(name):
         return resolve_to_leader(name, p_mapping_dict, p_member_to_leader)
     
-    # Group transactions by month
-    monthly_txns = defaultdict(list)  # month -> [transactions]
-    for t in transactions:
-        d = t.get('date', '')
-        if not d or len(d) < 7:
-            continue
-        try:
-            month = int(d[5:7])
-        except ValueError:
-            continue
-        monthly_txns[month].append(t)
-    
     docs_written = 0
     
     # Delete existing summaries for this year
     await db.monthly_summaries.delete_many({"year": year})
     
-    # Compute item profit summaries per month
+    # Compute item profit summaries per month (fetched per month to keep memory flat)
     for month in range(1, 13):
-        txns = monthly_txns.get(month, [])
+        m_start = f"{year}-{month:02d}-01"
+        m_end = f"{year}-{month:02d}-31 23:59:59"
+        txns = await db.transactions.find(
+            {'date': {'$gte': m_start, '$lte': m_end}}, _tx_proj
+        ).to_list(None)
         item_profits = _compute_item_profits(txns, master_stamps, p_mapping_dict, p_member_to_leader, grp_ledger)
         party_data = _compute_party_data(txns)
         
