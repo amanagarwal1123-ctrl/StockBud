@@ -1,0 +1,22 @@
+{
+  "summary": "Full backend + frontend testing of the new Stock Movement Audit feature and inventory regression. All 10 pytest cases pass. UI renders correctly with all required data-testids, idempotent duplicates verified 0.000 net, type-sign conventions correct across all 6 types, branch-transfer batch present, refresh works, /current-stock regression intact.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_stock_audit.py",
+    "/app/test_reports/pytest/stock_audit_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is very large (~7819 lines) — long-term maintainability concern; audit endpoint itself is clean and correctly excludes _id, uses env config, and enforces admin-only 403.",
+    "Stock audit endpoint aggregates over 242K rows on each call; consider caching or pre-aggregating by batch_id for scaling. Currently responds in <4s which is acceptable."
+  ],
+  "updated_files": ["/app/backend/tests/test_stock_audit.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin/admin123, TEST_EXEC/exec123 both verified",
+  "seed_data_creation": "None. Read-only tests as instructed.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Stock Audit endpoint GET /api/stock-audit/uploads is admin-only (403 for exec, 401/403 unauth). Response contains anchor_date (null in preview), uploads[] (14 in preview) and total_net_change_kg. Idempotent duplicate batches confirmed: 3f03c030 (purchase) and c88fb1ad (sales) both net 0.000 kg. Branch-transfer batches exist with issue(neg)/receive(pos) types. Frontend /stock-audit uses data-testids: stock-audit-page, stock-audit-upload-count, stock-audit-total-movement, stock-audit-anchor-date, stock-audit-refresh-btn, stock-audit-row-<batchid8>. Reconciliation line 'new X − old Y' appears only when rows_replaced>0 (verified for the two idempotent rows). /current-stock regression fine (Net Weight 313.461 kg).",
+  "rca of the issue": "N/A — this iteration validates a feature addition. Original 'stock went 7437→7451 kg' delta was explained by file uploads adding new July 14-15 rows; math on the endpoint (net_change_kg == inserted_net_kg - replaced_net_kg) confirmed for every upload row, and known re-uploads sum to 0.000 kg proving idempotency."
+}

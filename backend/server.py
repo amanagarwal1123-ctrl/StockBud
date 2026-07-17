@@ -2824,6 +2824,106 @@ async def get_current_inventory_endpoint(current_user: dict = Depends(get_curren
     return result
 
 
+@api_router.get("/stock-audit/uploads")
+async def get_stock_audit_uploads(limit: int = 20, current_user: dict = Depends(get_current_user)):
+    """Audit trail: exact net-stock impact of each upload (inserted minus replaced),
+    honoring the opening-stock anchor and item baselines, per transaction type."""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    batches_meta = await db.transactions.aggregate([
+        {"$group": {"_id": "$batch_id", "uploaded_at": {"$min": "$upload_date"}, "rows": {"$sum": 1},
+                    "types": {"$addToSet": "$type"}, "date_min": {"$min": "$date"}, "date_max": {"$max": "$date"}}},
+        {"$sort": {"uploaded_at": -1}}, {"$limit": limit}
+    ]).to_list(None)
+    batch_ids = [b['_id'] for b in batches_meta]
+
+    mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
+    groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
+    baselines_raw = await db.inventory_baselines.find({}, {"_id": 0}).to_list(None)
+    oed = await get_opening_effective_date()
+    baselines = {b['item_key']: b for b in baselines_raw}
+    if oed:
+        baselines = {k: b for k, b in baselines.items() if b['baseline_date'] >= oed}
+    mapping_dict, _, _ = build_group_maps(groups, mappings)
+    baseline_by_key = {}
+    for bval in baselines.values():
+        master = mapping_dict.get(bval['item_name'].strip(), bval['item_name'].strip())
+        dk = master.strip().lower()
+        if dk not in baseline_by_key or bval['baseline_date'] > baseline_by_key[dk]['baseline_date']:
+            baseline_by_key[dk] = bval
+    for bval in baselines.values():
+        rk = bval['item_key']
+        if rk not in baseline_by_key:
+            baseline_by_key[rk] = bval
+
+    EXCLUDED = {"SILVER ORNAMENTS"}
+    ADD_TYPES = ('purchase', 'purchase_return', 'receive')
+
+    def impact_of(rows):
+        counted = skipped = 0
+        net = gr = 0.0
+        by_type = defaultdict(lambda: {'rows': 0, 'net_wt': 0.0})
+        for r in rows:
+            name = (r.get('item_name') or '').strip()
+            if name in EXCLUDED or name.isdigit():
+                continue
+            n = r.get('n', 1)
+            key = mapping_dict.get(name, name).strip().lower()
+            bl = baseline_by_key.get(key)
+            cutoff = bl['baseline_date'] if bl else oed
+            if cutoff and (r.get('date') or '') <= cutoff:
+                skipped += n
+                continue
+            sign = 1 if r.get('type') in ADD_TYPES else -1
+            net += sign * (r.get('net_wt') or 0)
+            gr += sign * (r.get('gr_wt') or 0)
+            counted += n
+            bt = by_type[r.get('type')]
+            bt['rows'] += n
+            bt['net_wt'] += sign * (r.get('net_wt') or 0)
+        return counted, skipped, net, gr, by_type
+
+    grouped = await db.transactions.aggregate([
+        {"$match": {"batch_id": {"$in": batch_ids}}},
+        {"$group": {"_id": {"b": "$batch_id", "i": "$item_name", "t": "$type", "d": "$date"},
+                    "net_wt": {"$sum": "$net_wt"}, "gr_wt": {"$sum": "$gr_wt"}, "n": {"$sum": 1}}}
+    ]).to_list(None)
+    rows_by_batch = defaultdict(list)
+    for g in grouped:
+        rows_by_batch[g['_id']['b']].append({
+            'item_name': g['_id']['i'], 'type': g['_id']['t'], 'date': g['_id']['d'],
+            'net_wt': g['net_wt'], 'gr_wt': g['gr_wt'], 'n': g['n']})
+
+    uploads = []
+    for meta in batches_meta:
+        bid = meta['_id']
+        counted, skipped, in_net, in_gr, by_type = impact_of(rows_by_batch.get(bid, []))
+        repl_rows = []
+        async for doc in db.replaced_records.find({"batch_id": bid}, {"_id": 0, "records": 1}):
+            repl_rows.extend(doc.get('records', []))
+        _, _, out_net, out_gr, _ = impact_of(repl_rows)
+        uploads.append({
+            'batch_id': bid,
+            'uploaded_at': meta['uploaded_at'],
+            'types': sorted(t for t in meta['types'] if t),
+            'date_min': meta['date_min'], 'date_max': meta['date_max'],
+            'rows_inserted': meta['rows'], 'rows_replaced': len(repl_rows),
+            'rows_counted': counted, 'rows_before_anchor': skipped,
+            'inserted_net_kg': round(in_net / 1000, 3),
+            'replaced_net_kg': round(out_net / 1000, 3),
+            'net_change_kg': round((in_net - out_net) / 1000, 3),
+            'gross_change_kg': round((in_gr - out_gr) / 1000, 3),
+            'by_type': {t: {'rows': v['rows'], 'net_kg': round(v['net_wt'] / 1000, 3)}
+                        for t, v in by_type.items()},
+        })
+    return {
+        'anchor_date': oed,
+        'uploads': uploads,
+        'total_net_change_kg': round(sum(u['net_change_kg'] for u in uploads), 3),
+    }
+
+
 async def _replace_physical_stock_for_date(records: list, verification_date: str):
     """Shared helper: merge parsed records by (item name + stamp), delete only the selected date's rows,
     insert the new merged rows. Returns (count, message)."""

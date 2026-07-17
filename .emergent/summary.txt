@@ -1,21 +1,148 @@
-<analysis>monthly_summariestotal_amountEXCLUDED_ITEMSensure_year_summary_freshexcluded_items_amount_inrserver.pyserver.py/routes/analytics.py/routes/stock.py/routes/uploads.pyensure_year_summary_freshserver.pySummaryFreshness.jsxSalesReconciliation.jsx/api/analytics/sales-reconciliation/api/analytics/sales-reportexcluded_items_amount_inrSalesReport.jsx
-/app
-├── backend/
-│   ├── server.py (Critically bloated, ~7500 lines. Has new summary freshness checks & excluded labour metrics)
-│   ├── services/
-│   │   ├── group_utils.py
-│   │   ├── profit_helpers.py
-│   │   └── monthly_summary_service.py
-│   └── tests/
-│       ├── test_summary_freshness.py (NEW)
-│       ├── test_freshness_and_reconciliation_endpoints.py (NEW)
-│       └── test_sales_report_excluded_labour.py (NEW)
-└── frontend/
-    └── src/
-        ├── App.js & components/Layout.jsx (Updated with SalesReconciliation route)
-        ├── components/SummaryFreshness.jsx (NEW)
-        └── pages/
-            ├── Dashboard.jsx & ProfitAnalysis.jsx (Updated with freshness indicator)
-            ├── SalesReport.jsx (Updated with Excluded Items labour panel)
-            └── SalesReconciliation.jsx (NEW)
-monthly_summaries_inv_cacheEXCLUDED_ITEMStransactionsphysical_stockmaster_itemsmonthly_summariesstamp_assignments/app/backend/server.py/app/frontend/src/components/SummaryFreshness.jsx/app/frontend/src/pages/Dashboard.jsxProfitAnalysis.jsx/app/frontend/src/pages/SalesReport.jsx/app/frontend/src/pages/SalesReconciliation.jsx/app/backend/tests/*test_summary_freshness.pytest_freshness_and_reconciliation_endpoints.pytest_sales_report_excluded_labour.pybackend/server.py/routes/api/analytics/summary-status/api/analytics/recompute-summaries/api/analytics/sales-reconciliation/api/analytics/sales-reportexcluded_items_amount_inrEXCLUDED_ITEMSREACT_APP_BACKEND_URL/app/memory/PRD.md/app/test_reports/iteration_30.json/app/backend/tests/test_summary_freshness.py/app/backend/tests/test_freshness_and_reconciliation_endpoints.py/app/backend/tests/test_sales_report_excluded_labour.pyadminadmin123TEST_EXECexec123server.py</analysis>
+<analysis>**original_problem_statement**: 
+The user reported several critical calculation, UI, and data ingestion issues:
+1. DB query truncations () silently corrupting data aggregation for high-volume deployments.
+2. Large excel file uploads (23MB+) timing out after 15 minutes but displaying a false green tick. 
+3. Re-uploading data fudging (duplicating/corrupting) stock calculations due to failed idempotency. 
+4. User requires that uploading an Opening Stock creates an absolute historical anchor. Any stock entered on a specific date must become the absolute baseline, setting non-matching items to zero. Transactions prior to this date should not alter current stock calculations.
+5. CHAIN MS-70 showing massive divergence between Book and Physical stock (Item Aliasing mismatch).
+
+PRODUCT REQUIREMENTS:
+- Remove hardcoded data query limits.
+- Build a resilient, chunked upload system that handles 20MB+ Excel files, auto-resumes after server crashes, and accurately reports failure/success in the UI.
+- Enforce strict idempotency on file re-uploads to prevent stock calculation corruption.
+- Implement a global Opening Stock baseline feature that anchors stock on a specific date.
+- DO NOT refactor  into smaller components (user explicitly forbade this to save credits).
+
+**User's preferred language**: English (You MUST respond in English only)
+
+**what currently exists?** 
+A React + FastAPI + MongoDB inventory and sales reconciliation application. The profit calculation engine uses a cumulative  cost basis. The backend utilizes  for fast, memory-efficient Excel parsing with a background-task-driven chunked upload system that survives pod OOMs/restarts. Item-wise stock calculations dynamically read from an  collection for manual stock adjustments, effectively anchoring stock based on specific historical dates (Opening Stock).
+
+**Last working item**: 
+    - Last item agent was working: Completing and testing the **Opening Stock as a Global Anchor** feature. The agent finalized frontend routing in  and backend logic in  to ensure opening stock files correctly anchor the database on a specific date, nullifying prior transactions and zeroing unlisted items.
+    - Status: USER VERIFICATION PENDING
+    - Agent Testing Done: Y
+    - Which testing method agent to use? python -c (manual backend scripts) and screenshot tool for UI.
+    - User Testing Done: N
+
+**All Pending/In progress Issue list**: 
+  Issue 1: CHAIN MS-70 Item Alias / Grouping Mismatch (P0)
+     - Attempted fixes: Diagnosed previously as sibling name variants splitting book stock. 
+     - Next debug checklist: Implement P Suffix / Alias mapping feature to map item variants to a single master group leader. Check grouping logic in  and  (during upload parsers).
+     - Why fix this issue and what will be achieved with the fix? Closes massive false discrepancies in physical vs book stock comparisons caused by inconsistent naming.
+     - Status: NOT STARTED
+     - Is recurring issue? Y
+     - Should Test frontend/backend/both after fix? both
+     - Blocked on other issue: None
+
+**In progress Task List**: 
+  (None - Last working item was completed and awaits user verification)
+
+**Upcoming and Future Tasks**
+    Upcoming Tasks:
+    - P1: Implement Alias / Suffix Auto-mapping feature to resolve physical stock discrepancies.
+    - P1: Create PySpark/SQL/Databricks technical handoff document (schema mapping guidelines) for the data team.
+    
+    Future Tasks:
+    - P2: Make EXCLUDED_ITEMS configurable via UI/DB instead of hardcoding.
+    - P2: Implement transaction archiving / materialized views for 200K+ scale.
+    - P3: Add a Returns Impact card on the Profit Analysis page showing total returned weight/value per item.
+    - P3: Add a blended CSV Export for the Sales Report.
+
+**Completed work in this session**
+- Completed backend logic and endpoint wiring for Opening Stock Global Date Anchor in . (DONE)
+- Implemented and verified Master Stock anchor date calculations in . (DONE)
+- Fixed caching bug where  was not correctly clearing after baseline updates. (DONE)
+- Created manual backend test scripts to verify correct item anchoring, prior-transaction nullification, and zeroing out of missing items. (DONE)
+- Verified frontend  date picker and payload sending via screenshot testing. (DONE)
+
+**Earlier issues found/mentioned but not fixed**
+   Issue 1: Customer count capped at 999
+   - Debug checklist: N/A
+   - Why to solve this issue and what will be achieved with this? User explicitly requested to ignore this (Ignore customer count thing as i couldn’t find that 999.)
+   - Should Test frontend/backend/both after fix: N/A
+   - Is recurring issue? N
+
+   Issue 2: Code Quality / Linting Warnings
+   - Debug checklist: N/A
+   - Why to solve this issue and what will be achieved with this?  is massive (7700+ lines). User requested NO REFACTORING to save LLM context credits. 
+   - Should Test frontend/backend/both after fix: N/A
+   - Is recurring issue? N
+
+**Known issue recurrence from previous fork**
+  - Issue recurrence in previous fork: None.
+  - Recurrence count: 0
+  - Status: RESOLVED
+
+**Code Architecture**
+get_current_inventory
+
+**Key Technical Concepts**
+- **Upload Engine**: Uses  for fast Excel parsing and background threading () in . Handles large files with chunking and session state persistence in DB for auto-resume.
+- **Stock Baseline Engine**: Uses  to create absolute checkpoints.  functions compute current stock by summing  *only after* the most recent baseline date.
+- **Cache**: Fast response times rely on . Any mutation to stock/baselines must trigger .
+
+**key DB schema**
+  - , , , 
+  - : Stores historical stock anchors (, , Thu Jul 16 18:18:32 UTC 2026, )
+  - : Tracks background file uploads
+  - : Stores global settings like 
+
+**changes in tech stack**
+  - None this session. (Previously added ).
+
+**All files of reference** 
+1. : Core upload routes, cache management (), and logic.
+2. : Baseline math,  calculations.
+3. : Upload UI components and date selections.
+
+**Areas that need refactoring**: 
+-  is huge, but **DO NOT REFACTOR IT**. User explicitly forbade this.
+
+**key api endpoints**
+- 
+- 
+- 
+
+**Critical Info for New Agent** 
+- **NO REFACTORING**: Do not attempt to break  into routers. Maintain the monolithic structure.
+- **Cache Invalidation**: Whenever making changes that affect items, quantities, or dates, ensure you call  in  to prevent stale data.
+- **Preview Environment**: If stock appears wrong in production, tell the user to redeploy and re-upload files to auto-repair data structures (as the idempotency fix is now live).
+
+**documents and test reports created in this job** 
+  - 
+  - (Testing outputs were temporarily created in  and discarded)
+
+**Last 10 User Messages and any pending HUMAN messages** 
+1. **User**: Provided problem statement, handoff summary, and interrupted context for Opening Stock.
+2. **User**: Please use ask_human tool and confirm your plan now.
+3. **User**: Proceed as planned (Approving the agent's plan to finish and test the Opening Stock anchor).
+
+**Project Health Check:**
+- Broken: None currently identified.
+- Mocked: None.
+
+**3rd Party Integrations** 
+- Metals.live (Live metal rates).
+
+**Testing status**
+  - Testing agent used after significant changes: NO (Manual python scripts and screenshots were deemed sufficient for finishing the previous agent's isolated logic).
+  - Troubleshoot agent used after agent stuck in loop: NO
+  - Test files created: None persisting (deleted  after test).
+  - Known regressions: None.
+
+**Credentials to test flow:**
+  - Admin:  / 
+  - Executive:  / 
+
+**What agent forgot to execute**
+- Nothing apparent. The agent successfully finalized the interrupted task and verified it with tests.
+
+**Debugging checklist for current issue**
+    Issue: CHAIN MS-70 Item Alias / Grouping Mismatch (Upcoming P0 task)
+    Frontend files to check: N/A (Mostly backend matching logic)
+    Backend files to check:
+    - : Check how item names are normalized and grouped.
+    - : Look for  /  or anywhere item names are extracted from uploaded files to apply suffix filtering or mapping.
+    Database to check:
+    -  and  collections: Check for naming variations (e.g.,  vs ) causing divergence.</analysis>

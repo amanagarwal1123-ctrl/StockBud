@@ -9,7 +9,7 @@ import os, io, math, time, random, datetime, pytest, requests
 from pymongo import MongoClient
 from openpyxl import Workbook
 
-BASE = os.environ.get("REACT_APP_BACKEND_URL", "https://sales-reconciliation.preview.emergentagent.com").rstrip("/")
+BASE = os.environ.get("REACT_APP_BACKEND_URL", "https://alias-mapping-debug.preview.emergentagent.com").rstrip("/")
 CHUNK = 200 * 1024
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
 DB_NAME = os.environ.get("DB_NAME", "test_database")

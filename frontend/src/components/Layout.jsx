@@ -76,6 +76,7 @@ export default function Layout({ children }) {
         { name: 'Upload Files', href: '/upload', icon: Upload, roles: ['admin'] },
         { name: 'Historical Upload', href: '/historical-upload', icon: FileUp, roles: ['admin'] },
         { name: 'Current Stock', href: '/current-stock', icon: Package, roles: ['admin'] },
+        { name: 'Stock Audit', href: '/stock-audit', icon: Scale, roles: ['admin'] },
         { name: 'Item Mapping', href: '/item-mapping', icon: Link2, roles: ['admin'] },
         { name: 'Manage Mappings', href: '/mapping-management', icon: GitBranch, roles: ['admin'] },
         { name: 'Purchase Rates', href: '/purchase-rates', icon: Receipt, roles: ['admin'] },

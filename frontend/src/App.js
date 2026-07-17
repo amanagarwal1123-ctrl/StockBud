@@ -32,6 +32,7 @@ import StampAssignments from './pages/StampAssignments';
 import StampDetail from './pages/StampDetail';
 import ItemGroupManagement from './pages/ItemGroupManagement';
 import HistoricalUpload from './pages/HistoricalUpload';
+import StockAudit from './pages/StockAudit';
 import Login from './pages/Login';
 import Layout from './components/Layout';
 import { Toaster } from '@/components/ui/sonner';
@@ -82,6 +83,7 @@ function App() {
                       <Route path="/" element={<Dashboard />} />
                       <Route path="/upload" element={<UploadManager />} />
                       <Route path="/current-stock" element={<CurrentStock />} />
+                      <Route path="/stock-audit" element={<StockAudit />} />
                       <Route path="/physical-vs-book" element={<PhysicalStockComparison />} />
                       <Route path="/item-mapping" element={<ItemMapping />} />
                       <Route path="/mapping-management" element={<MappingManagement />} />
