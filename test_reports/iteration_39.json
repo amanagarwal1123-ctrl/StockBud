@@ -1,0 +1,33 @@
+{
+  "summary": "Iteration 39: Verified stock query pruning (no regression) and new Year Comparison feature (backend + frontend). All 12 backend tests pass; frontend page renders correctly with 3D bars, year legend, metric toggles, entity tabs, and party drill-down.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_39.py",
+    "/app/test_reports/pytest/iter39.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Response shape uses list of dicts for yearly_totals with 'year' field, and dict for monthly keyed by metric->year_str->[12 months] — this is fine and consistent.",
+    "Top endpoint returns {years, entity, top:[...]} — response wrapper is clear; entity=bogus correctly returns 400."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration_39.py"],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "100%"},
+  "test_credentials": "admin/admin123",
+  "seed_data_creation": "None (used existing demo-seed-2024/2025 + real 2026 data)",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Ground truth verified: Current stock total_net_wt=15163g, total_items=105 (unchanged by pruning). Yearly sales_kg: 2024=852.934, 2025=1060.154 (+24.3%), 2026=3487.531 (+229%). Top supplier NITESH AGRA total 598.867 kg across years. monthly_summaries has item_sales docs for 2024/2025/2026 with logic_version=4 in _meta docs. Response shape gotchas: yearly_totals is a LIST (not dict), top endpoint returns key 'top' (not 'items'), customer/supplier profit responses use 'customer_name'/'supplier_name' keys.",
+  "detailed_verifications": {
+    "current_stock": "total_net_wt=15163, total_items=105 (matches ground truth)",
+    "year_overview": "years=[2024,2025,2026]; sales_kg 852.934/1060.154/3487.531; growth 24.3/229.0",
+    "top_items": "8 items returned; each has name, total_kg, yearly (str year keys), monthly (str year keys->12 arrays)",
+    "top_customers_suppliers": "Both return data; NITESH AGRA top supplier at 598.867 kg total",
+    "top_bogus": "Returns 400 correctly",
+    "parties_and_detail": "parties list non-empty; party-detail returns monthly with kg/value/silver_profit_kg/labor_profit_inr keyed by str years -> 12-element arrays; yearly_kg present",
+    "party_detail_unknown": "Returns 200 with zero data (not 500)",
+    "summary_freshness": "item_sales: 207/237/985 docs for 2024/2025/2026; _meta logic_version=4 for all 3 years",
+    "analytics_regression": "customer-profit top PANNA LAL JEWELLERS MEERUT silver=6.014; supplier-profit top NITESH AGRA purchased_kg=227.535; party-monthly-profit month 7 silver=6.014; stock-audit/uploads=200",
+    "frontend": "year-comparison-page renders; year-legend chips for 2024/2025/2026; yearly-totals-cards with growth-badge-2025 and growth-badge-2026 visible; all 6 overview-metric-* buttons work (labour profit re-renders); chart-mode-bar/line toggle works; entity-tab-items/customers/suppliers each show entity-chips; clicking a chip reveals entity-detail-section with month-by-month chart; party-type-customer/supplier + party-search-input present; sidebar shows 'Year Comparison' under Analytics"
+  }
+}

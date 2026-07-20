@@ -5776,6 +5776,139 @@ async def get_party_monthly_profit(
     return {"party_name": party_name, "year": year, "party_type": party_type, "months": months}
 
 
+async def _get_data_years():
+    """Distinct years present in transactions (valid 4-digit)."""
+    years = set()
+    async for r in db.transactions.aggregate([{"$group": {"_id": {"$substr": ["$date", 0, 4]}}}]):
+        y = r['_id']
+        if y and y.isdigit() and 2000 <= int(y) <= 2100:
+            years.add(int(y))
+    return sorted(years)
+
+
+@api_router.get("/analytics/year-comparison/overview")
+async def year_comparison_overview(current_user: dict = Depends(get_current_user)):
+    """Monthwise metrics for every year, on one scale — from pre-computed summaries."""
+    years = await _get_data_years()
+    for y in years:
+        await ensure_year_summary_fresh(db, y)
+    keys = ('sales_kg', 'sales_value', 'purchases_kg', 'silver_profit_kg', 'labor_profit_inr', 'transactions')
+    metrics = {k: {} for k in keys}
+    for y in years:
+        by_m = {k: [0.0] * 12 for k in keys}
+        async for d in db.monthly_summaries.find(
+                {"year": y, "summary_type": {"$in": ["party_customer", "party_supplier", "party_customer_profit"]}},
+                {"_id": 0}):
+            i = d['month'] - 1
+            st = d['summary_type']
+            if st == 'party_customer':
+                by_m['sales_kg'][i] += d.get('total_net_wt', 0) / 1000
+                by_m['sales_value'][i] += d.get('total_sales_value', 0)
+                by_m['transactions'][i] += d.get('transaction_count', 0)
+            elif st == 'party_supplier':
+                by_m['purchases_kg'][i] += d.get('total_net_wt', 0) / 1000
+            else:
+                by_m['silver_profit_kg'][i] += d.get('silver_profit_kg', 0)
+                by_m['labor_profit_inr'][i] += d.get('labor_profit_inr', 0)
+        for k in keys:
+            metrics[k][str(y)] = [round(v, 3) for v in by_m[k]]
+    yearly_totals = []
+    prev = None
+    for y in years:
+        tot = {k: round(sum(metrics[k][str(y)]), 3) for k in keys}
+        growth = None
+        if prev and prev.get('sales_kg'):
+            growth = round((tot['sales_kg'] - prev['sales_kg']) / abs(prev['sales_kg']) * 100, 1)
+        yearly_totals.append({"year": y, **tot, "sales_growth_pct": growth})
+        prev = tot
+    return {"years": years, "monthly": metrics, "yearly_totals": yearly_totals}
+
+
+@api_router.get("/analytics/year-comparison/top")
+async def year_comparison_top(
+    entity: str = Query("items"),
+    limit: int = Query(8),
+    current_user: dict = Depends(get_current_user)
+):
+    """Top items/customers/suppliers across all years with per-year monthly series."""
+    cfg = {
+        'items': ('item_sales', 'sold_kg', 1.0, 'sales_value'),
+        'customers': ('party_customer', 'total_net_wt', 1000.0, 'total_sales_value'),
+        'suppliers': ('party_supplier', 'total_net_wt', 1000.0, 'total_purchases_value'),
+    }
+    if entity not in cfg:
+        raise HTTPException(status_code=400, detail="entity must be items|customers|suppliers")
+    years = await _get_data_years()
+    for y in years:
+        await ensure_year_summary_fresh(db, y)
+    stype, field, div, val_field = cfg[entity]
+    agg = {}
+    async for d in db.monthly_summaries.find({"summary_type": stype, "year": {"$in": years}}, {"_id": 0}):
+        name = d.get('name')
+        if not name:
+            continue
+        e = agg.setdefault(name, {
+            'name': name, 'total_kg': 0.0, 'total_value': 0.0,
+            'yearly': {str(y): 0.0 for y in years},
+            'monthly': {str(y): [0.0] * 12 for y in years}})
+        kg = (d.get(field, 0) or 0) / div
+        e['total_kg'] += kg
+        e['total_value'] += d.get(val_field, 0) or 0
+        e['yearly'][str(d['year'])] += kg
+        e['monthly'][str(d['year'])][d['month'] - 1] += kg
+    top = sorted(agg.values(), key=lambda x: x['total_kg'], reverse=True)[:limit]
+    for e in top:
+        e['total_kg'] = round(e['total_kg'], 3)
+        e['total_value'] = round(e['total_value'], 2)
+        e['yearly'] = {ys: round(v, 3) for ys, v in e['yearly'].items()}
+        e['monthly'] = {ys: [round(v, 3) for v in arr] for ys, arr in e['monthly'].items()}
+    return {"years": years, "entity": entity, "top": top}
+
+
+@api_router.get("/analytics/year-comparison/party-detail")
+async def year_comparison_party_detail(
+    party: str = Query(...),
+    party_type: str = Query("customer"),
+    current_user: dict = Depends(get_current_user)
+):
+    """Monthwise multi-year series for one customer/supplier (kg, value, profits)."""
+    years = await _get_data_years()
+    for y in years:
+        await ensure_year_summary_fresh(db, y)
+    base_type = 'party_customer' if party_type == 'customer' else 'party_supplier'
+    profit_type = 'party_customer_profit' if party_type == 'customer' else 'party_supplier_profit'
+    out = {'kg': {}, 'value': {}, 'silver_profit_kg': {}, 'labor_profit_inr': {}}
+    for y in years:
+        for k in out:
+            out[k][str(y)] = [0.0] * 12
+    async for d in db.monthly_summaries.find(
+            {"summary_type": {"$in": [base_type, profit_type]}, "name": party, "year": {"$in": years}},
+            {"_id": 0}):
+        ys = str(d['year'])
+        i = d['month'] - 1
+        if d['summary_type'] == base_type:
+            out['kg'][ys][i] += (d.get('total_net_wt', 0) or 0) / 1000
+            out['value'][ys][i] += d.get('total_sales_value', d.get('total_purchases_value', 0)) or 0
+        else:
+            out['silver_profit_kg'][ys][i] += d.get('silver_profit_kg', 0) or 0
+            out['labor_profit_inr'][ys][i] += d.get('labor_profit_inr', 0) or 0
+    yearly_kg = {str(y): round(sum(out['kg'][str(y)]), 3) for y in years}
+    for k in out:
+        for ys in out[k]:
+            out[k][ys] = [round(v, 3) for v in out[k][ys]]
+    return {"party": party, "party_type": party_type, "years": years, "monthly": out, "yearly_kg": yearly_kg}
+
+
+@api_router.get("/analytics/year-comparison/parties")
+async def year_comparison_parties(
+    party_type: str = Query("customer"),
+    current_user: dict = Depends(get_current_user)
+):
+    stype = 'party_customer' if party_type == 'customer' else 'party_supplier'
+    names = await db.monthly_summaries.distinct('name', {'summary_type': stype})
+    return {"parties": sorted(n for n in names if n)[:1000]}
+
+
 @api_router.get("/analytics/dashboard-year-summary")
 async def get_dashboard_year_summary(
     year: int = Query(...),

@@ -25,7 +25,7 @@ EXCLUDED_ITEMS = ["SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "
 # summaries from an older logic version are treated as stale and auto-recomputed on the
 # next read (no manual "recompute" needed after a deploy).
 # v2: cumulative-ledger cost basis + per-entry (atom-by-atom) silver/labour profit.
-PROFIT_LOGIC_VERSION = 3
+PROFIT_LOGIC_VERSION = 4
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +168,7 @@ async def _compute_year(db, year: int):
         party_data = _compute_party_data(txns)
         cust_profits = _compute_customer_profit_month(txns, grp_ledger, p_mapping_dict, p_member_to_leader)
         supp_profits = _compute_supplier_profit_month(txns, p_mapping_dict, p_member_to_leader)
+        item_sales = _compute_item_sales_month(txns, p_mapping_dict, p_member_to_leader)
         
         summaries = []
         
@@ -230,6 +231,18 @@ async def _compute_year(db, year: int):
                 "computed_at": datetime.now(timezone.utc).isoformat()
             })
         
+        for item_name, data in item_sales.items():
+            summaries.append({
+                "year": year,
+                "month": month,
+                "summary_type": "item_sales",
+                "name": item_name,
+                "sold_kg": round(data['sold_kg'], 3),
+                "sales_value": round(data['sales_value'], 2),
+                "transaction_count": data['n'],
+                "computed_at": datetime.now(timezone.utc).isoformat()
+            })
+        
         for party_name, data in supp_profits.items():
             summaries.append({
                 "year": year,
@@ -260,6 +273,24 @@ async def _compute_year(db, year: int):
     docs_written += 1
     
     return docs_written
+
+
+def _compute_item_sales_month(transactions, mapping_dict, member_to_leader):
+    """Per-item sold qty/value for one month (all items, stamp-independent, group-aware)."""
+    EXCLUDED = {"SILVER ORNAMENTS"}
+    res = defaultdict(lambda: {'sold_kg': 0.0, 'sales_value': 0.0, 'n': 0})
+    for t in transactions:
+        if t['type'] not in ('sale', 'sale_return'):
+            continue
+        raw = t.get('item_name', '') or ''
+        if not raw or raw in EXCLUDED or raw.isdigit():
+            continue
+        leader = resolve_to_leader(raw, mapping_dict, member_to_leader)
+        sign = -1 if t['type'] == 'sale_return' else 1
+        res[leader]['sold_kg'] += sign * abs(t.get('net_wt', 0) or 0) / 1000
+        res[leader]['sales_value'] += sign * abs(t.get('total_amount', 0) or 0)
+        res[leader]['n'] += 1
+    return res
 
 
 def _compute_customer_profit_month(transactions, grp_ledger, mapping_dict, member_to_leader):

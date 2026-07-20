@@ -43,6 +43,9 @@ async def get_book_closing_stock_as_of_date(verification_date: str):
     opening_applies = oed is None or oed <= verification_date
     if oed and opening_applies:
         baselines = {k: b for k, b in baselines.items() if b['baseline_date'] >= oed}
+        _bk_date_q = {'$lte': end_date, '$gt': oed}
+    else:
+        _bk_date_q = {'$lte': end_date}
 
     mapping_dict, member_to_leader, group_members_map = build_group_maps(groups, mappings)
 
@@ -111,7 +114,7 @@ async def get_book_closing_stock_as_of_date(verification_date: str):
 
     # Transactions (streamed with projection to keep memory flat)
     _tx_proj = {'_id': 0, 'item_name': 1, 'type': 1, 'date': 1, 'stamp': 1, 'gr_wt': 1, 'net_wt': 1}
-    async for trans in db.transactions.find({'date': {'$lte': end_date}}, _tx_proj):
+    async for trans in db.transactions.find({'date': _bk_date_q}, _tx_proj):
         raw_item = trans.get('item_name') or ''
         if raw_item in EXCLUDED_ITEMS or raw_item.isdigit():
             continue
@@ -288,6 +291,9 @@ async def get_current_inventory(as_of_date: str = None):
     opening_applies = oed is None or not as_of_date or oed <= as_of_date
     if oed and opening_applies:
         baselines = {k: b for k, b in baselines.items() if b['baseline_date'] >= oed}
+        # Query-level pruning: every item's cutoff is >= oed, so transactions dated
+        # on/before the anchor can never count — skip scanning them entirely.
+        tx_filter['date'] = {**tx_filter.get('date', {}), '$gt': oed}
 
     mapping_dict, member_to_leader, group_members = build_group_maps(groups, mappings)
     group_ledger = build_group_ledger(ledger_items, groups, mappings)
@@ -637,8 +643,9 @@ async def get_stamp_closing_stock(stamp: str, as_of_date: str):
                     item_gross[resolved] += item.get('gr_wt', 0)
 
     end_date = as_of_date + ' 23:59:59'
+    _st_date_q = {'$lte': end_date, '$gt': oed} if (oed and opening_applies) else {'$lte': end_date}
     _tx_proj = {'_id': 0, 'item_name': 1, 'type': 1, 'date': 1, 'gr_wt': 1}
-    async for t in db.transactions.find({'date': {'$lte': end_date}}, _tx_proj):
+    async for t in db.transactions.find({'date': _st_date_q}, _tx_proj):
         if oed and opening_applies and t.get('date', '') <= oed:
             continue
         raw_name = t.get('item_name', '').strip()

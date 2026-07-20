@@ -102,6 +102,7 @@ export default function Layout({ children }) {
       roles: ['admin'],
       items: [
         { name: 'Visualization', href: '/visualization', icon: BarChart3, roles: ['admin'] },
+        { name: 'Year Comparison', href: '/year-comparison', icon: BarChart3, roles: ['admin'] },
         { name: 'Seasonal Analysis', href: '/seasonal-analysis', icon: TrendingUp, roles: ['admin'] },
         { name: 'Item Buffers', href: '/item-buffers', icon: Layers, roles: ['admin'] },
         { name: 'Item Groups', href: '/item-groups', icon: Combine, roles: ['admin'] },
