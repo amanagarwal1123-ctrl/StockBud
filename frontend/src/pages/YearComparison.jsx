@@ -68,11 +68,11 @@ const YearlyMonthChart = ({ years, seriesByYear, mode, unit, height = 260 }) => 
   );
 };
 
-const ModeToggle = ({ mode, setMode }) => (
+const ModeToggle = ({ mode, setMode, scope = '' }) => (
   <div className="flex gap-1">
     {['bar', 'line'].map((m) => (
       <Button key={m} variant={mode === m ? 'default' : 'outline'} size="sm" className="h-6 text-[10px] px-2 capitalize"
-        onClick={() => setMode(m)} data-testid={`chart-mode-${m}`}>{m === 'bar' ? 'Bars' : 'Lines'}</Button>
+        onClick={() => setMode(m)} data-testid={`${scope}chart-mode-${m}`}>{m === 'bar' ? 'Bars' : 'Lines'}</Button>
     ))}
   </div>
 );
@@ -217,7 +217,7 @@ export default function YearComparison() {
               <CardTitle className="text-lg">Monthly Comparison — {activeOM.label}</CardTitle>
               <CardDescription>Same months across years, identical scale</CardDescription>
             </div>
-            <ModeToggle mode={overviewMode} setMode={setOverviewMode} />
+            <ModeToggle mode={overviewMode} setMode={setOverviewMode} scope="overview-" />
           </div>
           <div className="flex flex-wrap gap-1.5 pt-1">
             {OVERVIEW_METRICS.map((mt) => (
@@ -253,7 +253,7 @@ export default function YearComparison() {
                 data-testid="top-limit-select">
                 {[10, 20, 30, 40, 50].map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
-              <ModeToggle mode={topMode} setMode={setTopMode} />
+              <ModeToggle mode={topMode} setMode={setTopMode} scope="top-" />
             </div>
           </div>
           <CardDescription>
@@ -341,7 +341,7 @@ export default function YearComparison() {
                         data-testid={`party-metric-${mt.key}`}>{mt.label}</Button>
                     ))}
                   </div>
-                  <ModeToggle mode={partyMode} setMode={setPartyMode} />
+                  <ModeToggle mode={partyMode} setMode={setPartyMode} scope="party-" />
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {(partyDetail.years || []).map((y) => (
