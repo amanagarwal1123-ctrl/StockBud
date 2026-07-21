@@ -12,9 +12,11 @@ to the current state of `transactions` for that year and recomputes only if
 they diverge. This guarantees Dashboard / Profit Analysis never serve stale
 totals after a new upload, even if the background task lost in flight.
 """
+import asyncio
 import logging
 from collections import defaultdict
 from datetime import datetime, timezone
+from pymongo.errors import BulkWriteError
 from services.group_utils import build_group_maps, build_group_ledger, resolve_to_leader
 from services.profit_helpers import ledger_cost_basis, aggregate_sale_profit, fetch_ledger_with_fallback
 
@@ -25,9 +27,23 @@ EXCLUDED_ITEMS = ["SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "
 # summaries from an older logic version are treated as stale and auto-recomputed on the
 # next read (no manual "recompute" needed after a deploy).
 # v2: cumulative-ledger cost basis + per-entry (atom-by-atom) silver/labour profit.
-PROFIT_LOGIC_VERSION = 6
+# v7: deterministic _id per summary doc (duplicate-proof) — bump forces a clean rebuild
+#     that also heals any doubled docs written by the old racy delete+insert path.
+PROFIT_LOGIC_VERSION = 7
 
 logger = logging.getLogger(__name__)
+
+# Per-year locks: prevent concurrent recomputes of the same year within this process
+# (parallel API calls on page load). Cross-replica safety comes from deterministic _ids.
+_year_locks: dict = {}
+
+
+def _year_lock(year: int) -> asyncio.Lock:
+    lock = _year_locks.get(year)
+    if lock is None:
+        lock = asyncio.Lock()
+        _year_locks[year] = lock
+    return lock
 
 
 async def recompute_monthly_summaries(db, year: int = None):
@@ -50,7 +66,8 @@ async def recompute_monthly_summaries(db, year: int = None):
     
     total_docs = 0
     for yr in sorted(years):
-        total_docs += await _compute_year(db, yr)
+        async with _year_lock(yr):
+            total_docs += await _compute_year(db, yr)
     
     return {"recomputed": total_docs, "years": sorted(years)}
 
@@ -102,7 +119,11 @@ async def is_year_summary_stale(db, year: int):
 
 
 async def ensure_year_summary_fresh(db, year: int):
-    """Recompute the year if stale; otherwise no-op. Returns status dict."""
+    """Recompute the year if stale; otherwise no-op. Returns status dict.
+
+    Serialized per year via an asyncio lock so parallel API calls on one page load
+    can't all launch the same recompute; the staleness is re-checked after acquiring
+    the lock so followers become no-ops once the leader finishes."""
     stale = await is_year_summary_stale(db, year)
     if not stale:
         meta = await get_year_meta(db, year)
@@ -112,7 +133,10 @@ async def ensure_year_summary_fresh(db, year: int):
             "txn_count": (meta or {}).get('txn_count', 0),
         }
     try:
-        await _compute_year(db, year)
+        async with _year_lock(year):
+            # Double-check: another request may have just finished the recompute.
+            if await is_year_summary_stale(db, year):
+                await _compute_year(db, year)
         meta = await get_year_meta(db, year)
         return {
             "recomputed": True,
@@ -258,19 +282,32 @@ async def _compute_year(db, year: int):
             })
         
         if summaries:
-            await db.monthly_summaries.insert_many(summaries)
-            docs_written += len(summaries)
+            # Deterministic _id makes duplicate rows IMPOSSIBLE even if two recomputes
+            # for the same year interleave (2 replicas / parallel requests): the loser's
+            # duplicate-key inserts are skipped instead of doubling every row.
+            for s in summaries:
+                s["_id"] = f"{year}|{s['month']:02d}|{s['summary_type']}|{s['name']}"
+            try:
+                res = await db.monthly_summaries.insert_many(summaries, ordered=False)
+                docs_written += len(res.inserted_ids)
+            except BulkWriteError as bwe:
+                docs_written += bwe.details.get('nInserted', 0)
     
     # Write fingerprint meta so freshness checks can detect future drift.
+    # replace_one + fixed _id -> exactly ONE meta doc per year, race or not.
     txn_count, max_created = await _get_year_fingerprint(db, year)
-    await db.monthly_summaries.insert_one({
-        "year": year,
-        "summary_type": "_meta",
-        "txn_count": txn_count,
-        "max_created_at": max_created,
-        "logic_version": PROFIT_LOGIC_VERSION,
-        "computed_at": datetime.now(timezone.utc).isoformat(),
-    })
+    await db.monthly_summaries.replace_one(
+        {"_id": f"{year}|_meta"},
+        {
+            "year": year,
+            "summary_type": "_meta",
+            "txn_count": txn_count,
+            "max_created_at": max_created,
+            "logic_version": PROFIT_LOGIC_VERSION,
+            "computed_at": datetime.now(timezone.utc).isoformat(),
+        },
+        upsert=True,
+    )
     docs_written += 1
     
     return docs_written

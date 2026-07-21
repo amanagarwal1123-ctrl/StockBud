@@ -129,6 +129,18 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Verified (self-test, exact math)**: injected no-ledger item (P: 10kg@60%/₹2000kg → S: 5kg@65%/₹15000) → silver 0.25kg, labour ₹5000, source=estimated on /analytics/profit, /customer-profit AND monthly summaries; regression 42/42 profit pytest suites pass; Current Stock totals unchanged (15.163kg/105 items), 11 items gained estimated rates, 19 items with zero purchase history stay NOT SET; Item Detail returns estimated tunch/labour.
 - **ACTION REQUIRED BY USER**: REDEPLOY — production summaries auto-recompute (version bump); 2024 profits will now include discontinued items at their real historical purchase cost.
 
+## Doubled Items/Profits in 2025 — Summary Recompute Race FIXED (Jul 21, 2026 — session 6b)
+- **User report (production)**: every item listed TWICE with identical values in Mar 2025 Item Profits; 2025 totals doubled.
+- **Root cause**: `ensure_year_summary_fresh` had NO locking and `_compute_year` did `delete_many(year)` → `insert_many`. After the PROFIT_LOGIC_VERSION bump deploy, every summary endpoint on page load (×2 production replicas) saw "stale version" simultaneously → concurrent recomputes of the same year interleaved delete/insert → doubled docs across ALL summary types (item_profit, party profits, item_sales, even `_meta`). Preview (1 replica) escaped; production hit it. Latent since the freshness feature; every prior version bump was a roll of the dice.
+- **Fix (`monthly_summary_service.py`)**:
+  1. **Deterministic `_id`** per summary doc (`{year}|{month:02d}|{summary_type}|{name}`) + `insert_many(ordered=False)` tolerating BulkWriteError → duplicate rows structurally impossible even across replicas.
+  2. `_meta` written via `replace_one({"_id": f"{year}|_meta"}, ..., upsert=True)` → exactly one meta per year.
+  3. Per-year `asyncio.Lock` in `ensure_year_summary_fresh` + stale double-check after acquiring → parallel same-pod requests no longer duplicate work. `recompute_monthly_summaries` uses the same lock.
+  4. **PROFIT_LOGIC_VERSION 6→7** → on first read after redeploy every year auto-rebuilds cleanly, purging production's existing doubled docs (no manual step).
+- **Checked elsewhere**: other delete+insert patterns (opening_stock, purchase_ledger, master_items) are single-admin-action paths, not read-triggered — not exposed to this race. All doubled VIEWS (Dashboard, Profit Analysis, Party Analytics, Year Comparison, monthly breakdowns) read monthly_summaries → all heal with the v7 rebuild.
+- **Verified (preview)**: 8 concurrent `ensure_year_summary_fresh` → 0 dupes, 1 meta; simulated cross-replica race (2 raw concurrent `_compute_year`, no lock) → 0 dupes, no lost docs (1205 == clean-run 1205); full-collection dupe scan clean; freshness pytest suites 11 pass; endpoints return unique items.
+- **ACTION REQUIRED BY USER**: REDEPLOY — 2025 (and all years) auto-heal on first page load.
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document
