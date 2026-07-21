@@ -1,0 +1,35 @@
+{
+  "summary": "Iteration 40: Verified all 7 review items — overview new metric keys, ledger-skip in customer-profit, visualization single-pass (monthly for 3y, daily for <=60d), seasonal compute + DB cache doc, and full regression. 14/14 backend tests pass. Frontend Year Comparison shows pastel 2D bars, new year-card labels (Sales Net/Fine/Value, Purchases Net, Silver/Labour Profit), 8 overview metric buttons, top-limit-select with 10/20/30/40/50 (30 loads 30 chips). Visualization, Seasonal Analysis and Party Analytics Cust Profit tab all render.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_40.py",
+    "/app/test_reports/pytest/iter40.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "chart-mode-bar / chart-mode-line data-testids are duplicated on the YearComparison page (once inside overview-comparison-card and once inside top-entities-card). Not a bug, but breaks Playwright strict-mode selectors — consider scoping (e.g. overview-chart-mode-bar / top-chart-mode-bar) for testability.",
+    "Overview yearly_totals silver_profit_kg / labor_profit_inr are 0.0 in preview because master_items has only 1 stamped item — behaviour is CORRECT (item_profit-based summation), documented in the review request; production has stamps and will show real values.",
+    "Ledger-skip guard (`if ledger_item is None: continue`) present at server.py ~4141 confirmed by grep of source file."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration_40.py"],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100%"},
+  "test_credentials": "admin/admin123",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Ground-truth matched: 2024 sales_kg=852.934/fine=743.863; 2025=1060.154/923.503; 2026=3487.531/2222.666. Overview monthly keys are exactly: sales_kg, sales_fine_kg, sales_value, purchases_kg, purchases_fine_kg, silver_profit_kg, labor_profit_inr, transactions. Visualization trend_granularity=monthly for 2024-2026 range, daily for 2026-05-01..2026-06-15. Seasonal compute returns 200 quickly (cache hit); db.app_cache has doc with key/_id 'seasonal_results'. pms-final returned items list. inventory/current: total_net_wt~15163, total_items=105. top-limit-select supports 10/20/30/40/50, all return <= limit. party-monthly-profit is a path-parameter endpoint: /api/analytics/party-monthly-profit/{party_name}?year=YYYY. chart-mode-bar/line testid is duplicated across two cards on YearComparison — needs scoping.",
+  "detailed_verifications": {
+    "overview_keys": "Exactly {sales_kg, sales_fine_kg, sales_value, purchases_kg, purchases_fine_kg, silver_profit_kg, labor_profit_inr, transactions}",
+    "yearly_totals": "sales_kg/sales_fine_kg 2024=852.934/743.863, 2025=1060.154/923.503, 2026=3487.531/2222.666; silver_profit_kg=0, labor_profit_inr=0 for all years (expected: only 1 stamped item)",
+    "customer_profit_ledger_skip": "GET /api/analytics/customer-profit start=2026-06-01 end=2026-07-15 -> 200; source code contains 'if ledger_item is None: continue' at ~4141",
+    "visualization_multi_year": "sales_by_item<=30, sales_by_party, purchases_by_supplier, sales_trend, tier_distribution, stock_health present; trend_granularity=monthly",
+    "visualization_short_range": "2026-05-01..2026-06-15 -> trend_granularity=daily",
+    "seasonal": "compute?force=true -> 200; status ready/cached; pms-final returns items list; db.app_cache doc for seasonal_results exists",
+    "regression": "inventory/current net=15163/items=105; top?entity=items&limit={10,20,30,40,50} all pass; party-monthly-profit/{name}?year=2026 -> 200; stock-audit/uploads -> 200",
+    "frontend_year_comparison": "pastel 2D bars visible (no Bar3D marker), year cards show Sales Net/Sales Fine/Sales Value/Purchases Net/Silver Profit/Labour Profit labels; all 8 overview-metric-* buttons present and clickable; top-limit-select options=[10,20,30,40,50]; selecting 30 renders 30 entity chips; entity-detail-section opens on chip click; party-search-input works",
+    "frontend_visualization": "Page loads with 46 SVG chart nodes; Top Items by Sales, Sales by Customer, Sales Trend charts visible",
+    "frontend_seasonal": "Seasonal Analysis loads full PMS Final Rankings table (BS-053, NAJARIYA ADJUSTABLE 92.5, etc.) with tabs PMS Final/Silver/Labour/Demand/Seasonality/Procurement/Supplier/Dead Stock",
+    "frontend_party_analytics": "Cust Profit tab renders Customer-Wise Profit table for Jul 2026 with silver/labour/sold columns"
+  }
+}

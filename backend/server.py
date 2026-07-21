@@ -4139,12 +4139,12 @@ async def get_customer_profit(
         
         # Get purchase cost from GROUP-AWARE ledger
         ledger_item = grp_ledger.get(leader_name) or grp_ledger.get(raw_item_name)
-        if ledger_item:
-            purchase_tunch = ledger_item.get('purchase_tunch', 0)
-            purchase_cost_per_gram = ledger_item.get('labour_per_kg', 0) / 1000
-        else:
-            purchase_tunch = 0
-            purchase_cost_per_gram = 0
+        if ledger_item is None:
+            # No cumulative purchase cost basis -> profit unknowable; skip so
+            # discontinued/legacy items can't inflate profit at zero cost
+            continue
+        purchase_tunch = ledger_item.get('purchase_tunch', 0)
+        purchase_cost_per_gram = ledger_item.get('labour_per_kg', 0) / 1000
         
         if is_return:
             # SALE RETURN → treated as PURCHASE from customer
@@ -5792,22 +5792,26 @@ async def year_comparison_overview(current_user: dict = Depends(get_current_user
     years = await _get_data_years()
     for y in years:
         await ensure_year_summary_fresh(db, y)
-    keys = ('sales_kg', 'sales_value', 'purchases_kg', 'silver_profit_kg', 'labor_profit_inr', 'transactions')
+    keys = ('sales_kg', 'sales_fine_kg', 'sales_value', 'purchases_kg', 'purchases_fine_kg',
+            'silver_profit_kg', 'labor_profit_inr', 'transactions')
     metrics = {k: {} for k in keys}
     for y in years:
         by_m = {k: [0.0] * 12 for k in keys}
         async for d in db.monthly_summaries.find(
-                {"year": y, "summary_type": {"$in": ["party_customer", "party_supplier", "party_customer_profit"]}},
+                {"year": y, "summary_type": {"$in": ["party_customer", "party_supplier", "item_profit"]}},
                 {"_id": 0}):
             i = d['month'] - 1
             st = d['summary_type']
             if st == 'party_customer':
                 by_m['sales_kg'][i] += d.get('total_net_wt', 0) / 1000
+                by_m['sales_fine_kg'][i] += d.get('total_fine_wt', 0) / 1000
                 by_m['sales_value'][i] += d.get('total_sales_value', 0)
                 by_m['transactions'][i] += d.get('transaction_count', 0)
             elif st == 'party_supplier':
                 by_m['purchases_kg'][i] += d.get('total_net_wt', 0) / 1000
+                by_m['purchases_fine_kg'][i] += d.get('total_fine_wt', 0) / 1000
             else:
+                # item_profit — EXACT same math as the Profit Analysis page
                 by_m['silver_profit_kg'][i] += d.get('silver_profit_kg', 0)
                 by_m['labor_profit_inr'][i] += d.get('labor_profit_inr', 0)
         for k in keys:
@@ -7541,10 +7545,6 @@ async def get_visualization_data(
     if start_date and end_date:
         query['date'] = {'$gte': start_date, '$lte': end_date + ' 23:59:59'}
     
-    _vz_proj = {"_id": 0, "date": 1, "type": 1, "item_name": 1, "party_name": 1,
-                "net_wt": 1, "gr_wt": 1, "fine": 1, "total_amount": 1, "labor": 1, "tunch": 1}
-    transactions = await db.transactions.find(query, _vz_proj).to_list(None)
-    
     # Get buffer info for tier colors
     buffers = await db.item_buffers.find({}, {"_id": 0}).to_list(None)
     tier_map = {b['item_name']: b.get('tier', 'unknown') for b in buffers}
@@ -7561,42 +7561,48 @@ async def get_visualization_data(
         master = mapping_dict.get(name, name)
         return member_to_leader.get(master, master)
 
-    # 1. Sales by item (top 20) — resolved to leaders
+    # Single streamed pass fills all accumulators (memory stays flat)
     item_sales = defaultdict(lambda: {'net_wt': 0, 'amount': 0, 'count': 0})
-    for t in transactions:
+    party_sales = defaultdict(lambda: {'net_wt': 0, 'amount': 0, 'count': 0})
+    supplier_purchases = defaultdict(lambda: {'net_wt': 0, 'amount': 0, 'count': 0})
+    all_sale_dates = set()
+    monthly_sales = defaultdict(lambda: {'net_wt': 0, 'amount': 0})
+    daily_sales = defaultdict(lambda: {'net_wt': 0, 'amount': 0})
+    _vz_proj = {"_id": 0, "date": 1, "type": 1, "item_name": 1, "party_name": 1,
+                "net_wt": 1, "total_amount": 1}
+    async for t in db.transactions.find(query, _vz_proj):
         if t['type'] in ['sale', 'sale_return']:
             name = _resolve(t.get('item_name', ''))
             item_sales[name]['net_wt'] += t.get('net_wt', 0)
             item_sales[name]['amount'] += t.get('total_amount', 0)
             item_sales[name]['count'] += 1
+            party = t.get('party_name', 'Unknown')
+            party_sales[party]['net_wt'] += t.get('net_wt', 0)
+            party_sales[party]['amount'] += t.get('total_amount', 0)
+            party_sales[party]['count'] += 1
+            if t.get('date'):
+                date_str = t['date'][:10]
+                month = t['date'][:7]
+                all_sale_dates.add(date_str)
+                monthly_sales[month]['net_wt'] += t.get('net_wt', 0)
+                monthly_sales[month]['amount'] += t.get('total_amount', 0)
+                daily_sales[date_str]['net_wt'] += t.get('net_wt', 0)
+                daily_sales[date_str]['amount'] += t.get('total_amount', 0)
+        elif t['type'] in ['purchase', 'purchase_return']:
+            party = t.get('party_name', 'Unknown')
+            supplier_purchases[party]['net_wt'] += t.get('net_wt', 0)
+            supplier_purchases[party]['amount'] += t.get('total_amount', 0)
+            supplier_purchases[party]['count'] += 1
     
     sales_by_item = sorted([
         {'item_name': k, 'net_wt_kg': round(v['net_wt']/1000, 3), 'amount': round(v['amount'], 2), 'count': v['count'], 'tier': tier_map.get(k, 'unknown')}
         for k, v in item_sales.items() if v['net_wt'] > 0
     ], key=lambda x: x['net_wt_kg'], reverse=True)[:30]
     
-    # 2. Sales by party (top 20)
-    party_sales = defaultdict(lambda: {'net_wt': 0, 'amount': 0, 'count': 0})
-    for t in transactions:
-        if t['type'] in ['sale', 'sale_return']:
-            party = t.get('party_name', 'Unknown')
-            party_sales[party]['net_wt'] += t.get('net_wt', 0)
-            party_sales[party]['amount'] += t.get('total_amount', 0)
-            party_sales[party]['count'] += 1
-    
     sales_by_party = sorted([
         {'party_name': k, 'net_wt_kg': round(v['net_wt']/1000, 3), 'amount': round(v['amount'], 2), 'count': v['count']}
         for k, v in party_sales.items() if v['net_wt'] > 0
     ], key=lambda x: x['net_wt_kg'], reverse=True)[:20]
-    
-    # 3. Purchases by supplier (top 20)
-    supplier_purchases = defaultdict(lambda: {'net_wt': 0, 'amount': 0, 'count': 0})
-    for t in transactions:
-        if t['type'] in ['purchase', 'purchase_return']:
-            party = t.get('party_name', 'Unknown')
-            supplier_purchases[party]['net_wt'] += t.get('net_wt', 0)
-            supplier_purchases[party]['amount'] += t.get('total_amount', 0)
-            supplier_purchases[party]['count'] += 1
     
     purchases_by_supplier = sorted([
         {'party_name': k, 'net_wt_kg': round(v['net_wt']/1000, 3), 'amount': round(v['amount'], 2), 'count': v['count']}
@@ -7612,22 +7618,7 @@ async def get_visualization_data(
     
     tier_distribution = [{'tier': k, 'count': v['count'], 'total_stock_kg': round(v['total_stock_kg'], 3)} for k, v in tier_dist.items()]
     
-    # 5. Sales trend (daily or monthly based on granularity)
-    # Auto: if date range <= 60 days use daily, else monthly
-    all_sale_dates = set()
-    monthly_sales = defaultdict(lambda: {'net_wt': 0, 'amount': 0})
-    daily_sales = defaultdict(lambda: {'net_wt': 0, 'amount': 0})
-    for t in transactions:
-        if t['type'] in ['sale', 'sale_return'] and t.get('date'):
-            date_str = t['date'][:10]  # YYYY-MM-DD
-            month = t['date'][:7]  # YYYY-MM
-            all_sale_dates.add(date_str)
-            monthly_sales[month]['net_wt'] += t.get('net_wt', 0)
-            monthly_sales[month]['amount'] += t.get('total_amount', 0)
-            daily_sales[date_str]['net_wt'] += t.get('net_wt', 0)
-            daily_sales[date_str]['amount'] += t.get('total_amount', 0)
-    
-    # Determine granularity
+    # 5. Sales trend granularity (accumulators filled in the streamed pass above)
     use_daily = trend_granularity == 'daily'
     if trend_granularity == 'auto' and all_sale_dates:
         sorted_dates = sorted(all_sale_dates)

@@ -94,9 +94,29 @@ class SeasonalMLService:
     async def get_results(self, force: bool = False) -> dict:
         if self._cache_valid and not force:
             return self._cache
+        if not force:
+            doc = await self.db.app_cache.find_one({"key": "seasonal_results"}, {"_id": 0})
+            if doc:
+                try:
+                    ts = datetime.fromisoformat(doc["cached_at"])
+                    if (datetime.now(timezone.utc) - ts).total_seconds() < self._cache_ttl:
+                        self._cache = doc["results"]
+                        self._cache_ts = ts
+                        return self._cache
+                except Exception:
+                    pass
         results = await self._compute()
         self._cache = results
         self._cache_ts = datetime.now(timezone.utc)
+        try:
+            import json
+            safe = json.loads(json.dumps(results, default=lambda o: o.item() if hasattr(o, 'item') else str(o)))
+            await self.db.app_cache.update_one(
+                {"key": "seasonal_results"},
+                {"$set": {"key": "seasonal_results", "results": safe, "cached_at": self._cache_ts.isoformat()}},
+                upsert=True)
+        except Exception as exc:
+            logger.warning("seasonal cache persist failed: %s", exc)
         return results
 
     # ------------------------------------------------------------------
@@ -160,19 +180,26 @@ class SeasonalMLService:
     # ------------------------------------------------------------------
     # Data loading (current + historical sales AND purchases)
     # ------------------------------------------------------------------
+    async def _frame_from_query(self, colls, query, proj):
+        """Build a DataFrame by streaming cursors column-wise (no dict-per-row overhead)."""
+        cols = [c for c in proj if c != '_id']
+        data = {c: [] for c in cols}
+        for coll in colls:
+            async for d in coll.find(query, proj):
+                for c in cols:
+                    data[c].append(d.get(c))
+        return pd.DataFrame(data)
+
     async def _load_data(self):
         proj = {"_id": 0, "date": 1, "item_name": 1, "stamp": 1, "gr_wt": 1,
                 "net_wt": 1, "tunch": 1, "total_amount": 1, "labor": 1,
                 "type": 1, "party_name": 1, "tag_no": 1}
 
-        # Sales: current + historical
+        # Sales: current + historical (streamed column-wise to keep memory flat)
         sale_types = ["sale", "sale_return"]
-        sales_cur = await self.db.transactions.find(
-            {"type": {"$in": sale_types}}, proj).to_list(None)
-        sales_hist = await self.db.historical_transactions.find(
-            {"type": {"$in": sale_types}}, proj).to_list(None)
-        all_sales = sales_cur + sales_hist
-        sales_df = pd.DataFrame(all_sales) if all_sales else pd.DataFrame()
+        sales_df = await self._frame_from_query(
+            [self.db.transactions, self.db.historical_transactions],
+            {"type": {"$in": sale_types}}, proj)
         if not sales_df.empty:
             sales_df["date"] = pd.to_datetime(sales_df["date"], errors="coerce")
             sales_df = sales_df.dropna(subset=["date"])
@@ -181,14 +208,11 @@ class SeasonalMLService:
                     sales_df[c] = pd.to_numeric(sales_df[c], errors="coerce").fillna(0)
             sales_df["item_family"] = sales_df["item_name"].apply(extract_item_family)
 
-        # Purchases: current + historical
+        # Purchases: current + historical (streamed column-wise)
         purch_types = ["purchase", "purchase_return"]
-        purch_cur = await self.db.transactions.find(
-            {"type": {"$in": purch_types}}, proj).to_list(None)
-        purch_hist = await self.db.historical_transactions.find(
-            {"type": {"$in": purch_types}}, proj).to_list(None)
-        all_purchases = purch_cur + purch_hist
-        purchases_df = pd.DataFrame(all_purchases) if all_purchases else pd.DataFrame()
+        purchases_df = await self._frame_from_query(
+            [self.db.transactions, self.db.historical_transactions],
+            {"type": {"$in": purch_types}}, proj)
         if not purchases_df.empty:
             purchases_df["date"] = pd.to_datetime(purchases_df["date"], errors="coerce")
             for c in ["gr_wt", "net_wt", "tunch", "total_amount", "labor"]:
@@ -267,11 +291,14 @@ class SeasonalMLService:
         from services.profit_helpers import compute_item_margins
         from services.group_utils import build_group_maps
 
-        # Load the same raw data the profit endpoint uses
-        all_txns = await self.db.transactions.find(
-            {}, {"_id": 0, "item_name": 1, "type": 1, "net_wt": 1,
-                 "tunch": 1, "total_amount": 1, "labor": 1}
-        ).to_list(None)
+        # Load the same raw data the profit endpoint uses.
+        # compute_item_margins only consumes SALE rows, so stream just those.
+        all_txns = []
+        async for t in self.db.transactions.find(
+                {"type": {"$in": ["sale", "sale_return"]}},
+                {"_id": 0, "item_name": 1, "type": 1, "net_wt": 1,
+                 "tunch": 1, "total_amount": 1, "labor": 1}):
+            all_txns.append(t)
         ledger_items = await self.db.purchase_ledger.find({}, {"_id": 0}).to_list(None)
         groups = await self.db.item_groups.find({}, {"_id": 0}).to_list(None)
         mappings = await self.db.item_mappings.find({}, {"_id": 0}).to_list(None)

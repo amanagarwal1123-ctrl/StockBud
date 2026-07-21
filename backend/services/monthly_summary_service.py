@@ -25,7 +25,7 @@ EXCLUDED_ITEMS = ["SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "
 # summaries from an older logic version are treated as stale and auto-recomputed on the
 # next read (no manual "recompute" needed after a deploy).
 # v2: cumulative-ledger cost basis + per-entry (atom-by-atom) silver/labour profit.
-PROFIT_LOGIC_VERSION = 4
+PROFIT_LOGIC_VERSION = 5
 
 logger = logging.getLogger(__name__)
 
@@ -308,8 +308,10 @@ def _compute_customer_profit_month(transactions, grp_ledger, mapping_dict, membe
         txn_net_wt = txn.get('net_wt', 0)
         txn_total = txn.get('total_amount', 0) or txn.get('labor', 0)
         ledger_item = grp_ledger.get(leader_name) or grp_ledger.get(raw_item_name)
-        purchase_tunch = ledger_item.get('purchase_tunch', 0) if ledger_item else 0
-        purchase_cost_per_gram = (ledger_item.get('labour_per_kg', 0) / 1000) if ledger_item else 0
+        if ledger_item is None:
+            continue  # no cumulative cost basis -> skip (prevents zero-cost inflation)
+        purchase_tunch = ledger_item.get('purchase_tunch', 0)
+        purchase_cost_per_gram = ledger_item.get('labour_per_kg', 0) / 1000
         if txn['type'] == 'sale_return':
             abs_wt = abs(txn_net_wt)
             abs_total = abs(txn_total)
