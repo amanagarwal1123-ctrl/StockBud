@@ -82,6 +82,7 @@ export default function ItemDetail() {
   );
 
   const noRate = !itemData.has_purchase_rate;
+  const estRate = itemData.purchase_rate_source === 'estimated';
 
   return (
     <div className="p-3 sm:p-6 md:p-8 space-y-6" data-testid="item-detail-page">
@@ -98,6 +99,15 @@ export default function ItemDetail() {
           <AlertTriangle className="h-4 w-4 text-orange-600" />
           <AlertDescription className="text-sm">
             <strong>No purchase rate found.</strong> Fine and labour values will be zero. Set the purchase rate below.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {estRate && (
+        <Alert className="border-amber-500/50 bg-amber-50" data-testid="estimated-rate-alert">
+          <AlertTriangle className="h-4 w-4 text-amber-600" />
+          <AlertDescription className="text-sm">
+            <strong>Estimated purchase rate.</strong> This item is not in the purchase ledger — its rate was derived from its own purchase transaction history. Save a rate below to make it official.
           </AlertDescription>
         </Alert>
       )}
@@ -161,6 +171,7 @@ export default function ItemDetail() {
           <CardTitle className="text-sm sm:text-base flex items-center gap-2">
             <DollarSign className="h-4 w-4 text-primary" />
             Purchase Rate {noRate && <Badge variant="outline" className="text-orange-600 border-orange-400 text-[10px]">NOT SET</Badge>}
+            {estRate && <Badge variant="outline" className="text-amber-600 border-amber-400 text-[10px]" data-testid="est-rate-badge">ESTIMATED</Badge>}
           </CardTitle>
           <CardDescription className="text-xs">Purchase tunch % and labour rate used for fine/labour calculations</CardDescription>
         </CardHeader>

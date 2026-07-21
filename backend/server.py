@@ -50,7 +50,7 @@ from services.monthly_summary_service import (
 )
 from services.profit_helpers import (
     compute_daily_profits, compute_date_profit_detail,
-    ledger_cost_basis, aggregate_sale_profit,
+    ledger_cost_basis, aggregate_sale_profit, fetch_ledger_with_fallback,
 )
 
 # Simple TTL cache for heavy inventory computations
@@ -4105,10 +4105,10 @@ async def get_customer_profit(
         end_date_with_time = end_date + ' 23:59:59'
         query['date'] = {'$gte': start_date, '$lte': end_date_with_time}
     
-    # Get purchase ledger — GROUP AWARE
-    ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(None)
+    # Get purchase ledger — GROUP AWARE (+ estimated fallback from purchase history)
     all_mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
     all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
+    ledger = await fetch_ledger_with_fallback(db, all_groups, all_mappings)
     grp_ledger = build_group_ledger(ledger, all_groups, all_mappings)
     mapping_dict, member_to_leader, _ = build_group_maps(all_groups, all_mappings)
     
@@ -4656,8 +4656,8 @@ async def calculate_profit(
         end_date_with_time = end_date + ' 23:59:59'
         query['date'] = {'$gte': start_date, '$lte': end_date_with_time}
     
-    # Group-aware purchase ledger
-    all_ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(None)
+    # Group-aware purchase ledger (+ estimated fallback from purchase history)
+    all_ledger = await fetch_ledger_with_fallback(db, all_groups, mappings)
     grp_ledger = build_group_ledger(all_ledger, all_groups, mappings)
     
     # Single streamed pass: filter excluded/unstamped, group by leader, accumulate totals
@@ -4738,7 +4738,8 @@ async def calculate_profit(
             'labor_profit_inr': round(labor_profit_inr, 2),
             'avg_purchase_tunch': round(cost_tunch, 2),
             'avg_sale_tunch': round(avg_sale_tunch, 2),
-            'net_wt_sold_kg': round(total_sale_wt / 1000, 3)
+            'net_wt_sold_kg': round(total_sale_wt / 1000, 3),
+            'cost_basis_source': 'estimated' if (grp_ledger.get(item_name) or {}).get('fallback') else 'ledger'
         })
     
     # Sort by silver profit
@@ -5450,6 +5451,7 @@ async def get_monthly_profit(
                 "total_sales_value": {"$sum": "$total_sales_value"},
                 "avg_purchase_tunch": {"$avg": "$avg_purchase_tunch"},
                 "avg_sale_tunch": {"$avg": "$avg_sale_tunch"},
+                "cost_source": {"$max": "$cost_source"},
             }}
         ]
         results = await db.monthly_summaries.aggregate(pipeline).to_list(None)
@@ -5461,6 +5463,7 @@ async def get_monthly_profit(
             "total_sales_value": round(r.get("total_sales_value", 0), 2),
             "avg_purchase_tunch": round(r.get("avg_purchase_tunch", 0), 2),
             "avg_sale_tunch": round(r.get("avg_sale_tunch", 0), 2),
+            "cost_source": r.get("cost_source") or "ledger",
         } for r in results]
     else:
         docs = await db.monthly_summaries.find(
@@ -5475,6 +5478,7 @@ async def get_monthly_profit(
             "total_sales_value": d.get("total_sales_value", 0),
             "avg_purchase_tunch": d.get("avg_purchase_tunch", 0),
             "avg_sale_tunch": d.get("avg_sale_tunch", 0),
+            "cost_source": d.get("cost_source", "ledger"),
         } for d in docs]
     
     items.sort(key=lambda x: x['silver_profit_kg'], reverse=True)
@@ -5642,7 +5646,7 @@ async def get_daily_profit(
     all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
     master_items_list = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(None)
     master_stamps = {m['item_name']: m.get('stamp', 'Unassigned') for m in master_items_list}
-    all_ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(None)
+    all_ledger = await fetch_ledger_with_fallback(db, all_groups, mappings)
     transactions = await db.transactions.find(
         {'date': {'$gte': f"{year}-{month:02d}-01", '$lte': end_date}},
         {"_id": 0}
@@ -5676,7 +5680,7 @@ async def get_daily_profit_detail(
     all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
     master_items_list = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(None)
     master_stamps = {m['item_name']: m.get('stamp', 'Unassigned') for m in master_items_list}
-    all_ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(None)
+    all_ledger = await fetch_ledger_with_fallback(db, all_groups, mappings)
     month_txns = await db.transactions.find(
         {'date': {'$gte': month_start, '$lte': month_end}}, {"_id": 0}
     ).to_list(None)
@@ -6400,8 +6404,17 @@ async def get_item_detail(item_name: str, current_user: dict = Depends(get_curre
                 item_labor = si.get('labor', 0)
                 break
     
-    # Get purchase ledger info
+    # Get purchase ledger info (group-aware, with estimated fallback from purchase history)
     ledger = await db.purchase_ledger.find_one({"item_name": item_name}, {"_id": 0})
+    rate_source = 'ledger' if ledger else None
+    if not ledger:
+        _ig = await db.item_groups.find({}, {"_id": 0}).to_list(None)
+        _merged = await fetch_ledger_with_fallback(db, _ig, all_mappings)
+        _grp_l = build_group_ledger(_merged, _ig, all_mappings)
+        _entry = _grp_l.get(item_name)
+        if _entry:
+            ledger = _entry
+            rate_source = 'estimated' if _entry.get('fallback') else 'ledger'
     has_purchase_rate = ledger is not None
     purchase_tunch_ledger = ledger.get('purchase_tunch', 0) if ledger else 0
     labour_per_kg_ledger = ledger.get('labour_per_kg', 0) if ledger else 0
@@ -6426,6 +6439,7 @@ async def get_item_detail(item_name: str, current_user: dict = Depends(get_curre
         "avg_sale_labour": round(avg_sale_labour, 2),
         "labour_margin": round(avg_sale_labour - avg_purchase_labour, 2),
         "has_purchase_rate": has_purchase_rate,
+        "purchase_rate_source": rate_source,
         "purchase_tunch_ledger": purchase_tunch_ledger,
         "labour_per_kg_ledger": labour_per_kg_ledger,
         "recent_transactions": transactions[:20],

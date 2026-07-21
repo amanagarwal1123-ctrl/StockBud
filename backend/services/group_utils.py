@@ -74,9 +74,11 @@ def build_group_ledger(ledger_items, groups, mappings):
             if member in reverse_mapping:
                 all_names.update(reverse_mapping[member])
 
+        contributing = []
         for name in all_names:
             l = ledger_map.get(name)
             if l:
+                contributing.append(l)
                 wt = l.get('total_purchased_kg', 0)
                 total_wt += wt
                 total_fine += l.get('total_fine_kg', 0)
@@ -91,6 +93,8 @@ def build_group_ledger(ledger_items, groups, mappings):
                 'total_fine_kg': total_fine,
                 'total_labour': total_labour,
             }
+            if all(e.get('fallback') for e in contributing):
+                entry['fallback'] = True
             group_ledger[group_name] = entry
             # Also register under each member name for direct lookups
             for m in members:

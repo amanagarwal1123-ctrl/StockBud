@@ -302,6 +302,9 @@ class SeasonalMLService:
         ledger_items = await self.db.purchase_ledger.find({}, {"_id": 0}).to_list(None)
         groups = await self.db.item_groups.find({}, {"_id": 0}).to_list(None)
         mappings = await self.db.item_mappings.find({}, {"_id": 0}).to_list(None)
+        from services.profit_helpers import merge_fallback_entries, fetch_fallback_purchase_stats
+        _fb_stats = await fetch_fallback_purchase_stats(self.db)
+        ledger_items = merge_fallback_entries(ledger_items, _fb_stats, groups, mappings)
 
         item_margins = compute_item_margins(all_txns, ledger_items, groups, mappings)
 

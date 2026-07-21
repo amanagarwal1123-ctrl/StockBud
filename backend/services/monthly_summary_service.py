@@ -16,7 +16,7 @@ import logging
 from collections import defaultdict
 from datetime import datetime, timezone
 from services.group_utils import build_group_maps, build_group_ledger, resolve_to_leader
-from services.profit_helpers import ledger_cost_basis, aggregate_sale_profit
+from services.profit_helpers import ledger_cost_basis, aggregate_sale_profit, fetch_ledger_with_fallback
 
 
 EXCLUDED_ITEMS = ["SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"]
@@ -25,7 +25,7 @@ EXCLUDED_ITEMS = ["SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "
 # summaries from an older logic version are treated as stale and auto-recomputed on the
 # next read (no manual "recompute" needed after a deploy).
 # v2: cumulative-ledger cost basis + per-entry (atom-by-atom) silver/labour profit.
-PROFIT_LOGIC_VERSION = 5
+PROFIT_LOGIC_VERSION = 6
 
 logger = logging.getLogger(__name__)
 
@@ -145,8 +145,8 @@ async def _compute_year(db, year: int):
     
     p_mapping_dict, p_member_to_leader, _ = build_group_maps(all_groups, mappings)
     
-    # Load purchase ledger for cost basis
-    all_ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(None)
+    # Load purchase ledger for cost basis (+ estimated fallback from purchase history)
+    all_ledger = await fetch_ledger_with_fallback(db, all_groups, mappings, use_cache=False)
     grp_ledger = build_group_ledger(all_ledger, all_groups, mappings)
     
     def _resolve(name):
@@ -185,6 +185,7 @@ async def _compute_year(db, year: int):
                 "avg_sale_tunch": round(data['avg_sale_tunch'], 2),
                 "net_wt_sold_kg": round(data['net_wt_sold_kg'], 3),
                 "total_sales_value": round(data.get('total_sales_value', 0), 2),
+                "cost_source": data.get('cost_source', 'ledger'),
                 "computed_at": datetime.now(timezone.utc).isoformat()
             })
         
@@ -429,7 +430,8 @@ def _compute_item_profits(transactions, master_stamps, mapping_dict, member_to_l
             'avg_purchase_tunch': cost_tunch,
             'avg_sale_tunch': avg_sale_tunch,
             'net_wt_sold_kg': total_sale_wt / 1000,
-            'total_sales_value': total_sales_value
+            'total_sales_value': total_sales_value,
+            'cost_source': 'estimated' if (grp_ledger.get(item_name) or {}).get('fallback') else 'ledger'
         }
 
     return results

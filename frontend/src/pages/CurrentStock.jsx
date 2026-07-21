@@ -445,6 +445,9 @@ function GroupRow({ item, idx, hasMembers, isExpanded, onToggle, onNavigate }) {
             {item.has_purchase_rate === false && !hasMembers && (
               <CircleAlert className="h-3.5 w-3.5 text-orange-500 shrink-0" title="No purchase rate" />
             )}
+            {item.rate_source === 'estimated' && !hasMembers && (
+              <Badge variant="outline" className="text-[9px] px-1 py-0 text-amber-600 border-amber-400 font-normal shrink-0" title="Rate estimated from this item's purchase history" data-testid={`est-rate-badge-${idx}`}>EST</Badge>
+            )}
           </span>
         </TableCell>
         <TableCell>

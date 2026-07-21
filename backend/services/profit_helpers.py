@@ -5,6 +5,7 @@ call through this module so the silver and labour margin logic
 is defined exactly once.
 """
 
+import time
 from collections import defaultdict
 from services.group_utils import build_group_maps, resolve_to_leader, build_group_ledger
 
@@ -29,6 +30,97 @@ def ledger_cost_basis(grp_ledger: dict, leader: str, raw_name: str | None = None
     if not le:
         return None
     return (le.get("purchase_tunch", 0) or 0), ((le.get("labour_per_kg", 0) or 0) / 1000)
+
+
+_fallback_cache = {"ts": 0.0, "stats": None}
+_FALLBACK_TTL = 60  # seconds
+
+
+def invalidate_fallback_cache():
+    _fallback_cache["stats"] = None
+
+
+async def fetch_fallback_purchase_stats(db, use_cache: bool = True) -> dict:
+    """Signed per-item purchase totals from ALL purchase/purchase_return transactions
+    (regular + historical). Used to ESTIMATE a cost basis for items that have no
+    PURCHASE_CUMUL ledger entry (e.g. discontinued items sold in 2024) instead of
+    skipping them from profit. Returns raw_item_name -> {wt_g, fine_g, labour}."""
+    if use_cache and _fallback_cache["stats"] is not None and time.time() - _fallback_cache["ts"] < _FALLBACK_TTL:
+        return _fallback_cache["stats"]
+    _abs_wt = {"$abs": {"$ifNull": ["$net_wt", 0]}}
+    _tunch = {"$convert": {"input": "$tunch", "to": "double", "onError": 0, "onNull": 0}}
+    pipeline = [
+        {"$match": {"type": {"$in": ["purchase", "purchase_return"]}}},
+        {"$group": {
+            "_id": {"item": "$item_name", "type": "$type"},
+            "wt": {"$sum": _abs_wt},
+            "fine": {"$sum": {"$cond": [
+                {"$gt": [{"$abs": {"$ifNull": ["$fine", 0]}}, 0]},
+                {"$abs": {"$ifNull": ["$fine", 0]}},
+                {"$divide": [{"$multiply": [_abs_wt, _tunch]}, 100]},
+            ]}},
+            "labour": {"$sum": {"$cond": [
+                {"$gt": [{"$abs": {"$ifNull": ["$labor", 0]}}, 0]},
+                {"$abs": {"$ifNull": ["$labor", 0]}},
+                {"$abs": {"$ifNull": ["$total_amount", 0]}},
+            ]}},
+        }},
+    ]
+    stats: dict = {}
+    for coll in (db.transactions, db.historical_transactions):
+        async for d in coll.aggregate(pipeline):
+            item = (d["_id"].get("item") or "").strip()
+            if not item or item.isdigit():
+                continue
+            sign = -1 if d["_id"]["type"] == "purchase_return" else 1
+            s = stats.setdefault(item, {"wt_g": 0.0, "fine_g": 0.0, "labour": 0.0})
+            s["wt_g"] += sign * (d["wt"] or 0)
+            s["fine_g"] += sign * (d["fine"] or 0)
+            s["labour"] += sign * (d["labour"] or 0)
+    _fallback_cache["stats"] = stats
+    _fallback_cache["ts"] = time.time()
+    return stats
+
+
+def merge_fallback_entries(ledger_items: list[dict], fallback_stats: dict,
+                           groups: list[dict], mappings: list[dict]) -> list[dict]:
+    """Return ledger_items + synthetic ``fallback: True`` entries for items whose group
+    leader has NO real ledger coverage but does have purchase transaction history.
+    Real ledger entries always win — fallback never alters an existing group's basis."""
+    mapping_dict, member_to_leader, _ = build_group_maps(groups, mappings)
+    real_grp = build_group_ledger(ledger_items, groups, mappings)
+    agg: dict = {}
+    for raw, st in fallback_stats.items():
+        leader = resolve_to_leader(raw, mapping_dict, member_to_leader)
+        if leader in real_grp or raw in real_grp:
+            continue
+        a = agg.setdefault(leader, {"wt_g": 0.0, "fine_g": 0.0, "labour": 0.0})
+        a["wt_g"] += st["wt_g"]
+        a["fine_g"] += st["fine_g"]
+        a["labour"] += st["labour"]
+    out = list(ledger_items)
+    for leader, a in agg.items():
+        if a["wt_g"] < 1:  # need at least 1g of net purchase history
+            continue
+        out.append({
+            "item_name": leader,
+            "purchase_tunch": a["fine_g"] / a["wt_g"] * 100,
+            "labour_per_kg": a["labour"] / (a["wt_g"] / 1000.0),
+            "total_purchased_kg": a["wt_g"] / 1000.0,
+            "total_fine_kg": a["fine_g"] / 1000.0,
+            "total_labour": a["labour"],
+            "fallback": True,
+        })
+    return out
+
+
+async def fetch_ledger_with_fallback(db, groups: list[dict], mappings: list[dict],
+                                     use_cache: bool = True) -> list[dict]:
+    """purchase_ledger entries + estimated entries for no-ledger items (from their own
+    purchase history). Drop-in replacement for ``db.purchase_ledger.find().to_list()``."""
+    ledger = await db.purchase_ledger.find({}, {"_id": 0}).to_list(None)
+    stats = await fetch_fallback_purchase_stats(db, use_cache=use_cache)
+    return merge_fallback_entries(ledger, stats, groups, mappings)
 
 
 def aggregate_sale_profit(sales: list[dict], cost_tunch: float, cost_lpg: float):

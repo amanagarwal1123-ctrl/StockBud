@@ -1,6 +1,7 @@
 from collections import defaultdict
 from database import db
 from services.group_utils import build_group_maps, build_group_ledger
+from services.profit_helpers import fetch_ledger_with_fallback
 
 
 async def get_opening_effective_date():
@@ -278,7 +279,7 @@ async def get_current_inventory(as_of_date: str = None):
     master_stamp_dict = {m['item_name']: m['stamp'] for m in master_items}
 
     groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
-    ledger_items = await db.purchase_ledger.find({}, {"_id": 0}).to_list(None)
+    ledger_items = await fetch_ledger_with_fallback(db, groups, mappings)
 
     # Load inventory baselines (physical stock overrides)
     bl_filter = {'baseline_date': {'$lte': as_of_date}} if as_of_date else {}
@@ -481,6 +482,7 @@ async def get_current_inventory(as_of_date: str = None):
             item['fine'] = net_wt_grams * tunch / 100
             item['labor'] = (net_wt_grams / 1000) * labour_per_kg
         item['has_purchase_rate'] = has_rate
+        item['rate_source'] = ('estimated' if ledger_item.get('fallback') else 'ledger') if ledger_item else None
 
         # Polythene adjustment
         if item_name in poly_map:
@@ -577,6 +579,7 @@ async def get_current_inventory(as_of_date: str = None):
             'fine': item.get('fine', 0),
             'labor': item.get('labor', 0),
             'has_purchase_rate': item.get('has_purchase_rate', True),
+            'rate_source': item.get('rate_source'),
         }
         stamp_groups.setdefault(stamp, []).append(entry)
         stamp_items_flat.append(entry)

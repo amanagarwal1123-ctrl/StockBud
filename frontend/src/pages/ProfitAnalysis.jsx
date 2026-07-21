@@ -397,7 +397,12 @@ export default function ProfitAnalysis() {
                                 {expandedItem === item.item_name ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                               </TableCell>
                               <TableCell className="text-xs py-2 text-muted-foreground w-[35px]">{startIdx + idx + 1}</TableCell>
-                              <TableCell className="text-xs py-2 font-medium truncate w-[170px]">{item.item_name}</TableCell>
+                              <TableCell className="text-xs py-2 font-medium truncate w-[170px]">
+                                {item.item_name}
+                                {item.cost_source === 'estimated' && (
+                                  <span className="ml-1 text-[9px] text-amber-600 border border-amber-400 rounded px-1 align-middle" title="Cost basis estimated from this item's own purchase history">EST</span>
+                                )}
+                              </TableCell>
                               <TableCell className="text-right font-mono text-xs py-2 w-[90px]">{item.net_wt_sold_kg}</TableCell>
                               <TableCell className="text-right font-mono text-xs py-2 w-[80px]">{item.avg_purchase_tunch}%</TableCell>
                               <TableCell className="text-right font-mono text-xs py-2 w-[80px]">{item.avg_sale_tunch}%</TableCell>
