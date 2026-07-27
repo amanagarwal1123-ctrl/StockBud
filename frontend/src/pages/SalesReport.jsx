@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { FileText, Calendar, Download, Search, ChevronDown, ChevronRight, EyeOff } from 'lucide-react';
+import { FileText, Calendar, Download, Search, ChevronDown, ChevronRight, EyeOff, BarChart2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -13,6 +13,7 @@ import { formatIndianCurrency } from '@/utils/formatCurrency';
 import { exportToCSV } from '@/utils/exportCSV';
 import { useSortableData } from '@/hooks/useSortableData';
 import { SortableHeader } from '@/components/SortableHeader';
+import { StockSaleChart } from '@/components/StockSaleChart';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -39,6 +40,29 @@ export default function SalesReport() {
   const [search, setSearch] = useState('');
   const [excludedStamps, setExcludedStamps] = useState(new Set()); // stamps unchecked
   const [showExcludedBreakdown, setShowExcludedBreakdown] = useState(false);
+  const [chartKey, setChartKey] = useState(null); // "item:NAME" | "stamp:NAME"
+  const [chartCache, setChartCache] = useState({});
+  const [chartLoading, setChartLoading] = useState(false);
+
+  const toggleChart = async (type, entityName) => {
+    const key = `${type}:${entityName}`;
+    if (chartKey === key) { setChartKey(null); return; }
+    setChartKey(key);
+    if (!chartCache[key] && data?.period) {
+      setChartLoading(true);
+      try {
+        const r = await axios.get(
+          `${API}/analytics/sales-report-drill?entity_type=${type}&name=${encodeURIComponent(entityName)}&start_date=${data.period.start_date}&end_date=${data.period.end_date}`
+        );
+        setChartCache((p) => ({ ...p, [key]: r.data }));
+      } catch (e) {
+        console.error('Drill chart error:', e);
+        setChartCache((p) => ({ ...p, [key]: null }));
+      } finally {
+        setChartLoading(false);
+      }
+    }
+  };
 
   useEffect(() => {
     fetchReport();
@@ -48,6 +72,8 @@ export default function SalesReport() {
   const fetchReport = async (overrides = {}) => {
     setLoading(true);
     setExcludedStamps(new Set());
+    setChartKey(null);
+    setChartCache({});
     const m = overrides.mode ?? mode;
     const y = overrides.year ?? year;
     const mo = overrides.month ?? month;
@@ -452,6 +478,10 @@ export default function SalesReport() {
               itemsByStamp={itemsByStamp}
               expandedStamps={expandedStamps}
               onToggleExpand={toggleExpand}
+              chartKey={chartKey}
+              chartCache={chartCache}
+              chartLoading={chartLoading}
+              onToggleChart={toggleChart}
             />
           ) : (
             <ItemTable
@@ -459,6 +489,10 @@ export default function SalesReport() {
               excludedStamps={excludedStamps}
               sortConfig={itemSort}
               onSort={sortItems}
+              chartKey={chartKey}
+              chartCache={chartCache}
+              chartLoading={chartLoading}
+              onToggleChart={toggleChart}
             />
           )}
         </CardContent>
@@ -480,14 +514,14 @@ function TotalCard({ label, value }) {
   );
 }
 
-function StampTable({ rows, excludedStamps, onToggleStamp, sortConfig, onSort, itemsByStamp, expandedStamps, onToggleExpand }) {
+function StampTable({ rows, excludedStamps, onToggleStamp, sortConfig, onSort, itemsByStamp, expandedStamps, onToggleExpand, chartKey, chartCache, chartLoading, onToggleChart }) {
   if (!rows || rows.length === 0) return <div className="text-muted-foreground text-sm">No data</div>;
   return (
     <div className="overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-[40px]"></TableHead>
+            <TableHead className="w-[64px]"></TableHead>
             <TableHead className="w-[40px]"></TableHead>
             <SortableHeader label="Stamp" sortKey="stamp" sortConfig={sortConfig} onSort={onSort} />
             <SortableHeader label="Gross Wt (kg)" sortKey="gross_wt_kg" sortConfig={sortConfig} onSort={onSort} className="text-right" />
@@ -513,19 +547,29 @@ function StampTable({ rows, excludedStamps, onToggleStamp, sortConfig, onSort, i
                   className={!included ? 'opacity-50' : ''}
                   data-testid={`stamp-row-${r.stamp}`}
                 >
-                  <TableCell className="w-[40px]">
-                    <button
-                      onClick={() => onToggleExpand(r.stamp)}
-                      className="p-1 hover:bg-muted rounded transition-colors"
-                      aria-label={isExpanded ? 'Collapse' : 'Expand'}
-                      data-testid={`stamp-expand-${r.stamp}`}
-                    >
-                      {isExpanded ? (
-                        <ChevronDown className="h-4 w-4" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4" />
-                      )}
-                    </button>
+                  <TableCell className="w-[64px]">
+                    <div className="flex items-center gap-0.5">
+                      <button
+                        onClick={() => onToggleExpand(r.stamp)}
+                        className="p-1 hover:bg-muted rounded transition-colors"
+                        aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                        data-testid={`stamp-expand-${r.stamp}`}
+                      >
+                        {isExpanded ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" />
+                        )}
+                      </button>
+                      <button
+                        onClick={() => onToggleChart('stamp', r.stamp)}
+                        className={`p-1 rounded transition-colors ${chartKey === `stamp:${r.stamp}` ? 'bg-indigo-100 text-indigo-700' : 'hover:bg-muted text-muted-foreground'}`}
+                        title="Stock vs Sale chart"
+                        data-testid={`chart-toggle-stamp-${r.stamp}`}
+                      >
+                        <BarChart2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   </TableCell>
                   <TableCell className="w-[40px]">
                     <Checkbox
@@ -555,13 +599,25 @@ function StampTable({ rows, excludedStamps, onToggleStamp, sortConfig, onSort, i
                   <TableCell className="text-right font-mono">{r.transactions}</TableCell>
                   <TableCell className="text-right font-mono">{r.items_count}</TableCell>
                 </TableRow>
+                {chartKey === `stamp:${r.stamp}` && (
+                  <ChartRow colSpan={13} drill={chartCache[`stamp:${r.stamp}`]} loading={chartLoading && chartCache[`stamp:${r.stamp}`] === undefined} />
+                )}
                 {isExpanded && items.map((it) => (
+                  <FragmentRow key={`${r.stamp}__${it.item_name}`}>
                   <TableRow
-                    key={`${r.stamp}__${it.item_name}`}
                     className={`bg-muted/30 ${!included ? 'opacity-50' : ''}`}
                     data-testid={`item-sub-row-${it.item_name}`}
                   >
-                    <TableCell className="w-[40px]"></TableCell>
+                    <TableCell className="w-[64px]">
+                      <button
+                        onClick={() => onToggleChart('item', it.item_name)}
+                        className={`ml-5 p-1 rounded transition-colors ${chartKey === `item:${it.item_name}` ? 'bg-indigo-100 text-indigo-700' : 'hover:bg-muted text-muted-foreground'}`}
+                        title="Stock vs Sale chart"
+                        data-testid={`chart-toggle-subitem-${it.item_name}`}
+                      >
+                        <BarChart2 className="h-3.5 w-3.5" />
+                      </button>
+                    </TableCell>
                     <TableCell className="w-[40px]"></TableCell>
                     <TableCell className="pl-8 text-sm text-muted-foreground">↳ {it.item_name}</TableCell>
                     <TableCell className="text-right font-mono text-sm">{it.gross_wt_kg.toFixed(3)}</TableCell>
@@ -577,6 +633,10 @@ function StampTable({ rows, excludedStamps, onToggleStamp, sortConfig, onSort, i
                     <TableCell className="text-right font-mono text-sm">{it.transactions}</TableCell>
                     <TableCell></TableCell>
                   </TableRow>
+                  {chartKey === `item:${it.item_name}` && (
+                    <ChartRow colSpan={13} drill={chartCache[`item:${it.item_name}`]} loading={chartLoading && chartCache[`item:${it.item_name}`] === undefined} />
+                  )}
+                  </FragmentRow>
                 ))}
               </FragmentRow>
             );
@@ -594,13 +654,14 @@ function FragmentRow({ children }) {
   return <>{children}</>;
 }
 
-function ItemTable({ rows, excludedStamps, sortConfig, onSort }) {
+function ItemTable({ rows, excludedStamps, sortConfig, onSort, chartKey, chartCache, chartLoading, onToggleChart }) {
   if (!rows || rows.length === 0) return <div className="text-muted-foreground text-sm">No data</div>;
   return (
     <div className="overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead className="w-[36px]"></TableHead>
             <SortableHeader label="Item" sortKey="item_name" sortConfig={sortConfig} onSort={onSort} />
             <SortableHeader label="Stamp" sortKey="stamp" sortConfig={sortConfig} onSort={onSort} />
             <SortableHeader label="Gross Wt (kg)" sortKey="gross_wt_kg" sortConfig={sortConfig} onSort={onSort} className="text-right" />
@@ -618,11 +679,21 @@ function ItemTable({ rows, excludedStamps, sortConfig, onSort }) {
           {rows.map((r) => {
             const stampExcluded = excludedStamps.has(r.stamp);
             return (
+              <FragmentRow key={r.item_name}>
               <TableRow
-                key={r.item_name}
                 className={stampExcluded ? 'opacity-50' : ''}
                 data-testid={`item-row-${r.item_name}`}
               >
+                <TableCell className="w-[36px]">
+                  <button
+                    onClick={() => onToggleChart('item', r.item_name)}
+                    className={`p-1 rounded transition-colors ${chartKey === `item:${r.item_name}` ? 'bg-indigo-100 text-indigo-700' : 'hover:bg-muted text-muted-foreground'}`}
+                    title="Stock vs Sale chart"
+                    data-testid={`chart-toggle-item-${r.item_name}`}
+                  >
+                    <BarChart2 className="h-4 w-4" />
+                  </button>
+                </TableCell>
                 <TableCell className="font-medium">{r.item_name}</TableCell>
                 <TableCell>
                   <Badge variant={r.stamp === 'Unassigned' ? 'outline' : 'secondary'}>{r.stamp}</Badge>
@@ -639,10 +710,26 @@ function ItemTable({ rows, excludedStamps, sortConfig, onSort }) {
                 <TableCell className="text-right font-mono text-red-600">{r.return_kg.toFixed(3)}</TableCell>
                 <TableCell className="text-right font-mono">{r.transactions}</TableCell>
               </TableRow>
+              {chartKey === `item:${r.item_name}` && (
+                <ChartRow colSpan={12} drill={chartCache[`item:${r.item_name}`]} loading={chartLoading && chartCache[`item:${r.item_name}`] === undefined} />
+              )}
+              </FragmentRow>
             );
           })}
         </TableBody>
       </Table>
     </div>
+  );
+}
+
+function ChartRow({ colSpan, drill, loading }) {
+  return (
+    <TableRow className="bg-indigo-50/30 hover:bg-indigo-50/30" data-testid="stock-sale-chart-row">
+      <TableCell colSpan={colSpan} className="p-2 sm:p-3">
+        <div className="sticky left-0 w-[calc(100vw-4rem)] max-w-[960px]">
+          <StockSaleChart drill={drill} loading={loading} />
+        </div>
+      </TableCell>
+    </TableRow>
   );
 }

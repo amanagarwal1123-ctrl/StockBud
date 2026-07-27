@@ -5326,6 +5326,113 @@ async def get_sales_report(
     }
 
 
+@api_router.get("/analytics/sales-report-drill")
+async def get_sales_report_drill(
+    name: str = Query(...),
+    entity_type: str = Query("item"),
+    start_date: str = Query(...),
+    end_date: str = Query(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """Day-wise opening net stock (bars) vs day sales (line) for one item or stamp.
+
+    Stock series: opening stock of each day, seeded from get_current_inventory(as_of =
+    day before start) and rolled forward with the stock engine's sign rules
+    (purchase/purchase_return/receive ADD raw values; sale/sale_return/issue SUBTRACT).
+    Sales series: canonical signed sale weights (returns subtract).
+    stock_to_sale_ratio = avg day-opening stock / total period sale — lower is better."""
+    if entity_type not in ("item", "stamp"):
+        raise HTTPException(status_code=400, detail="entity_type must be item|stamp")
+    try:
+        sd_dt = datetime.strptime(start_date, "%Y-%m-%d")
+        datetime.strptime(end_date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Dates must be YYYY-MM-DD")
+    # Don't chart future days (IST business dates)
+    today_s = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
+    ed_eff = min(end_date, today_s)
+    if ed_eff < start_date:
+        ed_eff = start_date
+    ed_dt = datetime.strptime(ed_eff, "%Y-%m-%d")
+
+    EXCLUDED = {"SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"}
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
+    mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
+    master_list = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(None)
+    stamp_lookup = {m['item_name']: (m.get('stamp') or 'Unassigned') for m in master_list}
+    map_dict, m2l, _ = build_group_maps(all_groups, mappings)
+
+    def _resolve(n):
+        return resolve_to_leader(n, map_dict, m2l)
+
+    def _match(raw_name: str) -> bool:
+        leader = _resolve(raw_name)
+        if leader in EXCLUDED:
+            return False
+        if entity_type == 'item':
+            return leader == name
+        stamp = stamp_lookup.get(leader, stamp_lookup.get(map_dict.get(raw_name, raw_name), 'Unassigned'))
+        return (stamp or 'Unassigned') == name
+
+    # Opening stock at range start = closing of the previous day (baseline/anchor aware)
+    prev_day = (sd_dt - timedelta(days=1)).strftime('%Y-%m-%d')
+    inv = await get_current_inventory_cached(as_of_date=prev_day)
+    opening_g = 0.0
+    for si in inv.get('stamp_items', []):
+        if _match(si.get('item_name', '')):
+            opening_g += si.get('net_wt', 0) or 0
+
+    ADD_TYPES = ("purchase", "purchase_return", "receive")
+    SUB_TYPES = ("sale", "sale_return", "issue")
+    daily_delta = defaultdict(float)  # raw stock delta per day (grams, engine sign rules)
+    daily_sold = defaultdict(float)   # canonical signed sale per day (grams)
+    async for t in db.transactions.find(
+            {'date': {'$gte': start_date, '$lte': ed_eff + ' 23:59:59'},
+             'type': {'$in': list(ADD_TYPES + SUB_TYPES)}},
+            {"_id": 0, "date": 1, "type": 1, "item_name": 1, "net_wt": 1}):
+        raw = t.get('item_name', '') or ''
+        if not raw or raw.isdigit() or not _match(raw):
+            continue
+        d = (t.get('date') or '')[:10]
+        if not d:
+            continue
+        w = t.get('net_wt', 0) or 0
+        if t['type'] in ADD_TYPES:
+            daily_delta[d] += w
+        else:
+            daily_delta[d] -= w
+        if t['type'] in ('sale', 'sale_return'):
+            daily_sold[d] += abs(w) * (-1 if t['type'] == 'sale_return' else 1)
+
+    days = []
+    running = opening_g
+    stock_sum = 0.0
+    total_sold_g = 0.0
+    cur = sd_dt
+    while cur <= ed_dt:
+        ds = cur.strftime('%Y-%m-%d')
+        sold = daily_sold.get(ds, 0.0)
+        days.append({'date': ds, 'stock_kg': round(running / 1000, 3), 'sold_kg': round(sold / 1000, 3)})
+        stock_sum += running
+        total_sold_g += sold
+        running += daily_delta.get(ds, 0.0)
+        cur += timedelta(days=1)
+
+    avg_stock_kg = stock_sum / (len(days) or 1) / 1000
+    total_sold_kg = total_sold_g / 1000
+    ratio = round(avg_stock_kg / total_sold_kg, 2) if total_sold_kg > 0.001 else None
+    return {
+        'name': name,
+        'entity_type': entity_type,
+        'start_date': start_date,
+        'end_date': ed_eff,
+        'days': days,
+        'avg_stock_kg': round(avg_stock_kg, 3),
+        'total_sold_kg': round(total_sold_kg, 3),
+        'stock_to_sale_ratio': ratio,
+    }
+
+
 @api_router.post("/analytics/find-orphan-transactions")
 async def find_orphan_transactions(
     request: Dict,
