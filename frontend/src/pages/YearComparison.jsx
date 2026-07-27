@@ -324,9 +324,15 @@ export default function YearComparison() {
                 className="w-full h-8 pl-8 pr-2 rounded-md border bg-background text-xs"
                 data-testid="party-search-input" />
               <datalist id="yc-party-options">
-                {partyList.map((n) => <option key={n} value={n} />)}
+                {(partyInput
+                  ? partyList.filter((n) => n.toLowerCase().includes(partyInput.toLowerCase()))
+                  : partyList
+                ).slice(0, 100).map((n) => <option key={n} value={n} />)}
               </datalist>
             </div>
+            <span className="text-[10px] text-muted-foreground" data-testid="party-count-label">
+              {partyList.length} {partyType}s
+            </span>
           </div>
         </CardHeader>
         <CardContent>

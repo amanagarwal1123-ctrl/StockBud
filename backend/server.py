@@ -5914,7 +5914,7 @@ async def year_comparison_parties(
 ):
     stype = 'party_customer' if party_type == 'customer' else 'party_supplier'
     names = await db.monthly_summaries.distinct('name', {'summary_type': stype})
-    return {"parties": sorted(n for n in names if n)[:1000]}
+    return {"parties": sorted(n for n in names if n)}
 
 
 @api_router.get("/analytics/dashboard-year-summary")
