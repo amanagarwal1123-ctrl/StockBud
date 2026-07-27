@@ -146,6 +146,7 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Root cause**: `/api/analytics/year-comparison/parties` sliced sorted names to `[:1000]` — production has 6000+ customers, so all names after the 1000th alphabetical entry were silently missing.
 - **Fix**: backend cap removed (full distinct list returned); frontend `YearComparison.jsx` datalist now renders a case-insensitive substring-filtered subset (max 100 DOM options for perf) while keeping the full list in memory for exact-match selection; added party count label (`party-count-label`).
 - **Verified (iteration_41.json, 100% backend + frontend)**: 3220 customers / 1186 suppliers returned (>1000), late-alphabet names reachable via search, party-detail loads, monthly-profit regression clean. Test seeds (YCTEST, year 2018) cleaned up after run.
+- **Follow-up (same session)**: user couldn't scroll past the first 100 names (datalist DOM cap). Replaced native datalist with a custom scrollable dropdown (`party-options-list` / `party-option` testids): renders ALL names (scroll to bottom works — verified 2020/2020 options, last = ZIL SILVER...), case-insensitive filter as you type, click to select (onMouseDown before blur), opens on focus. Verified via playwright: full scroll, ZIL filter→select→customer detail, supplier toggle→ZEENAT→supplier detail.
 - **ACTION REQUIRED BY USER**: REDEPLOY.
 
 ## Backlog

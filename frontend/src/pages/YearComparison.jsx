@@ -117,6 +117,7 @@ export default function YearComparison() {
   const [partyType, setPartyType] = useState('customer');
   const [partyList, setPartyList] = useState([]);
   const [partyInput, setPartyInput] = useState('');
+  const [partyOpen, setPartyOpen] = useState(false);
   const [partyDetail, setPartyDetail] = useState(null);
   const [partyMetric, setPartyMetric] = useState('kg');
   const [partyMode, setPartyMode] = useState('bar');
@@ -318,17 +319,35 @@ export default function YearComparison() {
             </div>
             <div className="relative flex-1 min-w-[220px] max-w-md">
               <Search className="h-3.5 w-3.5 absolute left-2.5 top-2.5 text-muted-foreground" />
-              <input list="yc-party-options" value={partyInput}
-                onChange={(e) => { setPartyInput(e.target.value); if (partyList.includes(e.target.value)) loadPartyDetail(e.target.value); }}
-                placeholder={`Type a ${partyType} name...`}
+              <input value={partyInput}
+                onChange={(e) => { setPartyInput(e.target.value); setPartyOpen(true); }}
+                onFocus={() => setPartyOpen(true)}
+                onBlur={() => setTimeout(() => setPartyOpen(false), 150)}
+                placeholder={`Type or scroll to pick a ${partyType}...`}
                 className="w-full h-8 pl-8 pr-2 rounded-md border bg-background text-xs"
                 data-testid="party-search-input" />
-              <datalist id="yc-party-options">
-                {(partyInput
-                  ? partyList.filter((n) => n.toLowerCase().includes(partyInput.toLowerCase()))
-                  : partyList
-                ).slice(0, 100).map((n) => <option key={n} value={n} />)}
-              </datalist>
+              {partyOpen && (() => {
+                const q = partyInput.trim().toLowerCase();
+                const matches = q ? partyList.filter((n) => n.toLowerCase().includes(q)) : partyList;
+                return matches.length > 0 && (
+                  <div className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto rounded-md border bg-popover shadow-lg"
+                    data-testid="party-options-list">
+                    {matches.map((n) => (
+                      <button key={n} type="button"
+                        className="w-full text-left px-2.5 py-1.5 text-xs hover:bg-muted truncate block"
+                        data-testid="party-option"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setPartyInput(n);
+                          setPartyOpen(false);
+                          loadPartyDetail(n);
+                        }}>
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
             <span className="text-[10px] text-muted-foreground" data-testid="party-count-label">
               {partyList.length} {partyType}s
