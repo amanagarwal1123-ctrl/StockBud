@@ -141,6 +141,13 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Verified (preview)**: 8 concurrent `ensure_year_summary_fresh` → 0 dupes, 1 meta; simulated cross-replica race (2 raw concurrent `_compute_year`, no lock) → 0 dupes, no lost docs (1205 == clean-run 1205); full-collection dupe scan clean; freshness pytest suites 11 pass; endpoints return unique items.
 - **ACTION REQUIRED BY USER**: REDEPLOY — 2025 (and all years) auto-heal on first page load.
 
+## Year Comparison Party List 1000-Cap Removed (Jul 21, 2026 — session 6c)
+- **User report (production)**: Year Comparison → Customer/Supplier Drill-Down search list not showing all customers/suppliers.
+- **Root cause**: `/api/analytics/year-comparison/parties` sliced sorted names to `[:1000]` — production has 6000+ customers, so all names after the 1000th alphabetical entry were silently missing.
+- **Fix**: backend cap removed (full distinct list returned); frontend `YearComparison.jsx` datalist now renders a case-insensitive substring-filtered subset (max 100 DOM options for perf) while keeping the full list in memory for exact-match selection; added party count label (`party-count-label`).
+- **Verified (iteration_41.json, 100% backend + frontend)**: 3220 customers / 1186 suppliers returned (>1000), late-alphabet names reachable via search, party-detail loads, monthly-profit regression clean. Test seeds (YCTEST, year 2018) cleaned up after run.
+- **ACTION REQUIRED BY USER**: REDEPLOY.
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document
