@@ -9,6 +9,15 @@ const ratioMeta = (ratio) => {
   return { label: 'Overstocked', cls: 'bg-red-100 text-red-700 border-red-300' };
 };
 
+export const RatioPill = ({ ratio }) => {
+  const rm = ratioMeta(ratio);
+  return (
+    <span className={`inline-block rounded-full border px-1.5 py-0.5 text-[10px] font-bold font-mono ${rm.cls}`} title={rm.label} data-testid="ratio-pill">
+      {ratio !== null && ratio !== undefined ? `${ratio}×` : '—'}
+    </span>
+  );
+};
+
 export const StockSaleChart = ({ drill, loading }) => {
   if (loading) return <div className="py-8 text-center text-sm text-muted-foreground" data-testid="stock-sale-chart-loading">Loading stock vs sale…</div>;
   if (!drill) return <div className="py-8 text-center text-sm text-red-600" data-testid="stock-sale-chart-error">Could not load chart</div>;
@@ -24,6 +33,11 @@ export const StockSaleChart = ({ drill, loading }) => {
         <Badge variant="outline" className="text-[10px] bg-rose-50 text-rose-700 border-rose-300" data-testid="period-sale-badge">
           Sale {(drill.total_sold_kg ?? 0).toFixed(3)} kg
         </Badge>
+        {drill.avg_monthly_sale_kg !== undefined && (
+          <Badge variant="outline" className="text-[10px] bg-rose-50 text-rose-700 border-rose-300" data-testid="monthly-sale-badge">
+            Sale/Mo {(drill.avg_monthly_sale_kg ?? 0).toFixed(3)} kg
+          </Badge>
+        )}
         <Badge variant="outline" className={`text-[10px] font-bold ${rm.cls}`} data-testid="stock-sale-ratio-badge">
           Stock:Sale {drill.stock_to_sale_ratio !== null && drill.stock_to_sale_ratio !== undefined ? `${drill.stock_to_sale_ratio}×` : '—'} · {rm.label}
         </Badge>
@@ -48,7 +62,7 @@ export const StockSaleChart = ({ drill, loading }) => {
       </div>
       <p className="text-[10px] text-muted-foreground leading-snug">
         Bars = opening net stock each day · Line = that day&apos;s sale ·{' '}
-        <span className="font-medium">Stock:Sale</span> = avg stock ÷ period sale —{' '}
+        <span className="font-medium">Stock:Sale</span> = avg stock ÷ avg monthly sale —{' '}
         <span className="text-green-600 font-medium">≤2× healthy</span>,{' '}
         <span className="text-amber-600 font-medium">2–4× watch</span>,{' '}
         <span className="text-red-600 font-medium">&gt;4× stock isn&apos;t converting to sales</span>.

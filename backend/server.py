@@ -5176,7 +5176,8 @@ async def get_sales_report(
                             'return_kg_g': 0.0, 'customers': set()})
     by_item = _dd(lambda: {'stamp': '', 'gross_wt_g': 0.0, 'net_wt_g': 0.0, 'fine_g': 0.0,
                            'total_amount': 0.0, 'tunch_num': 0.0, 'abs_net_g': 0.0,
-                           'transactions': 0, 'sale_kg_g': 0.0, 'return_kg_g': 0.0})
+                           'transactions': 0, 'sale_kg_g': 0.0, 'return_kg_g': 0.0,
+                           'variants': set()})
     
     excluded_kg_g = 0.0
     excluded_count = 0
@@ -5234,9 +5235,11 @@ async def get_sales_report(
         else:
             s['sale_kg_g'] += abs_net
         
-        # by item (leader-level)
+        # by item (leader-level — mapped/grouped variants combine here)
         i = by_item[leader]
         i['stamp'] = stamp
+        if item_raw and item_raw != leader:
+            i['variants'].add(item_raw)
         i['gross_wt_g'] += gw
         i['net_wt_g'] += nw
         i['fine_g'] += fw
@@ -5257,6 +5260,61 @@ async def get_sales_report(
         abs_kg = d['abs_net_g'] / 1000
         return (d['total_amount'] / abs_kg) if abs_kg > 0 else 0
     
+    # ---- Stock:Sale ratio = avg day-opening stock ÷ AVG MONTHLY sale ----
+    today_s = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
+    ed_eff = min(ed, today_s)
+    if ed_eff < sd:
+        ed_eff = sd
+    sd_dt = datetime.strptime(sd, "%Y-%m-%d")
+    n_days = (datetime.strptime(ed_eff, "%Y-%m-%d") - sd_dt).days + 1
+    months_equiv = max(n_days / 30.44, 0.033)
+    
+    prev_day = (sd_dt - timedelta(days=1)).strftime('%Y-%m-%d')
+    inv = await get_current_inventory_cached(as_of_date=prev_day)
+    opening_by_leader = _dd(float)
+    for si in inv.get('stamp_items', []):
+        ldr = _resolve(si.get('item_name', '') or '')
+        if ldr and ldr not in EXCLUDED:
+            opening_by_leader[ldr] += si.get('net_wt', 0) or 0
+    
+    ADD_T = ("purchase", "purchase_return", "receive")
+    SUB_T = ("sale", "sale_return", "issue")
+    delta_by_leader = _dd(lambda: _dd(float))
+    async for t in db.transactions.find(
+            {'date': {'$gte': sd, '$lte': ed_eff + ' 23:59:59'},
+             'type': {'$in': list(ADD_T + SUB_T)}},
+            {"_id": 0, "date": 1, "type": 1, "item_name": 1, "net_wt": 1}):
+        raw = t.get('item_name', '') or ''
+        if not raw or raw.isdigit():
+            continue
+        ldr = _resolve(raw)
+        if ldr in EXCLUDED:
+            continue
+        dkey = (t.get('date') or '')[:10]
+        w = t.get('net_wt', 0) or 0
+        delta_by_leader[ldr][dkey] += w if t['type'] in ADD_T else -w
+    
+    date_seq = [(sd_dt + timedelta(days=k)).strftime('%Y-%m-%d') for k in range(n_days)]
+    avg_stock_by_leader = {}
+    for ldr in set(opening_by_leader) | set(delta_by_leader) | set(by_item):
+        running = opening_by_leader.get(ldr, 0.0)
+        tot = 0.0
+        dmap = delta_by_leader.get(ldr) or {}
+        for ds in date_seq:
+            tot += running
+            running += dmap.get(ds, 0.0)
+        avg_stock_by_leader[ldr] = tot / n_days
+    
+    def _ratio(avg_stock_g, net_sale_g):
+        monthly_sale_g = net_sale_g / months_equiv
+        if monthly_sale_g <= 1:
+            return None
+        return round(avg_stock_g / monthly_sale_g, 2)
+    
+    stamp_avg_stock = _dd(float)
+    for ldr, st_g in avg_stock_by_leader.items():
+        stamp_avg_stock[_stamp_for(ldr) or 'Unassigned'] += st_g
+    
     stamps_rows = []
     for stamp_name, d in by_stamp.items():
         stamps_rows.append({
@@ -5265,6 +5323,8 @@ async def get_sales_report(
             'net_wt_kg': round(d['net_wt_g'] / 1000, 3),
             'avg_tunch': round(_avg_tunch(d), 2),
             'avg_labour_per_kg': round(_avg_labour_per_kg(d), 2),
+            'stock_sale_ratio': _ratio(stamp_avg_stock.get(stamp_name, 0.0), d['net_wt_g']),
+            'avg_stock_kg': round(stamp_avg_stock.get(stamp_name, 0.0) / 1000, 3),
             'total_fine_kg': round(d['fine_g'] / 1000, 3),
             'total_labour_inr': round(d['total_amount'], 2),
             'sale_kg': round(d['sale_kg_g'] / 1000, 3),
@@ -5284,6 +5344,9 @@ async def get_sales_report(
             'net_wt_kg': round(d['net_wt_g'] / 1000, 3),
             'avg_tunch': round(_avg_tunch(d), 2),
             'avg_labour_per_kg': round(_avg_labour_per_kg(d), 2),
+            'stock_sale_ratio': _ratio(avg_stock_by_leader.get(item_name, 0.0), d['net_wt_g']),
+            'avg_stock_kg': round(avg_stock_by_leader.get(item_name, 0.0) / 1000, 3),
+            'merged_names': sorted(d['variants'])[:10],
             'total_fine_kg': round(d['fine_g'] / 1000, 3),
             'total_labour_inr': round(d['total_amount'], 2),
             'sale_kg': round(d['sale_kg_g'] / 1000, 3),
@@ -5420,7 +5483,10 @@ async def get_sales_report_drill(
 
     avg_stock_kg = stock_sum / (len(days) or 1) / 1000
     total_sold_kg = total_sold_g / 1000
-    ratio = round(avg_stock_kg / total_sold_kg, 2) if total_sold_kg > 0.001 else None
+    # Ratio uses AVERAGE MONTHLY sale so multi-month ranges aren't diluted
+    months_equiv = max((len(days) or 1) / 30.44, 0.033)
+    avg_monthly_sale_kg = total_sold_kg / months_equiv
+    ratio = round(avg_stock_kg / avg_monthly_sale_kg, 2) if avg_monthly_sale_kg > 0.001 else None
     return {
         'name': name,
         'entity_type': entity_type,
@@ -5429,6 +5495,7 @@ async def get_sales_report_drill(
         'days': days,
         'avg_stock_kg': round(avg_stock_kg, 3),
         'total_sold_kg': round(total_sold_kg, 3),
+        'avg_monthly_sale_kg': round(avg_monthly_sale_kg, 3),
         'stock_to_sale_ratio': ratio,
     }
 

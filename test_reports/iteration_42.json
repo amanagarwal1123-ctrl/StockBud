@@ -1,0 +1,19 @@
+{
+  "summary": "Iteration 42 — Verified Sales Report Stock:Sale ratio averaging bug fix + new ratio-pill column + merged-names subtext. Backend: 6/6 pytest passed. sales-report by_item and by_stamp rows now expose stock_sale_ratio (using avg day-opening stock ÷ AVG MONTHLY sale with months_equiv = elapsed_days/30.44) and avg_stock_kg. For CHAIN MS-70 full-year 2026 (~209 elapsed days ⇒ ~6.87 months) the returned ratio equals avg_stock/(net_wt/months_equiv), NOT the old avg_stock/total-period-sale. sales-report-drill returns avg_monthly_sale_kg and stock_to_sale_ratio equal to the by_item ratio for the same range. merged_names contains 'CHAIN MS-70 CASTING' and no separate row for it exists. Regression totals (net_wt, fine, labour) still match by_stamp sums. Frontend: /sales-report loaded, By Item tab has 13 headers with 'Stock:Sale' at index 7 (immediately after 'Avg Labour ₹/kg', before 'Total Fine (kg)'); 253 ratio pills rendered (green=26, amber=7, red=47); CHAIN MS-70 row shows 'incl. CHAIN MS-70 CASTING' subtext via data-testid='merged-names-CHAIN MS-70'. By Stamp tab has 14 headers with Stock:Sale at index 7; expanding Unassigned reveals 253 sub-row pills and every row has 14 tds (no column misalignment). chart-toggle-item-CHAIN MS-70 opens chart row with colspan=13 and monthly-sale-badge text 'Sale/Mo 79.600 kg'. Period switching Jul → previously-loaded ALL worked without JS errors, CSV export button present.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_42_sales_ratio.py",
+    "/app/test_reports/pytest/iteration_42.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": ["/app/backend/tests/test_iteration_42_sales_ratio.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": false,
+  "test_credentials": "admin/admin123",
+  "context_for_next_testing_agent": "Preview frontend host resolves via REACT_APP_BACKEND_URL host (alias-mapping-debug.preview.emergentagent.com); the stockbud.preview.emergentagent.com URL is wrapped in an emergent iframe, so use the REACT_APP_BACKEND_URL host directly for UI tests. Preview inventory has negative-stock items (red pills) due to missing purchase history — this is a data artifact, not a defect.",
+  "rca_of_the_issue": "Fix confirmed: ratio numerator uses avg day-opening stock (rolled forward from prev-day inventory with engine sign rules), denominator uses net_sale_g / months_equiv (elapsed_days_in_range/30.44), so multi-month ranges no longer inflate the denominator and dilute the ratio. Drill endpoint mirrors identical math."
+}

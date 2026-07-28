@@ -13,7 +13,7 @@ import { formatIndianCurrency } from '@/utils/formatCurrency';
 import { exportToCSV } from '@/utils/exportCSV';
 import { useSortableData } from '@/hooks/useSortableData';
 import { SortableHeader } from '@/components/SortableHeader';
-import { StockSaleChart } from '@/components/StockSaleChart';
+import { StockSaleChart, RatioPill } from '@/components/StockSaleChart';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -528,6 +528,7 @@ function StampTable({ rows, excludedStamps, onToggleStamp, sortConfig, onSort, i
             <SortableHeader label="Net Wt (kg)" sortKey="net_wt_kg" sortConfig={sortConfig} onSort={onSort} className="text-right" />
             <SortableHeader label="Avg Tunch %" sortKey="avg_tunch" sortConfig={sortConfig} onSort={onSort} className="text-right" />
             <SortableHeader label="Avg Labour ₹/kg" sortKey="avg_labour_per_kg" sortConfig={sortConfig} onSort={onSort} className="text-right" />
+            <SortableHeader label="Stock:Sale" sortKey="stock_sale_ratio" sortConfig={sortConfig} onSort={onSort} className="text-right" />
             <SortableHeader label="Total Fine (kg)" sortKey="total_fine_kg" sortConfig={sortConfig} onSort={onSort} className="text-right" />
             <SortableHeader label="Total Labour" sortKey="total_labour_inr" sortConfig={sortConfig} onSort={onSort} className="text-right" />
             <SortableHeader label="Sale" sortKey="sale_kg" sortConfig={sortConfig} onSort={onSort} className="text-right" />
@@ -592,6 +593,7 @@ function StampTable({ rows, excludedStamps, onToggleStamp, sortConfig, onSort, i
                   <TableCell className="text-right font-mono">
                     {r.avg_labour_per_kg.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                   </TableCell>
+                  <TableCell className="text-right"><RatioPill ratio={r.stock_sale_ratio} /></TableCell>
                   <TableCell className="text-right font-mono">{r.total_fine_kg.toFixed(3)}</TableCell>
                   <TableCell className="text-right font-mono">{formatIndianCurrency(r.total_labour_inr)}</TableCell>
                   <TableCell className="text-right font-mono text-green-600">{r.sale_kg.toFixed(3)}</TableCell>
@@ -600,7 +602,7 @@ function StampTable({ rows, excludedStamps, onToggleStamp, sortConfig, onSort, i
                   <TableCell className="text-right font-mono">{r.items_count}</TableCell>
                 </TableRow>
                 {chartKey === `stamp:${r.stamp}` && (
-                  <ChartRow colSpan={13} drill={chartCache[`stamp:${r.stamp}`]} loading={chartLoading && chartCache[`stamp:${r.stamp}`] === undefined} />
+                  <ChartRow colSpan={14} drill={chartCache[`stamp:${r.stamp}`]} loading={chartLoading && chartCache[`stamp:${r.stamp}`] === undefined} />
                 )}
                 {isExpanded && items.map((it) => (
                   <FragmentRow key={`${r.stamp}__${it.item_name}`}>
@@ -619,13 +621,21 @@ function StampTable({ rows, excludedStamps, onToggleStamp, sortConfig, onSort, i
                       </button>
                     </TableCell>
                     <TableCell className="w-[40px]"></TableCell>
-                    <TableCell className="pl-8 text-sm text-muted-foreground">↳ {it.item_name}</TableCell>
+                    <TableCell className="pl-8 text-sm text-muted-foreground">
+                      ↳ {it.item_name}
+                      {it.merged_names?.length > 0 && (
+                        <div className="text-[10px] text-indigo-500/80 leading-tight font-normal" data-testid={`merged-names-sub-${it.item_name}`}>
+                          incl. {it.merged_names.join(', ')}
+                        </div>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right font-mono text-sm">{it.gross_wt_kg.toFixed(3)}</TableCell>
                     <TableCell className="text-right font-mono text-sm">{it.net_wt_kg.toFixed(3)}</TableCell>
                     <TableCell className="text-right font-mono text-sm">{it.avg_tunch.toFixed(2)}</TableCell>
                     <TableCell className="text-right font-mono text-sm">
                       {it.avg_labour_per_kg.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                     </TableCell>
+                    <TableCell className="text-right"><RatioPill ratio={it.stock_sale_ratio} /></TableCell>
                     <TableCell className="text-right font-mono text-sm">{it.total_fine_kg.toFixed(3)}</TableCell>
                     <TableCell className="text-right font-mono text-sm">{formatIndianCurrency(it.total_labour_inr)}</TableCell>
                     <TableCell className="text-right font-mono text-sm text-green-600">{it.sale_kg.toFixed(3)}</TableCell>
@@ -634,7 +644,7 @@ function StampTable({ rows, excludedStamps, onToggleStamp, sortConfig, onSort, i
                     <TableCell></TableCell>
                   </TableRow>
                   {chartKey === `item:${it.item_name}` && (
-                    <ChartRow colSpan={13} drill={chartCache[`item:${it.item_name}`]} loading={chartLoading && chartCache[`item:${it.item_name}`] === undefined} />
+                    <ChartRow colSpan={14} drill={chartCache[`item:${it.item_name}`]} loading={chartLoading && chartCache[`item:${it.item_name}`] === undefined} />
                   )}
                   </FragmentRow>
                 ))}
@@ -668,6 +678,7 @@ function ItemTable({ rows, excludedStamps, sortConfig, onSort, chartKey, chartCa
             <SortableHeader label="Net Wt (kg)" sortKey="net_wt_kg" sortConfig={sortConfig} onSort={onSort} className="text-right" />
             <SortableHeader label="Avg Tunch %" sortKey="avg_tunch" sortConfig={sortConfig} onSort={onSort} className="text-right" />
             <SortableHeader label="Avg Labour ₹/kg" sortKey="avg_labour_per_kg" sortConfig={sortConfig} onSort={onSort} className="text-right" />
+            <SortableHeader label="Stock:Sale" sortKey="stock_sale_ratio" sortConfig={sortConfig} onSort={onSort} className="text-right" />
             <SortableHeader label="Total Fine (kg)" sortKey="total_fine_kg" sortConfig={sortConfig} onSort={onSort} className="text-right" />
             <SortableHeader label="Total Labour" sortKey="total_labour_inr" sortConfig={sortConfig} onSort={onSort} className="text-right" />
             <SortableHeader label="Sale" sortKey="sale_kg" sortConfig={sortConfig} onSort={onSort} className="text-right" />
@@ -694,7 +705,14 @@ function ItemTable({ rows, excludedStamps, sortConfig, onSort, chartKey, chartCa
                     <BarChart2 className="h-4 w-4" />
                   </button>
                 </TableCell>
-                <TableCell className="font-medium">{r.item_name}</TableCell>
+                <TableCell className="font-medium">
+                  {r.item_name}
+                  {r.merged_names?.length > 0 && (
+                    <div className="text-[10px] text-indigo-500/80 leading-tight font-normal max-w-[240px]" data-testid={`merged-names-${r.item_name}`}>
+                      incl. {r.merged_names.join(', ')}
+                    </div>
+                  )}
+                </TableCell>
                 <TableCell>
                   <Badge variant={r.stamp === 'Unassigned' ? 'outline' : 'secondary'}>{r.stamp}</Badge>
                 </TableCell>
@@ -704,6 +722,7 @@ function ItemTable({ rows, excludedStamps, sortConfig, onSort, chartKey, chartCa
                 <TableCell className="text-right font-mono">
                   {r.avg_labour_per_kg.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                 </TableCell>
+                <TableCell className="text-right"><RatioPill ratio={r.stock_sale_ratio} /></TableCell>
                 <TableCell className="text-right font-mono">{r.total_fine_kg.toFixed(3)}</TableCell>
                 <TableCell className="text-right font-mono">{formatIndianCurrency(r.total_labour_inr)}</TableCell>
                 <TableCell className="text-right font-mono text-green-600">{r.sale_kg.toFixed(3)}</TableCell>
@@ -711,7 +730,7 @@ function ItemTable({ rows, excludedStamps, sortConfig, onSort, chartKey, chartCa
                 <TableCell className="text-right font-mono">{r.transactions}</TableCell>
               </TableRow>
               {chartKey === `item:${r.item_name}` && (
-                <ChartRow colSpan={12} drill={chartCache[`item:${r.item_name}`]} loading={chartLoading && chartCache[`item:${r.item_name}`] === undefined} />
+                <ChartRow colSpan={13} drill={chartCache[`item:${r.item_name}`]} loading={chartLoading && chartCache[`item:${r.item_name}`] === undefined} />
               )}
               </FragmentRow>
             );
