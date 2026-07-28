@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/badge';
 
 const ratioMeta = (ratio) => {
   if (ratio === null || ratio === undefined) return { label: 'No sales', cls: 'bg-red-100 text-red-700 border-red-300' };
-  if (ratio < 0) return { label: 'Negative stock', cls: 'bg-red-100 text-red-700 border-red-300' };
+  if (ratio < 0) return { label: 'Neg. stock, selling', cls: 'bg-green-100 text-green-700 border-green-300' };
   if (ratio <= 2) return { label: 'Healthy', cls: 'bg-green-100 text-green-700 border-green-300' };
   if (ratio <= 4) return { label: 'Watch', cls: 'bg-amber-100 text-amber-700 border-amber-300' };
   return { label: 'Overstocked', cls: 'bg-red-100 text-red-700 border-red-300' };
