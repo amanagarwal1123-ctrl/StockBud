@@ -156,6 +156,13 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Tested (self)**: curl item + stamp + 400 case (27 days, ratio math verified); desktop screenshots (item chart red 'Negative stock' badge — preview data artifact; stamp chart green 'Healthy 0.03×'); mobile 390px screenshot — chart 326px wide, fits fully.
 - **ACTION REQUIRED BY USER**: REDEPLOY to get this on production.
 
+## Sales Report — Monthly-Average Ratio + Ratio Column + Merged Names (Jul 28, 2026 — session 6e)
+- **User bug**: multi-month ranges diluted the Stock:Sale ratio (divided by TOTAL period sale). FIX: ratio = avg day-opening stock ÷ AVG MONTHLY sale (months_equiv = elapsed_days/30.44, range capped at today IST). Applied in BOTH `/analytics/sales-report` (new per-row computation) and `/analytics/sales-report-drill` (also returns `avg_monthly_sale_kg`, chart shows 'Sale/Mo' badge).
+- **New ratio column**: `stock_sale_ratio` + `avg_stock_kg` on every by_item/by_stamp row (single-pass: opening inventory as-of prev day + streamed txn deltas per leader; stamp = sum of leader avg stocks). Sortable 'Stock:Sale' column right after 'Avg Labour ₹/kg' in both tables + stamp sub-rows, rendered as colored `RatioPill` (exported from StockSaleChart.jsx): ≤2 green, ≤4 amber, >4/negative/null red. ChartRow colSpans now 14 (stamp) / 13 (item).
+- **Merged names**: by_item rows include `merged_names` (variant raw names folded into the leader, seen in period, max 10); shown in small indigo text 'incl. …' under the item name on MAIN rows (`merged-names-{item}`) and stamp sub-rows — no expansion needed. (Leader-level combining of mapped items already existed.)
+- **Tested (iteration_42.json — 100% backend + frontend)**: full-year math verified ≠ old formula, drill == table ratio, merged names correct with no duplicate row, 14/13 column alignment verified, sorting works, regression totals clean. Pytest: tests/test_iteration_42_sales_ratio.py (6/6).
+- **ACTION REQUIRED BY USER**: REDEPLOY.
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document
