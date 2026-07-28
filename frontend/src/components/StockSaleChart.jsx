@@ -21,7 +21,7 @@ export const RatioPill = ({ ratio }) => {
 export const StockSaleChart = ({ drill, loading }) => {
   if (loading) return <div className="py-8 text-center text-sm text-muted-foreground" data-testid="stock-sale-chart-loading">Loading stock vs sale…</div>;
   if (!drill) return <div className="py-8 text-center text-sm text-red-600" data-testid="stock-sale-chart-error">Could not load chart</div>;
-  const rows = (drill.days || []).map((d) => ({ ...d, day: d.date.slice(8, 10) }));
+  const rows = drill.days || [];
   const rm = ratioMeta(drill.stock_to_sale_ratio);
   return (
     <div className="space-y-2" data-testid="stock-sale-chart">
@@ -46,12 +46,12 @@ export const StockSaleChart = ({ drill, loading }) => {
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={rows} margin={{ top: 5, right: 0, left: -6, bottom: 0 }} barCategoryGap="12%">
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-            <XAxis dataKey="day" tick={{ fontSize: 9 }} tickLine={false} interval="preserveStartEnd" minTickGap={6} />
+            <XAxis dataKey="date" tickFormatter={(v) => v.slice(8, 10)} tick={{ fontSize: 9 }} tickLine={false} interval="preserveStartEnd" minTickGap={6} />
             <YAxis yAxisId="stock" tick={{ fontSize: 9, fill: '#6366f1' }} tickLine={false} axisLine={false} width={42} />
             <YAxis yAxisId="sale" orientation="right" tick={{ fontSize: 9, fill: '#e11d48' }} tickLine={false} axisLine={false} width={38} />
             <Tooltip
               formatter={(v, k) => [`${Number(v).toFixed(3)} kg`, k === 'stock_kg' ? 'Stock (day opening)' : 'Sold that day']}
-              labelFormatter={(l, p) => p?.[0]?.payload?.date || l}
+              labelFormatter={(l) => l}
               contentStyle={{ fontSize: 11, borderRadius: 8 }}
             />
             <Legend formatter={(v) => <span style={{ fontSize: 10 }}>{v === 'stock_kg' ? 'Day-opening net stock (kg)' : 'Day sale (kg)'}</span>} />

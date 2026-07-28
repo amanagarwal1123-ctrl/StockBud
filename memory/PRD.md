@@ -163,6 +163,14 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Tested (iteration_42.json — 100% backend + frontend)**: full-year math verified ≠ old formula, drill == table ratio, merged names correct with no duplicate row, 14/13 column alignment verified, sorting works, regression totals clean. Pytest: tests/test_iteration_42_sales_ratio.py (6/6).
 - **ACTION REQUIRED BY USER**: REDEPLOY.
 
+## Stock vs Sale Chart — Cursor Tracking Fix + Negative Ratio Green (Jul 28, 2026 — session 7)
+- **User bug**: red active dot on drill chart didn't move horizontally with cursor; also asked to verify ratio math and make negative ratios green.
+- **Root cause (dot)**: XAxis `dataKey="day"` used day-of-month only — duplicated across multi-month ranges, so Recharts snapped the active dot/tooltip to the FIRST matching category. FIX (`StockSaleChart.jsx`): XAxis now uses full unique `date` with `tickFormatter` showing day only; tooltip label = full date.
+- **Ratio math verified** (no change needed): both `/analytics/sales-report` (`_ratio`) and `/analytics/sales-report-drill` compute `avg day-opening stock ÷ (total sale ÷ months_equiv)`, negative sign preserved.
+- **Negative = green**: `ratioMeta` (ratio < 0 → green 'Neg. stock, selling') was already in code from session 6e — user's red screenshot was PRODUCTION (not yet redeployed).
+- **Verified (preview screenshot)**: 6-month range tooltip @30% = 2026-02-21, @70% = 2026-05-10 (tracks); 3 negative pills confirmed `text-green-700`.
+- **ACTION REQUIRED BY USER**: REDEPLOY.
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document
