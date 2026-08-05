@@ -17,3 +17,9 @@
 
 ## Manager
 - Username: `SMANAGER` (password set by admin on production)
+
+## Sales Manager
+- Username: `TEST_SM`
+- Password: `sm123`
+- Role: `sales_manager` — sees Sales View (/manager-sales) restricted to assigned stamps + last 2 months; has executive stock-entry powers, NO approval rights
+- Preview stamp assignments: STAMP 5, STAMP 7, Unassigned (the 'Unassigned' one exists so preview data shows in the view)

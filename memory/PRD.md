@@ -171,6 +171,14 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Verified (preview screenshot)**: 6-month range tooltip @30% = 2026-02-21, @70% = 2026-05-10 (tracks); 3 negative pills confirmed `text-green-700`.
 - **ACTION REQUIRED BY USER**: REDEPLOY.
 
+## Sales Manager Role + Restricted Sales View (Aug 5, 2026 — session 8)
+- **User request**: new `sales_manager` role — sees item-wise & stamp-wise sales (gross+net weight ONLY), limited to last 2 months and to stamps assigned via Stamp Assign; sortable by name/weight; also has all stock-entry-executive powers but NO approval rights; Stamp Assign dropdown shows only managers/sales managers (one manager → multiple stamps).
+- **Backend (`server.py`)**: `sales_manager` added to role validation (create ~1120, update ~1196), `/executive/stock-entry` gate, `/polythene/all` gate. New `GET /api/analytics/sales-manager-report?start_date=&end_date=` (before sales-report-drill): roles sales_manager/admin; window earliest = min(today−60d, first day of prev month) IST, 400 outside; filters to `stamp_assignments` where assigned_user==caller (admin unrestricted); streams sale/sale_return txns (canonical signed abs×sign), group-leader + stamp resolution identical to sales-report, EXCLUDED_ITEMS skipped; returns by_item/by_stamp rows {name, stamp, gross_wt_kg, net_wt_kg}, totals, assigned_stamps, window, no_stamps_assigned flag.
+- **Frontend**: new `pages/ManagerSalesView.jsx` (/manager-sales): This Month / Last Month / custom range (client+server capped to window), By Item / By Stamp tabs, sortable Name/Gross/Net headers, totals cards, assigned-stamp chips, no-stamps amber alert. App.js redirect sales_manager→/manager-sales; Layout nav (Stock Entry, Sales View, Notifications, Inventory>Polythene Mgmt); AuthContext isSalesManager; PolytheneManagement canAccess + sales_manager; UserManagement role option + purple badge; StampAssignments dropdown filtered to manager/sales_manager, description updated.
+- **Approval rights explicitly NOT granted**: /manager/* endpoints stay manager/admin (verified 403 for TEST_SM).
+- **Tested (iteration_43.json — 100% backend 15/15 + 100% frontend)**: filtering, window enforcement, role gates, math parity with admin sales-report (July: 1096.830 gross / 937.167 net), sorting, custom-range toast block, stamp-assign dropdown only shows SMANAGER + TEST_SM, admin sales-report regression clean. Regression suite: `tests/test_sales_manager_feature.py`.
+- **Credentials**: TEST_SM / sm123 (preview). **ACTION REQUIRED BY USER**: REDEPLOY, then create real sales manager users + assign stamps on production.
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document
