@@ -5,7 +5,7 @@ import concurrent.futures
 import requests
 import pytest
 
-BASE = os.environ.get("REACT_APP_BACKEND_URL", "https://alias-mapping-debug.preview.emergentagent.com").rstrip("/")
+BASE = os.environ.get("REACT_APP_BACKEND_URL", "https://stock-vs-sales.preview.emergentagent.com").rstrip("/")
 
 
 @pytest.fixture(scope="module")

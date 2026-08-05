@@ -14,7 +14,7 @@ import pytest
 import httpx
 import os
 
-BASE = os.environ.get("REACT_APP_BACKEND_URL", "https://alias-mapping-debug.preview.emergentagent.com")
+BASE = os.environ.get("REACT_APP_BACKEND_URL", "https://stock-vs-sales.preview.emergentagent.com")
 API = f"{BASE}/api"
 
 @pytest.fixture(scope="module")

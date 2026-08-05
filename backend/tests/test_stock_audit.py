@@ -3,7 +3,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://alias-mapping-debug.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://stock-vs-sales.preview.emergentagent.com').rstrip('/')
 API = f"{BASE_URL}/api"
 
 ADMIN = {"username": "admin", "password": "admin123"}
