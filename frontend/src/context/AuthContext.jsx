@@ -165,6 +165,7 @@ export const AuthProvider = ({ children }) => {
     isAdmin: user?.role === 'admin',
     isManager: user?.role === 'manager',
     isExecutive: user?.role === 'executive',
+    isSalesManager: user?.role === 'sales_manager',
     showBrowserNotification,
   };
 

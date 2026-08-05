@@ -1117,7 +1117,7 @@ async def create_user(
         raise HTTPException(status_code=400, detail="Username already exists")
     
     # Validate role
-    if request.role not in ['admin', 'manager', 'executive', 'polythene_executive']:
+    if request.role not in ['admin', 'manager', 'executive', 'polythene_executive', 'sales_manager']:
         raise HTTPException(status_code=400, detail="Invalid role")
     
     # Create user
@@ -1193,7 +1193,7 @@ async def update_user(
     
     # Update role if provided
     if 'role' in request and request['role']:
-        if request['role'] not in ['admin', 'manager', 'executive', 'polythene_executive']:
+        if request['role'] not in ['admin', 'manager', 'executive', 'polythene_executive', 'sales_manager']:
             raise HTTPException(status_code=400, detail="Invalid role")
         update_data['role'] = request['role']
     
@@ -2090,7 +2090,7 @@ async def save_executive_stock_entry(
     - Each stamp shown by its last submission timestamp
     """
     
-    if current_user['role'] not in ['executive', 'manager', 'admin']:
+    if current_user['role'] not in ['executive', 'manager', 'admin', 'sales_manager']:
         raise HTTPException(status_code=403, detail="Access denied")
     
     stamp = request.get('stamp')
@@ -2272,7 +2272,7 @@ async def get_pending_approvals(current_user: dict = Depends(get_current_user)):
 @api_router.get("/polythene/all")
 async def get_all_polythene_adjustments(current_user: dict = Depends(get_current_user)):
     """Get ALL polythene adjustments from all time (admin and executive)"""
-    if current_user['role'] not in ['admin', 'executive']:
+    if current_user['role'] not in ['admin', 'executive', 'sales_manager']:
         raise HTTPException(status_code=403, detail="Access denied")
     
     entries = await db.polythene_adjustments.find({}, {"_id": 0}).sort('created_at', -1).to_list(None)
@@ -5386,6 +5386,100 @@ async def get_sales_report(
             }
             for name, v in excluded_by_item.items()
         ], key=lambda r: r['amount_inr'], reverse=True),
+    }
+
+
+@api_router.get("/analytics/sales-manager-report")
+async def get_sales_manager_report(
+    start_date: str = Query(...),
+    end_date: str = Query(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """Restricted sales view for sales managers: gross + net weight only,
+    limited to stamps assigned to the user (stamp_assignments) and to the
+    last 2 months (rolling 60 days, extended to cover the full previous month)."""
+    if current_user['role'] not in ['sales_manager', 'admin']:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    try:
+        datetime.strptime(start_date, '%Y-%m-%d')
+        datetime.strptime(end_date, '%Y-%m-%d')
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Dates must be YYYY-MM-DD")
+    if start_date > end_date:
+        raise HTTPException(status_code=400, detail="start_date must be on or before end_date")
+
+    today_dt = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+    today_s = today_dt.strftime('%Y-%m-%d')
+    first_prev_month = (today_dt.replace(day=1) - timedelta(days=1)).replace(day=1)
+    earliest = min(today_dt - timedelta(days=60), first_prev_month).strftime('%Y-%m-%d')
+    if start_date < earliest or end_date > today_s:
+        raise HTTPException(status_code=400, detail=f"Date range limited to the last 2 months ({earliest} to {today_s})")
+
+    assignments = await db.stamp_assignments.find(
+        {'assigned_user': current_user['username']}, {"_id": 0, "stamp": 1}).to_list(None)
+    my_stamps = {a['stamp'] for a in assignments}
+    restrict = current_user['role'] == 'sales_manager'
+    if restrict and not my_stamps:
+        return {'period': {'start_date': start_date, 'end_date': end_date},
+                'window': {'earliest_allowed': earliest, 'latest_allowed': today_s},
+                'assigned_stamps': [], 'no_stamps_assigned': True,
+                'by_stamp': [], 'by_item': [],
+                'totals': {'gross_wt_kg': 0, 'net_wt_kg': 0}}
+
+    EXCLUDED = {"SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"}
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
+    mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
+    master_list = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(None)
+    stamp_lookup = {m['item_name']: (m.get('stamp') or 'Unassigned') for m in master_list}
+    map_dict, m2l, _ = build_group_maps(all_groups, mappings)
+
+    from collections import defaultdict as _dd
+    by_stamp = _dd(lambda: {'gross_g': 0.0, 'net_g': 0.0})
+    by_item = _dd(lambda: {'stamp': '', 'gross_g': 0.0, 'net_g': 0.0})
+
+    async for t in db.transactions.find({
+            'date': {'$gte': start_date, '$lte': end_date + ' 23:59:59'},
+            'type': {'$in': ['sale', 'sale_return']}},
+            {"_id": 0, "type": 1, "item_name": 1, "net_wt": 1, "gr_wt": 1}):
+        raw = t.get('item_name', '') or ''
+        if not raw or raw.isdigit():
+            continue
+        leader = resolve_to_leader(raw, map_dict, m2l)
+        if leader in EXCLUDED:
+            continue
+        stamp = stamp_lookup.get(leader, stamp_lookup.get(map_dict.get(raw, raw), 'Unassigned')) or 'Unassigned'
+        if restrict and stamp not in my_stamps:
+            continue
+        sign = -1 if t['type'] == 'sale_return' else 1
+        gw = abs(t.get('gr_wt', 0) or 0) * sign
+        nw = abs(t.get('net_wt', 0) or 0) * sign
+        s = by_stamp[stamp]
+        s['gross_g'] += gw
+        s['net_g'] += nw
+        i = by_item[leader]
+        i['stamp'] = stamp
+        i['gross_g'] += gw
+        i['net_g'] += nw
+
+    stamps_rows = sorted([
+        {'stamp': k, 'gross_wt_kg': round(v['gross_g'] / 1000, 3), 'net_wt_kg': round(v['net_g'] / 1000, 3)}
+        for k, v in by_stamp.items()], key=lambda r: r['net_wt_kg'], reverse=True)
+    items_rows = sorted([
+        {'item_name': k, 'stamp': v['stamp'], 'gross_wt_kg': round(v['gross_g'] / 1000, 3), 'net_wt_kg': round(v['net_g'] / 1000, 3)}
+        for k, v in by_item.items()], key=lambda r: r['net_wt_kg'], reverse=True)
+
+    return {
+        'period': {'start_date': start_date, 'end_date': end_date},
+        'window': {'earliest_allowed': earliest, 'latest_allowed': today_s},
+        'assigned_stamps': sorted(my_stamps),
+        'no_stamps_assigned': False,
+        'by_stamp': stamps_rows,
+        'by_item': items_rows,
+        'totals': {
+            'gross_wt_kg': round(sum(r['gross_wt_kg'] for r in stamps_rows), 3),
+            'net_wt_kg': round(sum(r['net_wt_kg'] for r in stamps_rows), 3),
+        },
     }
 
 

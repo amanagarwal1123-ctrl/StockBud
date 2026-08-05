@@ -37,7 +37,7 @@ export default function StampAssignments() {
         axios.get(`${API}/master-items`)
       ]);
       setAssignments(aRes.data.assignments || []);
-      setUsers(uRes.data || []);
+      setUsers((uRes.data || []).filter(u => ['manager', 'sales_manager'].includes(u.role) && u.is_active !== false));
       const stampSet = new Set(mRes.data.map(i => i.stamp).filter(Boolean));
       // Natural sort: STAMP 1, STAMP 2, ... STAMP 10, STAMP 11
       setStamps(Array.from(stampSet).sort((a, b) => {
@@ -93,7 +93,7 @@ export default function StampAssignments() {
     <div className="p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-6" data-testid="stamp-assignments-page">
       <div>
         <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Stamp Assignments</h1>
-        <p className="text-sm text-muted-foreground mt-1">Assign users to stamps for stock deficit/excess notifications</p>
+        <p className="text-sm text-muted-foreground mt-1">Assign stamps to managers — a sales manager only sees sales for their assigned stamps. One manager can hold multiple stamps.</p>
       </div>
 
       {/* Add Assignment */}
@@ -116,7 +116,7 @@ export default function StampAssignments() {
                 <Select value={editUser} onValueChange={setEditUser}>
                   <SelectTrigger data-testid="assign-user-select"><SelectValue placeholder="Select User" /></SelectTrigger>
                   <SelectContent>
-                    {users.map(u => <SelectItem key={u.username} value={u.username}>{u.username} ({u.role})</SelectItem>)}
+                    {users.map(u => <SelectItem key={u.username} value={u.username}>{u.username} ({u.role === 'sales_manager' ? 'Sales Manager' : 'Manager'})</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>

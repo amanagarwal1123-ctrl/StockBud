@@ -78,7 +78,7 @@ export default function PolytheneManagement() {
   const [loading, setLoading] = useState(true);
 
   const { isAdmin, user } = useAuth();
-  const canAccess = user?.role === 'admin' || user?.role === 'executive';
+  const canAccess = user?.role === 'admin' || user?.role === 'executive' || user?.role === 'sales_manager';
 
   useEffect(() => {
     if (canAccess) {

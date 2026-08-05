@@ -62,16 +62,17 @@ export default function Layout({ children }) {
       id: 'main',
       items: [
         { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['admin'] },
-        { name: 'Stock Entry', href: '/executive-entry', icon: Package, roles: ['executive'] },
+        { name: 'Stock Entry', href: '/executive-entry', icon: Package, roles: ['executive', 'sales_manager'] },
+        { name: 'Sales View', href: '/manager-sales', icon: FileText, roles: ['sales_manager'] },
         { name: 'Polythene Entry', href: '/polythene-entry', icon: Box, roles: ['polythene_executive'] },
-        { name: 'Notifications', href: '/notifications', icon: Receipt, roles: ['manager', 'admin', 'executive'] },
+        { name: 'Notifications', href: '/notifications', icon: Receipt, roles: ['manager', 'admin', 'executive', 'sales_manager'] },
       ]
     },
     {
       id: 'inventory',
       label: 'Inventory',
       icon: Package,
-      roles: ['admin', 'executive'],
+      roles: ['admin', 'executive', 'sales_manager'],
       items: [
         { name: 'Upload Files', href: '/upload', icon: Upload, roles: ['admin'] },
         { name: 'Historical Upload', href: '/historical-upload', icon: FileUp, roles: ['admin'] },
@@ -80,7 +81,7 @@ export default function Layout({ children }) {
         { name: 'Item Mapping', href: '/item-mapping', icon: Link2, roles: ['admin'] },
         { name: 'Manage Mappings', href: '/mapping-management', icon: GitBranch, roles: ['admin'] },
         { name: 'Purchase Rates', href: '/purchase-rates', icon: Receipt, roles: ['admin'] },
-        { name: 'Polythene Mgmt', href: '/polythene-management', icon: Box, roles: ['admin', 'executive'] },
+        { name: 'Polythene Mgmt', href: '/polythene-management', icon: Box, roles: ['admin', 'executive', 'sales_manager'] },
       ]
     },
     {

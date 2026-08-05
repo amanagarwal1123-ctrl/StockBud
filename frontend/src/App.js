@@ -19,6 +19,7 @@ import MappingManagement from './pages/MappingManagement';
 import PurchaseRates from './pages/PurchaseRates';
 import UserManagement from './pages/UserManagement';
 import ExecutiveStockEntry from './pages/ExecutiveStockEntry';
+import ManagerSalesView from './pages/ManagerSalesView';
 import ManagerApprovals from './pages/ManagerApprovals';
 import Notifications from './pages/Notifications';
 import PolytheneEntry from './pages/PolytheneEntry';
@@ -61,6 +62,8 @@ function ProtectedRoute({ children }) {
       return <Navigate to="/executive-entry" replace />;
     } else if (user?.role === 'manager') {
       return <Navigate to="/physical-vs-book" replace />;
+    } else if (user?.role === 'sales_manager') {
+      return <Navigate to="/manager-sales" replace />;
     }
   }
   
@@ -97,6 +100,7 @@ function App() {
                       <Route path="/stamps" element={<StampManagement />} />
                       <Route path="/users" element={<UserManagement />} />
                       <Route path="/executive-entry" element={<ExecutiveStockEntry />} />
+                      <Route path="/manager-sales" element={<ManagerSalesView />} />
                       <Route path="/polythene-entry" element={<PolytheneEntry />} />
                       <Route path="/polythene-management" element={<PolytheneManagement />} />
                       <Route path="/approvals" element={<ManagerApprovals />} />
