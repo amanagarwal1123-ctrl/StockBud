@@ -178,6 +178,7 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Approval rights explicitly NOT granted**: /manager/* endpoints stay manager/admin (verified 403 for TEST_SM).
 - **Tested (iteration_43.json — 100% backend 15/15 + 100% frontend)**: filtering, window enforcement, role gates, math parity with admin sales-report (July: 1096.830 gross / 937.167 net), sorting, custom-range toast block, stamp-assign dropdown only shows SMANAGER + TEST_SM, admin sales-report regression clean. Regression suite: `tests/test_sales_manager_feature.py`.
 - **Credentials**: TEST_SM / sm123 (preview). **ACTION REQUIRED BY USER**: REDEPLOY, then create real sales manager users + assign stamps on production.
+- **Follow-up (Aug 6, 2026)**: Total Gross/Net cards REMOVED from Sales View per user — `totals` stripped from the API response and the UI (per-row weights only). Verified sale − sale_return math is applied (sale_return rows signed −1). Regression suite updated, 15/15 pass; UI screenshot confirms no totals, 253 rows.
 
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure

@@ -5424,8 +5424,7 @@ async def get_sales_manager_report(
         return {'period': {'start_date': start_date, 'end_date': end_date},
                 'window': {'earliest_allowed': earliest, 'latest_allowed': today_s},
                 'assigned_stamps': [], 'no_stamps_assigned': True,
-                'by_stamp': [], 'by_item': [],
-                'totals': {'gross_wt_kg': 0, 'net_wt_kg': 0}}
+                'by_stamp': [], 'by_item': []}
 
     EXCLUDED = {"SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"}
     all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
@@ -5476,10 +5475,6 @@ async def get_sales_manager_report(
         'no_stamps_assigned': False,
         'by_stamp': stamps_rows,
         'by_item': items_rows,
-        'totals': {
-            'gross_wt_kg': round(sum(r['gross_wt_kg'] for r in stamps_rows), 3),
-            'net_wt_kg': round(sum(r['net_wt_kg'] for r in stamps_rows), 3),
-        },
     }
 
 

@@ -72,7 +72,8 @@ class TestSalesManagerReport:
         assert r.status_code == 200, r.text[:300]
         d = r.json()
         assert set(["period", "window", "assigned_stamps", "no_stamps_assigned",
-                    "by_stamp", "by_item", "totals"]).issubset(d.keys())
+                    "by_stamp", "by_item"]).issubset(d.keys())
+        assert "totals" not in d, "totals must NOT be exposed to sales managers"
         assert d["no_stamps_assigned"] is False
         assert isinstance(d["assigned_stamps"], list) and len(d["assigned_stamps"]) >= 1
         assigned = set(d["assigned_stamps"])
@@ -83,7 +84,6 @@ class TestSalesManagerReport:
         for row in d["by_item"]:
             assert row["stamp"] in assigned
             assert set(row.keys()) == {"item_name", "stamp", "gross_wt_kg", "net_wt_kg"}
-        assert set(d["totals"].keys()) == {"gross_wt_kg", "net_wt_kg"}
 
     def test_expected_assigned_stamps(self, sm_token, date_window):
         r = requests.get(
@@ -146,11 +146,13 @@ class TestSalesManagerReport:
             return 0
         admin_gross = round(sum(_gg(r) for r in admin_filtered), 3)
         admin_net = round(sum(_nn(r) for r in admin_filtered), 3)
-        # Compare with SM totals (tolerance 0.01 kg)
-        assert abs(sm["totals"]["gross_wt_kg"] - admin_gross) < 0.05, \
-            f"SM gross {sm['totals']['gross_wt_kg']} vs admin {admin_gross}"
-        assert abs(sm["totals"]["net_wt_kg"] - admin_net) < 0.05, \
-            f"SM net {sm['totals']['net_wt_kg']} vs admin {admin_net}"
+        # Compare with SM row sums (tolerance 0.05 kg)
+        sm_gross = round(sum(r["gross_wt_kg"] for r in sm["by_stamp"]), 3)
+        sm_net = round(sum(r["net_wt_kg"] for r in sm["by_stamp"]), 3)
+        assert abs(sm_gross - admin_gross) < 0.05, \
+            f"SM gross {sm_gross} vs admin {admin_gross}"
+        assert abs(sm_net - admin_net) < 0.05, \
+            f"SM net {sm_net} vs admin {admin_net}"
 
 
 # ------- Role gates ----
@@ -223,7 +225,7 @@ class TestSalesManagerUserAdmin:
                          headers=_hdr(tok), timeout=30).json()
         assert r["no_stamps_assigned"] is True
         assert r["by_stamp"] == [] and r["by_item"] == []
-        assert r["totals"] == {"gross_wt_kg": 0, "net_wt_kg": 0}
+        assert "totals" not in r
         requests.delete(f"{BASE_URL}/api/users/{self.tmp_no_stamp_user}",
                         headers=_hdr(admin_token), timeout=30)
 

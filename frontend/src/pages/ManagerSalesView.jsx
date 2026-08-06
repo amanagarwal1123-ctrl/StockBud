@@ -171,22 +171,7 @@ export default function ManagerSalesView() {
         </CardContent>
       </Card>
 
-      {/* Totals */}
-      <div className="grid grid-cols-2 gap-3 sm:max-w-md">
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-muted-foreground">Total Gross Wt</p>
-            <p className="text-2xl font-bold" data-testid="total-gross">{loading ? '…' : `${(data?.totals?.gross_wt_kg ?? 0).toFixed(3)} kg`}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-muted-foreground">Total Net Wt</p>
-            <p className="text-2xl font-bold" data-testid="total-net">{loading ? '…' : `${(data?.totals?.net_wt_kg ?? 0).toFixed(3)} kg`}</p>
-          </CardContent>
-        </Card>
-      </div>
-
+      {/* Totals intentionally hidden — sales managers see per-row weights only */}
       {/* Table */}
       <Card>
         <CardHeader className="pb-2 flex flex-row items-center justify-between">
