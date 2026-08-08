@@ -35,9 +35,15 @@ const RESET_CATEGORIES = [
   { id: 'mappings', label: 'Item Mappings', desc: 'Transaction-to-master name mappings' },
   { id: 'physical_stock', label: 'Physical Stock', desc: 'Physical inventory & stock entries' },
   { id: 'purchase_ledger', label: 'Purchase Ledger', desc: 'Cumulative purchase rates' },
+  { id: 'stock_reconciliation', label: 'Stock Reconciliation History', desc: 'Physical stock update sessions, baselines, snapshots & replaced records' },
+  { id: 'stamp_verification', label: 'Stamp Verification Status', desc: 'Stamp verification records & approval statuses' },
+  { id: 'historical', label: 'Historical Data', desc: 'Historical year uploads & monthly summaries' },
+  { id: 'item_buffers', label: 'Item Buffers', desc: 'Buffer/reorder settings per item' },
+  { id: 'item_groups', label: 'Item Groups', desc: 'Item group definitions' },
+  { id: 'orders', label: 'Orders', desc: 'All order records' },
   { id: 'notifications', label: 'Notifications & Logs', desc: 'Notifications and activity log' },
   { id: 'history', label: 'Action History', desc: 'Upload history & undo records' },
-  { id: 'master_stock', label: 'Master Stock', desc: 'Zeros out all item quantities & opening stock (keeps items, stamps, mappings intact)' },
+  { id: 'master_stock', label: 'Current Stock', desc: 'Zeros out all item quantities & opening stock (keeps items & stamps intact)' },
 ];
 
 export default function Layout({ children }) {

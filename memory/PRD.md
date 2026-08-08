@@ -411,3 +411,15 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - Login page restyled RED: dark maroon background, red icon/button, "KB" in red.
 - Hardcoded chart/stat colors updated: Dashboard stat cards (teal/rose/orange/yellow), Dashboard bar chart (#0f766e), DataVisualization CHART_COLORS, YearComparison YEAR_PALETTE, PartyAnalytics net-wt color.
 - Verified via screenshots (login + admin dashboard). NOTE: change is in PREVIEW only — user must redeploy to push to production.
+
+## Complete Reset Data feature (Jun 8, 2026)
+- Added 6 new reset categories to Reset Data dialog + backend /api/system/reset:
+  - stock_reconciliation: physical_stock_update_sessions, replaced_records, inventory_snapshots, inventory_baselines
+  - stamp_verification: stamp_verifications, stamp_approvals
+  - historical: historical_transactions, monthly_summaries
+  - item_buffers, item_groups, orders
+- Renamed 'Master Stock' label to 'Current Stock' (still zeroes master_items + opening_stock quantities, keeps structure).
+- 'all_data' nuclear option now includes all new collections + upload_sessions/chunks/app_cache.
+- Preserved on reset: users (all logins), master item/stamp structure, stamp_assignments.
+- TESTED: Full reset run on PREVIEW via curl — 39k+ test records wiped, all collections verified empty. Preview DB is now clean.
+- User must DEPLOY, then on production: sidebar → Reset Data → Select All → password "CLOSE".

@@ -6336,6 +6336,35 @@ async def reset_system(request: ResetRequest, current_user: dict = Depends(get_c
         r = await db.purchase_ledger.delete_many({})
         results['purchase_ledger'] = r.deleted_count
     
+    if 'stock_reconciliation' in request.categories:
+        r1 = await db.physical_stock_update_sessions.delete_many({})
+        r2 = await db.replaced_records.delete_many({})
+        r3 = await db.inventory_snapshots.delete_many({})
+        r4 = await db.inventory_baselines.delete_many({})
+        results['stock_reconciliation'] = r1.deleted_count + r2.deleted_count + r3.deleted_count + r4.deleted_count
+    
+    if 'stamp_verification' in request.categories:
+        r1 = await db.stamp_verifications.delete_many({})
+        r2 = await db.stamp_approvals.delete_many({})
+        results['stamp_verification'] = r1.deleted_count + r2.deleted_count
+    
+    if 'historical' in request.categories:
+        r1 = await db.historical_transactions.delete_many({})
+        r2 = await db.monthly_summaries.delete_many({})
+        results['historical'] = r1.deleted_count + r2.deleted_count
+    
+    if 'item_buffers' in request.categories:
+        r = await db.item_buffers.delete_many({})
+        results['item_buffers'] = r.deleted_count
+    
+    if 'item_groups' in request.categories:
+        r = await db.item_groups.delete_many({})
+        results['item_groups'] = r.deleted_count
+    
+    if 'orders' in request.categories:
+        r = await db.orders.delete_many({})
+        results['orders'] = r.deleted_count
+    
     if 'notifications' in request.categories:
         r1 = await db.notifications.delete_many({})
         r2 = await db.activity_log.delete_many({})
@@ -6356,7 +6385,11 @@ async def reset_system(request: ResetRequest, current_user: dict = Depends(get_c
         for coll in ['transactions', 'polythene_adjustments', 'item_mappings',
                       'physical_inventory', 'physical_stock', 'stock_entries', 'purchase_ledger',
                       'notifications', 'activity_log', 'action_history',
-                      'stamp_approvals', 'inventory_snapshots']:
+                      'stamp_approvals', 'inventory_snapshots',
+                      'physical_stock_update_sessions', 'replaced_records', 'inventory_baselines',
+                      'stamp_verifications', 'historical_transactions', 'monthly_summaries',
+                      'item_buffers', 'item_groups', 'orders',
+                      'upload_sessions', 'upload_chunks', 'app_cache']:
             await db[coll].delete_many({})
         # Zero out master stock quantities but keep items & stamps
         await db.master_items.update_many({}, {"$set": {"gr_wt": 0, "net_wt": 0}})
