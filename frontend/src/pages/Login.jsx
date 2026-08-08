@@ -34,15 +34,17 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-accent/5">
-      <Card className="w-full max-w-md border-border/40 shadow-lg">
+    <div className="min-h-screen flex items-center justify-center bg-[hsl(355,65%,22%)]" data-testid="login-page">
+      <Card className="w-full max-w-md border-red-900/30 shadow-2xl">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
-            <div className="p-4 bg-primary/10 rounded-full">
-              <Package className="h-12 w-12 text-primary" />
+            <div className="p-4 bg-red-600/10 rounded-full">
+              <Package className="h-12 w-12 text-red-600" />
             </div>
           </div>
-          <CardTitle className="text-3xl font-bold">StockBud</CardTitle>
+          <CardTitle className="text-3xl font-bold">
+            StockBud <span className="text-red-600">KB</span>
+          </CardTitle>
           <CardDescription className="text-base">
             Silver Inventory Management System
           </CardDescription>
@@ -83,7 +85,7 @@ export default function Login() {
 
             <Button
               type="submit"
-              className="w-full"
+              className="w-full bg-red-600 hover:bg-red-700 text-white"
               disabled={loading}
             >
               {loading ? 'Signing in...' : 'Sign In'}

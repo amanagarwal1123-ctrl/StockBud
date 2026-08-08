@@ -578,12 +578,12 @@ function PartyBreakdownChart({ data, loading, metric, onMetricChange, partyType 
 
   const metricOptions = partyType === 'customer'
     ? [
-        { key: 'total_net_wt', label: 'Net Wt (kg)', color: '#7c3aed' },
+        { key: 'total_net_wt', label: 'Net Wt (kg)', color: '#0f766e' },
         { key: 'total_sales_value', label: 'Sales Value', color: '#2563eb' },
         { key: 'transaction_count', label: 'Transactions', color: '#d97706' },
       ]
     : [
-        { key: 'total_net_wt', label: 'Net Wt (kg)', color: '#7c3aed' },
+        { key: 'total_net_wt', label: 'Net Wt (kg)', color: '#0f766e' },
         { key: 'total_purchases_value', label: 'Purch. Value', color: '#16a34a' },
         { key: 'transaction_count', label: 'Transactions', color: '#d97706' },
       ];

@@ -297,6 +297,7 @@ export default function Layout({ children }) {
               <div className="flex items-center gap-1 text-2xl font-bold tracking-tight">
                 <span className="text-primary">Stock</span>
                 <span className="text-secondary">Bud</span>
+                <span className="ml-1 rounded bg-accent px-1.5 py-0.5 text-xs font-bold text-accent-foreground">KB</span>
               </div>
               <div className="h-2 w-2 rounded-full bg-accent animate-pulse"></div>
             </div>
@@ -467,7 +468,7 @@ export default function Layout({ children }) {
             )}
             
             <div className="mt-3 rounded-lg bg-gradient-to-r from-primary/10 via-secondary/10 to-accent/10 p-3 text-xs">
-              <p className="font-medium text-foreground">StockBud v2.0</p>
+              <p className="font-medium text-foreground">StockBud KB v2.0</p>
               <p className="text-muted-foreground mt-1">Intelligent Inventory</p>
             </div>
           </div>
@@ -489,6 +490,7 @@ export default function Layout({ children }) {
                   <div className="flex items-center gap-1 text-2xl font-bold tracking-tight">
                     <span className="text-primary">Stock</span>
                     <span className="text-secondary">Bud</span>
+                    <span className="ml-1 rounded bg-accent px-1.5 py-0.5 text-xs font-bold text-accent-foreground">KB</span>
                   </div>
                   <div className="h-2 w-2 rounded-full bg-accent animate-pulse"></div>
                 </div>
@@ -528,7 +530,7 @@ export default function Layout({ children }) {
                 </Button>
                 
                 <div className="mt-3 rounded-lg bg-gradient-to-r from-primary/10 via-secondary/10 to-accent/10 p-3 text-xs">
-                  <p className="font-medium text-foreground">StockBud v2.0</p>
+                  <p className="font-medium text-foreground">StockBud KB v2.0</p>
                   <p className="text-muted-foreground mt-1">Intelligent Inventory</p>
                 </div>
               </div>

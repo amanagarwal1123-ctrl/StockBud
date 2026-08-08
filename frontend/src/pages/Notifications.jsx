@@ -64,7 +64,7 @@ export default function Notifications() {
           const prevCount = prevUnread[cat.id] || 0;
           if (newNotifs.length > prevCount && prevCount > 0) {
             const diff = newNotifs.length - prevCount;
-            new window.Notification(`StockBud - ${cat.label}`, {
+            new window.Notification(`StockBud KB - ${cat.label}`, {
               body: `${diff} new ${cat.label.toLowerCase()} notification${diff > 1 ? 's' : ''}`,
               icon: '/favicon.ico',
             });

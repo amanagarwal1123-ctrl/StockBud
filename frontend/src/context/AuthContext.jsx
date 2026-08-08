@@ -76,7 +76,7 @@ export const AuthProvider = ({ children }) => {
           );
           const latest = sorted[0];
           showBrowserNotification(
-            `StockBud: New alert`,
+            `StockBud KB: New alert`,
             latest.message || 'New notification',
             `stockbud-${Date.now()}`
           );

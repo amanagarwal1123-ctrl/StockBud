@@ -12,7 +12,7 @@ import time
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 if not BASE_URL:
-    BASE_URL = "https://stock-vs-sales.preview.emergentagent.com"
+    BASE_URL = "https://sales-manager-role.preview.emergentagent.com"
 
 API_URL = f"{BASE_URL}/api"
 

@@ -16,14 +16,14 @@ const API = `${BACKEND_URL}/api`;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 // Pastel bar fills with darker companions for text/lines
 const YEAR_PALETTE = [
-  { bar: '#93c5fd', dark: '#2563eb' },
-  { bar: '#fcd34d', dark: '#b45309' },
-  { bar: '#86efac', dark: '#15803d' },
-  { bar: '#fca5a5', dark: '#b91c1c' },
-  { bar: '#d8b4fe', dark: '#7c3aed' },
+  { bar: '#5eead4', dark: '#0f766e' },
+  { bar: '#fdba74', dark: '#c2410c' },
+  { bar: '#fda4af', dark: '#be123c' },
+  { bar: '#fde047', dark: '#a16207' },
   { bar: '#a5f3fc', dark: '#0e7490' },
-  { bar: '#f9a8d4', dark: '#be185d' },
   { bar: '#d9f99d', dark: '#4d7c0f' },
+  { bar: '#f9a8d4', dark: '#be185d' },
+  { bar: '#fca5a5', dark: '#b91c1c' },
 ];
 
 const palette = (years, y) => YEAR_PALETTE[years.indexOf(Number(y)) % YEAR_PALETTE.length];

@@ -18,7 +18,7 @@ const API = `${BACKEND_URL}/api`;
 
 const TIER_CHART_COLORS = { fastest: '#ef4444', fast: '#f97316', medium: '#3b82f6', slow: '#6b7280', dead: '#d1d5db' };
 const HEALTH_COLORS = { red: '#ef4444', green: '#10b981', yellow: '#f59e0b' };
-const CHART_COLORS = ['#3b82f6', '#10b981', '#f97316', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16', '#f43f5e', '#a855f7', '#14b8a6'];
+const CHART_COLORS = ['#0f766e', '#ea580c', '#be123c', '#ca8a04', '#0e7490', '#4d7c0f', '#9f1239', '#b45309', '#115e59', '#c2410c'];
 
 export default function DataVisualization() {
   const [vizData, setVizData] = useState(null);

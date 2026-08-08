@@ -149,37 +149,37 @@ export default function Dashboard() {
       title: 'Total Transactions',
       value: stats?.total_transactions || 0,
       icon: BarChart3,
-      gradient: 'from-blue-500/15 to-blue-600/5',
-      iconBg: 'bg-blue-500/10',
-      iconColor: 'text-blue-600',
-      borderAccent: 'border-l-blue-500',
+      gradient: 'from-teal-500/15 to-teal-600/5',
+      iconBg: 'bg-teal-500/10',
+      iconColor: 'text-teal-700',
+      borderAccent: 'border-l-teal-600',
     },
     {
       title: 'Total Parties',
       value: stats?.total_parties || 0,
       icon: Users,
-      gradient: 'from-violet-500/15 to-violet-600/5',
-      iconBg: 'bg-violet-500/10',
-      iconColor: 'text-violet-600',
-      borderAccent: 'border-l-violet-500',
+      gradient: 'from-rose-500/15 to-rose-600/5',
+      iconBg: 'bg-rose-500/10',
+      iconColor: 'text-rose-700',
+      borderAccent: 'border-l-rose-600',
     },
     {
       title: 'Purchases',
       value: stats?.total_purchases || 0,
       icon: ArrowUpRight,
-      gradient: 'from-emerald-500/15 to-emerald-600/5',
-      iconBg: 'bg-emerald-500/10',
-      iconColor: 'text-emerald-600',
-      borderAccent: 'border-l-emerald-500',
+      gradient: 'from-orange-500/15 to-orange-600/5',
+      iconBg: 'bg-orange-500/10',
+      iconColor: 'text-orange-600',
+      borderAccent: 'border-l-orange-500',
     },
     {
       title: 'Sales',
       value: stats?.total_sales || 0,
       icon: TrendingUp,
-      gradient: 'from-amber-500/15 to-amber-600/5',
-      iconBg: 'bg-amber-500/10',
-      iconColor: 'text-amber-600',
-      borderAccent: 'border-l-amber-500',
+      gradient: 'from-yellow-500/15 to-yellow-600/5',
+      iconBg: 'bg-yellow-500/10',
+      iconColor: 'text-yellow-600',
+      borderAccent: 'border-l-yellow-500',
     },
   ];
 
@@ -192,7 +192,7 @@ export default function Dashboard() {
             Dashboard
           </h1>
           <p className="text-xs sm:text-base text-muted-foreground mt-1">
-            StockBud — Intelligent inventory management
+            StockBud KB — Intelligent inventory management
           </p>
         </div>
         {/* Download Manual Buttons */}
@@ -363,7 +363,7 @@ export default function Dashboard() {
                       <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                       <YAxis tick={{ fontSize: 10 }} width={45} />
                       <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} formatter={(v) => [`${v} kg`, 'Net Wt Sold']} />
-                      <Bar dataKey="net_wt_kg" fill="#7c3aed" radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="net_wt_kg" fill="#0f766e" radius={[3, 3, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>

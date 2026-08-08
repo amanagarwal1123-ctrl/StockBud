@@ -404,3 +404,10 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Seasonal fail fix**: _load_data streams column-wise into DataFrames (no list-of-dicts), margins query only sale rows, results persisted to db.app_cache key 'seasonal_results' (1h TTL, survives restarts/replicas).
 - **Visualization fail fix**: single streamed pass with 7-field projection (was full-range materialization ~750MB on production).
 - **Tested**: iteration_40.json — 14/14 backend + 100% frontend. Preview note: silver/labour profit legitimately 0.0 in preview (only 1 stamped master item); production has full stamps.
+
+## Rebrand — StockBud KB (Jun 8, 2026)
+- App renamed "StockBud" → "StockBud KB" everywhere (login, sidebar, mobile header, footer badge, dashboard subtitle, browser tab title, notifications).
+- New color theme in index.css: deep teal primary (174 70% 26%), burnt orange secondary (25 90% 46%), crimson accent (345 75% 42%), warm off-white background. Replaced old Google blue/red/green palette.
+- Login page restyled RED: dark maroon background, red icon/button, "KB" in red.
+- Hardcoded chart/stat colors updated: Dashboard stat cards (teal/rose/orange/yellow), Dashboard bar chart (#0f766e), DataVisualization CHART_COLORS, YearComparison YEAR_PALETTE, PartyAnalytics net-wt color.
+- Verified via screenshots (login + admin dashboard). NOTE: change is in PREVIEW only — user must redeploy to push to production.
