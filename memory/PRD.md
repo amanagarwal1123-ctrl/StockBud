@@ -423,3 +423,13 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - Preserved on reset: users (all logins), master item/stamp structure, stamp_assignments.
 - TESTED: Full reset run on PREVIEW via curl — 39k+ test records wiped, all collections verified empty. Preview DB is now clean.
 - User must DEPLOY, then on production: sidebar → Reset Data → Select All → password "CLOSE".
+
+## Receive-as-Purchase + Upload Manager role (Jun 8, 2026)
+- Business reality: goods come IN via branch 'receive', not 'purchase'. Changes:
+  1. Branch-transfer parsers (both legacy + chunked in server.py) now parse Tunch/Wstg/Fine/Labour/Total/Rate columns (backward compatible — files without them still work, rates = 0).
+  2. Average purchase price item-wise now aggregates purchase + purchase_return + rate-carrying receive rows: profit_helpers.fetch_fallback_purchase_stats (with _has_rate guard so zero-rate legacy receives never dilute), get_item_detail, supplier-profit, /analytics/profit purchases bucket + total_purchase_value. invalidate_fallback_cache() called after successful transaction uploads.
+- New role 'uploader' (UI label "Upload Manager (Files Only)"): sees ONLY Upload Files page (App.js locks all other routes -> /upload), can use chunked upload endpoints; 403 on everything else. NOTE: named 'uploader' because 'manager' role already exists (approvals/physical-stock role, user SMANAGER). Test user: TEST_UPLOADER/upload123.
+- Wrong-file rejection (no data corruption): _validate_headers() rejects mismatched headers (sale/purchase need Item Name+Date and no Lnarr; branch needs Lnarr+Type; stock files must NOT have Date); content sanity check rejects when *_return rows outnumber base rows (wrong Type letters); rollback restores replaced records on rejection.
+- Added role gate to /api/analytics/customer-profit (was reachable by any authenticated role).
+- TESTED: iteration_44.json — backend 15/16 (16/16 after customer-profit gate fix, re-verified via curl), frontend 100%. Test suite: /app/backend/tests/test_uploader_and_branch_receive.py.
+- Preview DB cleaned again after testing (reset run).

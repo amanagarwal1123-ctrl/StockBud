@@ -78,9 +78,9 @@ export default function Layout({ children }) {
       id: 'inventory',
       label: 'Inventory',
       icon: Package,
-      roles: ['admin', 'executive', 'sales_manager'],
+      roles: ['admin', 'executive', 'sales_manager', 'uploader'],
       items: [
-        { name: 'Upload Files', href: '/upload', icon: Upload, roles: ['admin'] },
+        { name: 'Upload Files', href: '/upload', icon: Upload, roles: ['admin', 'uploader'] },
         { name: 'Historical Upload', href: '/historical-upload', icon: FileUp, roles: ['admin'] },
         { name: 'Current Stock', href: '/current-stock', icon: Package, roles: ['admin'] },
         { name: 'Stock Audit', href: '/stock-audit', icon: Scale, roles: ['admin'] },

@@ -18,6 +18,10 @@
 ## Manager
 - Username: `SMANAGER` (password set by admin on production)
 
+## Upload Manager (uploader role — Upload Files page only)
+- Username: `TEST_UPLOADER`
+- Password: `upload123`
+
 ## Sales Manager
 - Username: `TEST_SM`
 - Password: `sm123`

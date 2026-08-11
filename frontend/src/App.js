@@ -54,6 +54,11 @@ function ProtectedRoute({ children }) {
     return <Navigate to="/login" replace />;
   }
   
+  // Upload-only role: locked to the Upload Files page
+  if (user?.role === 'uploader' && !window.location.pathname.startsWith('/upload')) {
+    return <Navigate to="/upload" replace />;
+  }
+  
   // Role-based redirects from root
   if (window.location.pathname === '/') {
     if (user?.role === 'polythene_executive') {

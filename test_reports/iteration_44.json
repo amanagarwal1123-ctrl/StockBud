@@ -1,0 +1,36 @@
+{
+  "summary": "Tested both new features: (a) branch_transfer Receive rows now parse rate columns (Tunch/Wstg/Fine/Labour/Total/Rate) and receives with rate data are counted toward avg purchase price; (b) new 'uploader' role restricted to /upload page + wrong-file-format rejection. Backend: 15/16 tests pass in /app/backend/tests/test_uploader_and_branch_receive.py. Verified — uploader can login + do full chunked branch_transfer upload; fine stored as grams (kg*1000); legacy branch files without rate columns still upload (tunch '0.0', fine 0); after uploading rate-carrying receives for an item with no purchase_ledger, GET /api/item/{name} returns avg_purchase_tunch>0 with purchase_rate_source='estimated' (waited 62s to bust the 60s cache); zero-rate legacy receive rows do NOT dilute purchase_tunch_ledger (stays ~90 vs the rate-carrying rows). Wrong-file rejection all working: master-stock-format as sale rejected (missing required columns), sale-format as branch_transfer rejected (need Lnarr+Type), purchase-format (Type=P) as sale rejected by content sanity check, and a pre-existing sale record on the same date remains untouched after the rejection (rollback restores replaced records). Uploader is correctly 403'd on /api/users/list and /api/system/reset, admin can create user with role 'uploader'. Regression sale + purchase uploads still work end-to-end. Frontend: TEST_UPLOADER lands on /upload (data-testid='upload-page'), sidebar shows ONLY '/upload' link (Dashboard/Current Stock/Analytics all hidden), manual nav to /current-stock and to / both redirect back to /upload; admin /users page role dropdown shows 'Upload Manager (Files Only)' option and admin retains full sidebar (16+ nav links incl /current-stock, /profit).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/analytics/customer-profit", "issue": "Missing role gate — 'uploader' role returns 200 OK, spec requires 403. All other spec'd admin endpoints (/users/list, /system/reset) correctly return 403. Fix: add `if current_user['role'] not in ['admin','manager']: raise HTTPException(403)` at top of get_customer_profit (~line 4144).", "priority": "HIGH"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_uploader_and_branch_receive.py",
+    "/app/test_reports/pytest/uploader_feature.xml"
+  ],
+  "action_items": [
+    "Add role gate to GET /api/analytics/customer-profit — currently accessible to 'uploader' role (should be 403 like /users/list and /system/reset)."
+  ],
+  "critical_code_review_comments": [
+    "Content sanity check for branch_transfer file_type is NOT run — only sale/purchase get the type_counts _return-vs-base check (server.py:1573-1575). A wrong file uploaded as branch_transfer relies solely on header validation; if headers happen to include Lnarr+Type (e.g. weird custom file) but content is wrong, it would go through. Header validation catches the tested cases, but consider extending the sanity check.",
+    "get_item_detail (server.py:6716-6718) counts receive rows toward 'purchases' if ANY of tunch/fine/labor/total_amount > 0 — but branch stores tunch as str('0.0') which converts to 0 correctly. Same _has_rate guard is used in profit_helpers.fetch_fallback_purchase_stats — consistent.",
+    "fetch_fallback_purchase_stats 60s cache is not invalidated by chunked-upload completion (only save_action-based invalidation elsewhere). Tests had to sleep 62s after each branch_transfer upload to see fresh averages. Consider calling invalidate_fallback_cache() after successful branch_transfer/purchase/sale batch commit."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_uploader_and_branch_receive.py"
+  ],
+  "success_rate": {"backend": "94%", "frontend": "100%"},
+  "seed_data_creation": "Uploaded small test Excel files via chunked upload: branch_transfer for items TEST_RCV_ITEM_A / TEST_RCV_LEGACY_B / TEST_RCV_FALLBACK_C / TEST_RCV_MIX_D, sale for ITEM_PRESERVE / ITEM_AFTER / ITEM_REGR_S, purchase for ITEM_REGR_P. Created + deleted TMP_UPL_TEST user in admin-create test. TEST_UPLOADER user was pre-seeded by main agent.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "admin/admin123, TEST_UPLOADER/upload123",
+  "context_for_next_testing_agent": "Backend suite at /app/backend/tests/test_uploader_and_branch_receive.py is reusable for regression (16 tests, ~200s runtime — long because of two 62s cache-bust sleeps). One test intentionally fails until the customer-profit role gate is added. Fine-grain: tunch column comes in as float, stored as str(tunch+wstg). Upload status endpoint returns error via `detail` key (not `error`) when status='error'.",
+  "rca_of_the_issue": "customer-profit endpoint (server.py:4139) doesn't check current_user['role'] before running — the auth dependency only validates the token. Uploader role has a valid token so passes through. Fix is a 2-line role-check similar to /api/users/list at server.py:1185."
+}

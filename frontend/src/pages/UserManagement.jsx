@@ -131,6 +131,7 @@ export default function UserManagement() {
       admin: 'bg-red-100 text-red-800 border-red-200',
       manager: 'bg-blue-100 text-blue-800 border-blue-200',
       sales_manager: 'bg-purple-100 text-purple-800 border-purple-200',
+      uploader: 'bg-teal-100 text-teal-800 border-teal-200',
       executive: 'bg-green-100 text-green-800 border-green-200'
     };
     return colors[role] || 'bg-gray-100 text-gray-800';
@@ -238,6 +239,7 @@ export default function UserManagement() {
                       <SelectItem value="polythene_executive">Polythene Entry Executive</SelectItem>
                       <SelectItem value="manager">Manager</SelectItem>
                       <SelectItem value="sales_manager">Sales Manager</SelectItem>
+                      <SelectItem value="uploader">Upload Manager (Files Only)</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>
                   </Select>

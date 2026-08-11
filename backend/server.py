@@ -51,6 +51,7 @@ from services.monthly_summary_service import (
 from services.profit_helpers import (
     compute_daily_profits, compute_date_profit_detail,
     ledger_cost_basis, aggregate_sale_profit, fetch_ledger_with_fallback,
+    invalidate_fallback_cache,
 )
 
 # Simple TTL cache for heavy inventory computations
@@ -470,6 +471,12 @@ def parse_excel_file(file_content, file_type: str) -> List[Dict]:
             refno_col = _resolve_col(cols, ['Refno'])
             gr_col = _resolve_col(cols, ['Gr.Wt.'])
             net_col = _resolve_col(cols, ['Net.Wt.'])
+            bt_tunch_col = _resolve_col(cols, ['Tunch', 'tunch'])
+            bt_wstg_col = _resolve_col(cols, ['Wstg', 'wstg'])
+            bt_fine_col = _resolve_col(cols, ['Fine', 'Sil.Fine', 'Sil Fine', 'Silver Fine'])
+            bt_labor_col = _resolve_col(cols, ['Labour', 'Labor', 'Lbr', 'Wt/Rs', 'Wt Rs'])
+            bt_total_col = _resolve_col(cols, ['Total', 'total'])
+            bt_rate_col = _resolve_col(cols, ['Rate', 'rate'])
 
             records = []
             for r in raw_rows:
@@ -487,6 +494,7 @@ def parse_excel_file(file_content, file_type: str) -> List[Dict]:
                 if not trans_type or trans_type in ('', 'NAN'):
                     continue
 
+                bt_tunch = _safe_float(r.get(bt_tunch_col) if bt_tunch_col else None) + _safe_float(r.get(bt_wstg_col) if bt_wstg_col else None)
                 records.append({
                     'type': 'receive' if trans_type == 'R' else 'issue',
                     'date': normalize_date(r.get(date_col) if date_col else ''),
@@ -497,15 +505,15 @@ def parse_excel_file(file_content, file_type: str) -> List[Dict]:
                     'tag_no': '',
                     'gr_wt': _safe_float(r.get(gr_col) if gr_col else None) * KG_TO_GRAMS,
                     'net_wt': _safe_float(r.get(net_col) if net_col else None) * KG_TO_GRAMS,
-                    'fine': 0.0,
-                    'labor': 0.0,
+                    'fine': _safe_float(r.get(bt_fine_col) if bt_fine_col else None) * KG_TO_GRAMS,
+                    'labor': _safe_float(r.get(bt_labor_col) if bt_labor_col else None),
                     'labor_on': None,
                     'dia_wt': 0.0,
                     'stn_wt': 0.0,
-                    'tunch': '0',
-                    'rate': 0.0,
+                    'tunch': str(bt_tunch),
+                    'rate': _safe_float(r.get(bt_rate_col) if bt_rate_col else None),
                     'total_pc': 0,
-                    'total_amount': 0.0,
+                    'total_amount': _safe_float(r.get(bt_total_col) if bt_total_col else None),
                     'taxable_value': 0.0,
                 })
             return records
@@ -817,6 +825,12 @@ def _build_row_mapper(file_type: str, header_names: list):
         refno_col = _resolve_col(cols_set, ['Refno'])
         gr_col = _resolve_col(cols_set, ['Gr.Wt.'])
         net_col = _resolve_col(cols_set, ['Net.Wt.'])
+        bt_tunch_col = _resolve_col(cols_set, ['Tunch', 'tunch'])
+        bt_wstg_col = _resolve_col(cols_set, ['Wstg', 'wstg'])
+        bt_fine_col = _resolve_col(cols_set, ['Fine', 'Sil.Fine', 'Sil Fine', 'Silver Fine'])
+        bt_labor_col = _resolve_col(cols_set, ['Labour', 'Labor', 'Lbr', 'Wt/Rs', 'Wt Rs'])
+        bt_total_col = _resolve_col(cols_set, ['Total', 'total'])
+        bt_rate_col = _resolve_col(cols_set, ['Rate', 'rate'])
 
         bf_state = {'date': ''}
 
@@ -835,6 +849,7 @@ def _build_row_mapper(file_type: str, header_names: list):
                 bf_state['date'] = date
             else:
                 date = bf_state['date']
+            bt_tunch = _safe_float(_get(row, bt_tunch_col)) + _safe_float(_get(row, bt_wstg_col))
             return {
                 'type': 'receive' if trans_type == 'R' else 'issue',
                 'date': date,
@@ -845,15 +860,15 @@ def _build_row_mapper(file_type: str, header_names: list):
                 'tag_no': '',
                 'gr_wt': _safe_float(_get(row, gr_col)) * KG_TO_GRAMS,
                 'net_wt': _safe_float(_get(row, net_col)) * KG_TO_GRAMS,
-                'fine': 0.0,
-                'labor': 0.0,
+                'fine': _safe_float(_get(row, bt_fine_col)) * KG_TO_GRAMS,
+                'labor': _safe_float(_get(row, bt_labor_col)),
                 'labor_on': None,
                 'dia_wt': 0.0,
                 'stn_wt': 0.0,
-                'tunch': '0',
-                'rate': 0.0,
+                'tunch': str(bt_tunch),
+                'rate': _safe_float(_get(row, bt_rate_col)),
                 'total_pc': 0,
-                'total_amount': 0.0,
+                'total_amount': _safe_float(_get(row, bt_total_col)),
                 'taxable_value': 0.0,
             }
         return mapper
@@ -917,6 +932,27 @@ def _build_row_mapper(file_type: str, header_names: list):
     raise ValueError(f"Unsupported file_type for Excel parsing: {file_type}")
 
 
+def _validate_headers(file_type: str, header_names: list):
+    """Reject wrong-format files up-front so bad uploads never touch the data."""
+    cols = set(header_names)
+    item_ok = _resolve_col(cols, ['Item Name', 'Particular', 'item name']) is not None
+    date_ok = _resolve_col(cols, ['Date', 'date']) is not None
+    lnarr_ok = _resolve_col(cols, ['Lnarr']) is not None
+    if file_type in ('sale', 'purchase'):
+        if lnarr_ok and not item_ok:
+            raise ValueError(f"File rejected: this looks like a Branch Transfer file (has 'Lnarr' column), not a {file_type} file. No data was changed.")
+        if not item_ok or not date_ok:
+            raise ValueError(f"File rejected: missing required columns for a {file_type} file (need 'Item Name'/'Particular' and 'Date'). No data was changed.")
+    elif file_type == 'branch_transfer':
+        if not lnarr_ok or _resolve_col(cols, ['Type', 'type']) is None:
+            raise ValueError("File rejected: not a Branch Transfer file (need 'Lnarr' and 'Type' columns). No data was changed.")
+    elif file_type == 'opening_stock':
+        if not item_ok:
+            raise ValueError("File rejected: missing 'Item Name' column for a stock file. No data was changed.")
+        if date_ok:
+            raise ValueError("File rejected: this looks like a transaction file (has a 'Date' column), not a stock file. No data was changed.")
+
+
 def _iter_excel_records(file_path: str, file_type: str, prog: dict = None):
     """Yield parsed records one at a time with bounded memory (raw rows freed as consumed)"""
     from itertools import islice
@@ -926,6 +962,7 @@ def _iter_excel_records(file_path: str, file_type: str, prog: dict = None):
     else:
         head = list(islice(rows, 25))
     header_names, header_row_idx = _detect_header(head)
+    _validate_headers(file_type, header_names)
     mapper = _build_row_mapper(file_type, header_names)
     count = 0
 
@@ -959,6 +996,8 @@ def parse_excel_streaming(file_path: str, file_type: str) -> List[Dict]:
         records = list(_iter_excel_records(file_path, file_type))
         logger.info(f"[Streaming parser] Parsed {len(records)} {file_type} records from {file_path}")
         return records
+    except ValueError:
+        raise
     except Exception as e:
         logger.error(f"[Streaming parser] Error: {e}", exc_info=True)
         return []
@@ -985,7 +1024,7 @@ async def _set_opening_effective_date(effective_date: str = None) -> str:
 async def upload_opening_stock(file: UploadFile = File(...), effective_date: str = None, current_user: dict = Depends(get_current_user)):
     """Upload opening stock - Parse and MERGE items by name (sum weights regardless of stamp).
     Sets the opening stock effective date: stock is anchored to these values as of that date."""
-    if current_user['role'] not in ['admin', 'manager']:
+    if current_user['role'] not in ['admin', 'manager', 'uploader']:
         raise HTTPException(status_code=403, detail="Admin or Manager only")
     content = await file.read()
     
@@ -1117,7 +1156,7 @@ async def create_user(
         raise HTTPException(status_code=400, detail="Username already exists")
     
     # Validate role
-    if request.role not in ['admin', 'manager', 'executive', 'polythene_executive', 'sales_manager']:
+    if request.role not in ['admin', 'manager', 'executive', 'polythene_executive', 'sales_manager', 'uploader']:
         raise HTTPException(status_code=400, detail="Invalid role")
     
     # Create user
@@ -1193,7 +1232,7 @@ async def update_user(
     
     # Update role if provided
     if 'role' in request and request['role']:
-        if request['role'] not in ['admin', 'manager', 'executive', 'polythene_executive', 'sales_manager']:
+        if request['role'] not in ['admin', 'manager', 'executive', 'polythene_executive', 'sales_manager', 'uploader']:
             raise HTTPException(status_code=400, detail="Invalid role")
         update_data['role'] = request['role']
     
@@ -1323,7 +1362,7 @@ async def _load_upload_meta(upload_id: str) -> dict:
 @api_router.post("/upload/init")
 async def init_chunked_upload(request: Dict, current_user: dict = Depends(get_current_user)):
     """Initialize a chunked file upload"""
-    if current_user['role'] not in ['admin', 'manager']:
+    if current_user['role'] not in ['admin', 'manager', 'uploader']:
         raise HTTPException(status_code=403, detail="Admin or Manager only")
     file_type = request.get('file_type')
     if file_type not in ['purchase', 'sale', 'branch_transfer', 'opening_stock', 'physical_stock', 'master_stock', 'historical_sale', 'historical_purchase']:
@@ -1354,7 +1393,7 @@ async def init_chunked_upload(request: Dict, current_user: dict = Depends(get_cu
 @api_router.post("/upload/chunk/{upload_id}")
 async def upload_chunk(upload_id: str, chunk_index: int, file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     """Receive a single chunk of a large file — stored in MongoDB for cross-pod access"""
-    if current_user['role'] not in ['admin', 'manager']:
+    if current_user['role'] not in ['admin', 'manager', 'uploader']:
         raise HTTPException(status_code=403, detail="Admin or Manager only")
     meta = await _load_upload_meta(upload_id)
     if not meta:
@@ -1498,6 +1537,7 @@ async def _process_upload(upload_id: str, meta: dict):
                 saved = 0
                 dates = set()
                 batch = []
+                type_counts = {}
 
                 def flush():
                     nonlocal saved, batch
@@ -1518,15 +1558,22 @@ async def _process_upload(upload_id: str, meta: dict):
                         raise RuntimeError('superseded')
                     if rec.get('date'):
                         dates.add(rec['date'])
+                    type_counts[rec.get('type')] = type_counts.get(rec.get('type'), 0) + 1
                     batch.append(rec)
                     if len(batch) >= 5000:
                         flush()
                 flush()
-                return saved, sorted(dates)
+                return saved, sorted(dates), type_counts
 
             pipeline_future = loop.run_in_executor(_parse_executor, _pipeline)
-            count, new_dates = await _await_with_heartbeat(upload_id, meta, my_attempt, prog, pipeline_future)
+            count, new_dates, type_counts = await _await_with_heartbeat(upload_id, meta, my_attempt, prog, pipeline_future)
             logger.info(f"[Upload {upload_id}] Streamed {count} records into DB (batch {batch_id})")
+
+            # Content sanity check: a wrong file parsed as sale/purchase turns almost every
+            # row into a *_return (Type letters don't match) — reject and roll back cleanly.
+            base_type = 'sale' if parse_type == 'sale' else ('purchase' if parse_type == 'purchase' else None)
+            if base_type and count > 0 and type_counts.get(f'{base_type}_return', 0) > type_counts.get(base_type, 0):
+                raise ValueError(f"File rejected: content does not match the {base_type} file format (transaction types don't look like {base_type} rows). No data was changed.")
 
             if count == 0:
                 meta['status'] = 'error'
@@ -1553,6 +1600,7 @@ async def _process_upload(upload_id: str, meta: dict):
                     'batch_id': batch_id, 'file_type': file_type, 'count': count
                 })
                 await auto_normalize_stamps()
+                invalidate_fallback_cache()
                 asyncio.create_task(_safe_recompute_summaries())
                 meta['status'] = 'complete'
                 meta['result'] = {"success": True, "count": count, "replaced_count": deleted_count,
@@ -1642,7 +1690,7 @@ async def _process_upload(upload_id: str, meta: dict):
 @api_router.post("/upload/finalize/{upload_id}")
 async def finalize_chunked_upload(upload_id: str, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
     """Reassemble chunks and process the complete file in background"""
-    if current_user['role'] not in ['admin', 'manager']:
+    if current_user['role'] not in ['admin', 'manager', 'uploader']:
         raise HTTPException(status_code=403, detail="Admin or Manager only")
     meta = await _load_upload_meta(upload_id)
     if not meta:
@@ -1920,7 +1968,7 @@ async def upload_transaction_file(
     current_user: dict = Depends(get_current_user)
 ):
     """Upload purchase, sale, or branch_transfer Excel file"""
-    if current_user['role'] not in ['admin', 'manager']:
+    if current_user['role'] not in ['admin', 'manager', 'uploader']:
         raise HTTPException(status_code=403, detail="Admin or Manager only")
     if file_type not in ['purchase', 'sale', 'branch_transfer']:
         raise HTTPException(status_code=400, detail="file_type must be 'purchase', 'sale', or 'branch_transfer'")
@@ -2832,7 +2880,7 @@ async def get_opening_stock_effective_date_endpoint(current_user: dict = Depends
 
 @api_router.put("/opening-stock/effective-date")
 async def set_opening_stock_effective_date_endpoint(payload: dict, current_user: dict = Depends(get_current_user)):
-    if current_user['role'] not in ['admin', 'manager']:
+    if current_user['role'] not in ['admin', 'manager', 'uploader']:
         raise HTTPException(status_code=403, detail="Admin or Manager only")
     eff = await _set_opening_effective_date(payload.get('effective_date'))
     await save_action('set_opening_effective_date', f"Opening stock effective date set to {eff}")
@@ -2992,7 +3040,7 @@ async def upload_physical_stock(
 ):
     """Upload physical stock file — replaces snapshot for the selected verification_date ONLY.
     Rows for other dates are preserved."""
-    if current_user['role'] not in ['admin', 'manager']:
+    if current_user['role'] not in ['admin', 'manager', 'uploader']:
         raise HTTPException(status_code=403, detail="Admin or manager only")
     if not verification_date:
         raise HTTPException(status_code=400, detail="verification_date is required")
@@ -3026,7 +3074,7 @@ async def upload_physical_stock_preview(
     current_user: dict = Depends(get_current_user)
 ):
     """Parse physical stock file and return a preview diff. Creates a draft session."""
-    if current_user['role'] not in ['admin', 'manager']:
+    if current_user['role'] not in ['admin', 'manager', 'uploader']:
         raise HTTPException(status_code=403, detail="Admin or manager only")
 
     if not verification_date:
@@ -3194,7 +3242,7 @@ async def apply_physical_stock_updates(
     current_user: dict = Depends(get_current_user)
 ):
     """Apply approved items within an existing preview session."""
-    if current_user['role'] not in ['admin', 'manager']:
+    if current_user['role'] not in ['admin', 'manager', 'uploader']:
         raise HTTPException(status_code=403, detail="Admin or manager only")
 
     items = request.get('items', [])
@@ -3963,7 +4011,7 @@ async def undo_upload(batch_id: str, current_user: dict = Depends(get_current_us
 async def upload_master_stock(file: UploadFile = File(...), effective_date: str = None, current_user: dict = Depends(get_current_user)):
     """Upload STOCK 2026 as master reference - FINAL item names and stamps.
     Also anchors stock: these values become the stock 'as on' effective_date."""
-    if current_user['role'] not in ['admin', 'manager']:
+    if current_user['role'] not in ['admin', 'manager', 'uploader']:
         raise HTTPException(status_code=403, detail="Admin or Manager only")
     content = await file.read()
     
@@ -4099,6 +4147,8 @@ async def get_customer_profit(
     """Calculate profit per customer (silver & labour).
     Sale returns are treated as purchases — we 'buy back' at the return rate,
     profiting if the return rate is below our purchase cost."""
+    if current_user['role'] not in ['admin', 'manager']:
+        raise HTTPException(status_code=403, detail="Admin or Manager only")
     
     query = {}
     if start_date and end_date:
@@ -4229,7 +4279,7 @@ async def get_supplier_profit(
         a = abs(net)
         tv = abs(trans.get('total_amount', 0) or trans.get('labor', 0) or 0)
         tn = float(trans.get('tunch', 0) or 0)
-        if trans['type'] in ['purchase', 'purchase_return']:
+        if trans['type'] in ['purchase', 'purchase_return'] or (trans['type'] == 'receive' and (tn > 0 or tv > 0)):
             supplier = trans.get('party_name', 'Unknown')
             if not supplier:
                 continue
@@ -4683,7 +4733,7 @@ async def calculate_profit(
             _amt = -_amt
         if trans['type'] in ['sale', 'sale_return']:
             total_sales_value += _amt
-        elif trans['type'] in ['purchase', 'purchase_return']:
+        elif trans['type'] in ['purchase', 'purchase_return', 'receive']:
             total_purchase_value += _amt
         
         if not trans_name:
@@ -4700,7 +4750,7 @@ async def calculate_profit(
             'total_amount': abs(trans.get('total_amount', 0) or 0) * sign
         }
         
-        if trans['type'] in ['purchase', 'purchase_return']:
+        if trans['type'] in ['purchase', 'purchase_return'] or (trans['type'] == 'receive' and (trans_data['tunch'] > 0 or trans_data['total_amount'] > 0 or trans_data['labor'] > 0)):
             item_transactions[item_name]['purchases'].append(trans_data)
         elif trans['type'] in ['sale', 'sale_return']:
             item_transactions[item_name]['sales'].append(trans_data)
@@ -6666,8 +6716,10 @@ async def get_item_detail(item_name: str, current_user: dict = Depends(get_curre
         {"_id": 0}
     ).sort("date", -1).to_list(None)
     
-    # Calculate statistics
-    purchases = [t for t in transactions if t['type'] in ['purchase', 'purchase_return']]
+    # Calculate statistics — receives that carry rate data count as purchases (goods come in via branch receive)
+    def _rcv_has_rate(t):
+        return float(t.get('tunch', 0) or 0) > 0 or (t.get('fine', 0) or 0) > 0 or (t.get('labor', 0) or 0) > 0 or (t.get('total_amount', 0) or 0) > 0
+    purchases = [t for t in transactions if t['type'] in ['purchase', 'purchase_return'] or (t['type'] == 'receive' and _rcv_has_rate(t))]
     sales = [t for t in transactions if t['type'] in ['sale', 'sale_return']]
     
     # Weighted average tunch

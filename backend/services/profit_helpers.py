@@ -42,15 +42,24 @@ def invalidate_fallback_cache():
 
 async def fetch_fallback_purchase_stats(db, use_cache: bool = True) -> dict:
     """Signed per-item purchase totals from ALL purchase/purchase_return transactions
-    (regular + historical). Used to ESTIMATE a cost basis for items that have no
-    PURCHASE_CUMUL ledger entry (e.g. discontinued items sold in 2024) instead of
-    skipping them from profit. Returns raw_item_name -> {wt_g, fine_g, labour}."""
+    (regular + historical) PLUS branch 'receive' rows that carry rate data (goods often
+    come in via branch receive instead of purchase). Used to ESTIMATE a cost basis for
+    items that have no PURCHASE_CUMUL ledger entry instead of skipping them from profit.
+    Returns raw_item_name -> {wt_g, fine_g, labour}."""
     if use_cache and _fallback_cache["stats"] is not None and time.time() - _fallback_cache["ts"] < _FALLBACK_TTL:
         return _fallback_cache["stats"]
     _abs_wt = {"$abs": {"$ifNull": ["$net_wt", 0]}}
     _tunch = {"$convert": {"input": "$tunch", "to": "double", "onError": 0, "onNull": 0}}
     pipeline = [
-        {"$match": {"type": {"$in": ["purchase", "purchase_return"]}}},
+        {"$match": {"type": {"$in": ["purchase", "purchase_return", "receive"]}}},
+        {"$addFields": {"_has_rate": {"$or": [
+            {"$gt": [{"$abs": {"$ifNull": ["$fine", 0]}}, 0]},
+            {"$gt": [_tunch, 0]},
+            {"$gt": [{"$abs": {"$ifNull": ["$labor", 0]}}, 0]},
+            {"$gt": [{"$abs": {"$ifNull": ["$total_amount", 0]}}, 0]},
+        ]}}},
+        # receive rows without any rate data would dilute the average toward zero — drop them
+        {"$match": {"$or": [{"type": {"$in": ["purchase", "purchase_return"]}}, {"_has_rate": True}]}},
         {"$group": {
             "_id": {"item": "$item_name", "type": "$type"},
             "wt": {"$sum": _abs_wt},
