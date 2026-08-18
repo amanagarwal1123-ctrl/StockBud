@@ -45,6 +45,7 @@ from services.helpers import (
 )
 from services.stock_service import get_current_inventory, get_effective_physical_base_for_date, _flat_base_from_inventory, get_opening_effective_date
 from services.group_utils import build_group_maps, build_group_ledger, resolve_to_leader
+from services.purchase_list_service import compute_purchase_snapshot
 from services.monthly_summary_service import (
     recompute_monthly_summaries, ensure_year_summary_fresh, get_year_meta
 )
@@ -5587,6 +5588,235 @@ async def get_sales_report_drill(
         'avg_monthly_sale_kg': round(avg_monthly_sale_kg, 3),
         'stock_to_sale_ratio': ratio,
     }
+
+
+# ================= PURCHASE LIST & GOODS TO ARRIVE =================
+
+async def _get_purchase_config():
+    cfg = await db.purchase_list_config.find_one({"key": "config"}, {"_id": 0}) or {}
+    year = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).year
+    return {'baseline_start': cfg.get('baseline_start') or f"{year}-01-01"}
+
+
+async def _purchase_fingerprint(date_s: str, baseline_start: str) -> str:
+    sale_start = (datetime.strptime(date_s, '%Y-%m-%d') - timedelta(days=60)).strftime('%Y-%m-%d')
+    win_start = min(baseline_start, sale_start)
+    cnt = await db.transactions.count_documents(
+        {'date': {'$gte': win_start, '$lte': date_s + ' 23:59:59'}})
+    return f"{baseline_start}:{cnt}"
+
+
+@api_router.get("/purchase-list")
+async def get_purchase_list(date: str = Query(None), current_user: dict = Depends(get_current_user)):
+    """Daily purchase list (lazily computed + cached per date, auto-recomputed when
+    the underlying transactions for that window change). State (green marks, temp
+    removals, seasons, purview, baselines) is stored per item and merged on read."""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    today_s = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
+    date_s = date or today_s
+    try:
+        datetime.strptime(date_s, '%Y-%m-%d')
+    except ValueError:
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+    if date_s > today_s:
+        date_s = today_s
+    cfg = await _get_purchase_config()
+    baseline_start = cfg['baseline_start']
+    if date_s < baseline_start:
+        baseline_start = f"{date_s[:4]}-01-01"
+
+    states = {}
+    async for s in db.purchase_item_state.find({}, {"_id": 0}):
+        states[s['item_name']] = s
+
+    fp = await _purchase_fingerprint(date_s, baseline_start)
+    snap = await db.purchase_list_snapshots.find_one({'date': date_s}, {"_id": 0})
+    if not snap or snap.get('fingerprint') != fp or snap.get('baseline_start') != baseline_start:
+        rows = await compute_purchase_snapshot(db, date_s, baseline_start, states, get_current_inventory_cached)
+        await db.purchase_list_snapshots.update_one(
+            {'date': date_s},
+            {'$set': {'date': date_s, 'baseline_start': baseline_start, 'fingerprint': fp,
+                      'computed_at': datetime.now(timezone.utc).isoformat(), 'rows': rows}},
+            upsert=True)
+    else:
+        rows = snap['rows']
+
+    orderers = ['Admin']
+    async for o in db.purchase_orderers.find({}, {"_id": 0}).sort('name', 1):
+        orderers.append(o['name'])
+
+    out = []
+    for r in rows:
+        s = states.get(r['item_name']) or {}
+        out.append({**r,
+                    'temp_removed': bool(s.get('temp_removed')),
+                    'green': bool(s.get('green')),
+                    'green_at': s.get('green_at'),
+                    'season_months': s.get('season_months'),
+                    'purview': s.get('purview') or 'Admin',
+                    'baseline_mode': s.get('baseline_mode', 'variable'),
+                    'fixed_baseline_kg': s.get('fixed_baseline_kg')})
+    return {'date': date_s, 'baseline_start': baseline_start, 'orderers': orderers, 'rows': out}
+
+
+@api_router.post("/purchase-list/item-state")
+async def update_purchase_item_state(request: Dict, current_user: dict = Depends(get_current_user)):
+    """Update per-item purchase-list state: temp_removed (left swipe), green mark
+    (creates/removes the Goods-to-Arrive order), season months, purview, baseline."""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    item = (request.get('item_name') or '').strip()
+    if not item:
+        raise HTTPException(status_code=400, detail="item_name required")
+    updates = {}
+    baseline_changed = False
+    if 'temp_removed' in request:
+        updates['temp_removed'] = bool(request['temp_removed'])
+    if 'season_months' in request:
+        sm = request['season_months']
+        if sm:
+            months = sorted({int(m) for m in sm if 1 <= int(m) <= 12})
+            updates['season_months'] = months or None
+        else:
+            updates['season_months'] = None
+    if 'purview' in request:
+        updates['purview'] = (request['purview'] or 'Admin').strip() or 'Admin'
+    if 'baseline_mode' in request:
+        if request['baseline_mode'] not in ('variable', 'fixed'):
+            raise HTTPException(status_code=400, detail="baseline_mode must be variable|fixed")
+        updates['baseline_mode'] = request['baseline_mode']
+        baseline_changed = True
+    if 'fixed_baseline_kg' in request:
+        v = request['fixed_baseline_kg']
+        fv = float(v) if v is not None and v != '' else None
+        if fv is not None and fv < 0:
+            raise HTTPException(status_code=400, detail="fixed_baseline_kg must be >= 0")
+        updates['fixed_baseline_kg'] = fv
+        baseline_changed = True
+    if 'green' in request:
+        g = bool(request['green'])
+        updates['green'] = g
+        if g:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            updates['green_at'] = now_iso
+            existing = await db.goods_orders.find_one({'item_name': item, 'status': 'to_arrive'})
+            if not existing:
+                row = None
+                date_s = request.get('date')
+                if date_s:
+                    snap = await db.purchase_list_snapshots.find_one({'date': date_s}, {"_id": 0, "rows": 1})
+                    if snap:
+                        row = next((r for r in snap.get('rows', []) if r['item_name'] == item), None)
+                if row is None:
+                    latest = await db.purchase_list_snapshots.find_one(
+                        {'rows.item_name': item}, {"_id": 0, "date": 1, "rows": 1}, sort=[('date', -1)])
+                    if latest:
+                        row = next((r for r in latest['rows'] if r['item_name'] == item), None)
+                        date_s = latest['date']
+                row = row or {}
+                await db.goods_orders.insert_one({
+                    'id': str(uuid.uuid4()), 'item_name': item,
+                    'order_qty_kg': row.get('order_qty_kg', 0),
+                    'fine_kg': row.get('fine_kg', 0),
+                    'labour_inr': row.get('labour_inr', 0),
+                    'purchase_tunch': row.get('purchase_tunch', 0),
+                    'labour_per_kg': row.get('labour_per_kg', 0),
+                    'snapshot_date': date_s, 'green_at': now_iso,
+                    'status': 'to_arrive', 'arrived_at': None})
+        else:
+            updates['green_at'] = None
+            await db.goods_orders.delete_many({'item_name': item, 'status': 'to_arrive'})
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields to update")
+    await db.purchase_item_state.update_one(
+        {'item_name': item}, {'$set': {'item_name': item, **updates}}, upsert=True)
+    if baseline_changed:
+        await db.purchase_list_snapshots.delete_many({})
+    return {'success': True}
+
+
+@api_router.post("/purchase-list/refresh")
+async def refresh_purchase_list(current_user: dict = Depends(get_current_user)):
+    """Bring back all temporary (left-swipe) removals. Seasonal removals and green marks stay."""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    res = await db.purchase_item_state.update_many(
+        {'temp_removed': True}, {'$set': {'temp_removed': False}})
+    return {'success': True, 'restored': res.modified_count}
+
+
+@api_router.post("/purchase-list/orderers")
+async def add_purchase_orderer(request: Dict, current_user: dict = Depends(get_current_user)):
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    name = (request.get('name') or '').strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name required")
+    if name.lower() == 'admin':
+        raise HTTPException(status_code=400, detail="Admin already exists")
+    await db.purchase_orderers.update_one({'name': name}, {'$set': {'name': name}}, upsert=True)
+    return {'success': True, 'name': name}
+
+
+@api_router.put("/purchase-list/config")
+async def update_purchase_config(request: Dict, current_user: dict = Depends(get_current_user)):
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    bs = (request.get('baseline_start') or '').strip()
+    try:
+        datetime.strptime(bs, '%Y-%m-%d')
+    except ValueError:
+        raise HTTPException(status_code=400, detail="baseline_start must be YYYY-MM-DD")
+    await db.purchase_list_config.update_one(
+        {'key': 'config'}, {'$set': {'key': 'config', 'baseline_start': bs}}, upsert=True)
+    await db.purchase_list_snapshots.delete_many({})
+    return {'success': True, 'baseline_start': bs}
+
+
+@api_router.get("/goods-to-arrive")
+async def get_goods_to_arrive(current_user: dict = Depends(get_current_user)):
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    to_arrive = []
+    async for o in db.goods_orders.find({'status': 'to_arrive'}, {"_id": 0}).sort('green_at', -1):
+        to_arrive.append(o)
+    arrived = []
+    async for o in db.goods_orders.find({'status': 'arrived'}, {"_id": 0}).sort('arrived_at', -1):
+        arrived.append(o)
+    return {'to_arrive': to_arrive, 'arrived': arrived}
+
+
+@api_router.put("/goods-to-arrive/{order_id}")
+async def update_goods_order(order_id: str, request: Dict, current_user: dict = Depends(get_current_user)):
+    """Edit ordered qty (recomputes fine/labour), mark arrived, or undo arrival."""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    order = await db.goods_orders.find_one({'id': order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    updates = {}
+    if 'order_qty_kg' in request:
+        try:
+            qty = float(request['order_qty_kg'])
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="order_qty_kg must be a number")
+        if qty < 0:
+            raise HTTPException(status_code=400, detail="order_qty_kg must be >= 0")
+        updates['order_qty_kg'] = round(qty, 3)
+        updates['fine_kg'] = round(qty * (order.get('purchase_tunch', 0) or 0) / 100.0, 3)
+        updates['labour_inr'] = round(qty * (order.get('labour_per_kg', 0) or 0), 0)
+    action = request.get('action')
+    if action == 'arrive':
+        updates['status'] = 'arrived'
+        updates['arrived_at'] = datetime.now(timezone.utc).isoformat()
+    elif action == 'undo':
+        updates['status'] = 'to_arrive'
+        updates['arrived_at'] = None
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields to update")
+    await db.goods_orders.update_one({'id': order_id}, {'$set': updates})
+    return {'success': True, **updates}
 
 
 @api_router.post("/analytics/find-orphan-transactions")

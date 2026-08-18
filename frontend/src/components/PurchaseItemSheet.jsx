@@ -1,0 +1,143 @@
+import { useEffect, useState } from 'react';
+import { Plus } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+export const PurchaseItemSheet = ({ item, orderers, onClose, onUpdate, onAddOrderer }) => {
+  const [fixedVal, setFixedVal] = useState('');
+  const [newOrderer, setNewOrderer] = useState('');
+  const [showAdd, setShowAdd] = useState(false);
+
+  useEffect(() => {
+    setFixedVal(item?.fixed_baseline_kg ?? '');
+    setShowAdd(false);
+    setNewOrderer('');
+  }, [item?.item_name]);
+
+  if (!item) return null;
+  const seasons = item.season_months || [];
+
+  const toggleMonth = (m) => {
+    const next = seasons.includes(m) ? seasons.filter(x => x !== m) : [...seasons, m];
+    onUpdate(item.item_name, { season_months: next.length ? next : null });
+  };
+
+  const setMode = (mode) => {
+    if (mode === item.baseline_mode) return;
+    const updates = { baseline_mode: mode };
+    if (mode === 'fixed' && fixedVal !== '') updates.fixed_baseline_kg = parseFloat(fixedVal);
+    onUpdate(item.item_name, updates, { refetch: true });
+  };
+
+  const saveFixed = () => {
+    const v = parseFloat(fixedVal);
+    if (isNaN(v) || v < 0) return;
+    onUpdate(item.item_name, { baseline_mode: 'fixed', fixed_baseline_kg: v }, { refetch: true });
+  };
+
+  const addNew = async () => {
+    const name = newOrderer.trim();
+    if (!name) return;
+    const ok = await onAddOrderer(name);
+    if (ok) {
+      onUpdate(item.item_name, { purview: name });
+      setNewOrderer('');
+      setShowAdd(false);
+    }
+  };
+
+  return (
+    <Dialog open={!!item} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-md" data-testid="pl-item-sheet">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            {item.item_name}
+            {item.green && <Badge className="bg-green-600">Ordered</Badge>}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-5">
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-lg bg-muted p-2">
+              <p className="text-[11px] text-muted-foreground">Current Stock</p>
+              <p className="font-semibold tabular-nums">{item.current_stock_kg?.toFixed(3)} kg</p>
+            </div>
+            <div className="rounded-lg bg-muted p-2">
+              <p className="text-[11px] text-muted-foreground">Baseline</p>
+              <p className="font-semibold tabular-nums">{item.baseline_kg?.toFixed(3)} kg</p>
+            </div>
+            <div className="rounded-lg bg-muted p-2">
+              <p className="text-[11px] text-muted-foreground">Order Qty</p>
+              <p className="font-semibold tabular-nums">{item.order_qty_kg?.toFixed(3)} kg</p>
+            </div>
+          </div>
+
+          {/* Baseline */}
+          <div>
+            <p className="text-sm font-medium mb-1.5">Baseline</p>
+            <div className="flex gap-2 mb-2">
+              <Button size="sm" variant={item.baseline_mode !== 'fixed' ? 'default' : 'outline'}
+                onClick={() => setMode('variable')} data-testid="pl-baseline-variable">
+                Variable (peak {item.variable_baseline_kg?.toFixed(3)} kg)
+              </Button>
+              <Button size="sm" variant={item.baseline_mode === 'fixed' ? 'default' : 'outline'}
+                onClick={() => setMode('fixed')} data-testid="pl-baseline-fixed">Fixed</Button>
+            </div>
+            {item.baseline_mode === 'fixed' && (
+              <div className="flex gap-2">
+                <Input type="number" step="0.001" min="0" value={fixedVal} placeholder="Fixed baseline (kg)"
+                  onChange={e => setFixedVal(e.target.value)} className="h-9" data-testid="pl-fixed-baseline-input" />
+                <Button size="sm" className="h-9" onClick={saveFixed} data-testid="pl-fixed-baseline-save">Save</Button>
+              </div>
+            )}
+          </div>
+
+          {/* Season */}
+          <div>
+            <p className="text-sm font-medium mb-0.5">Selling season</p>
+            <p className="text-xs text-muted-foreground mb-1.5">Tap the months it sells in — it will only appear in those months. None selected = shows all year.</p>
+            <div className="grid grid-cols-6 gap-1.5">
+              {MONTHS.map((m, i) => (
+                <button key={m} onClick={() => toggleMonth(i + 1)} data-testid={`pl-season-${i + 1}`}
+                  className={`text-xs rounded-md py-1.5 border transition-colors ${seasons.includes(i + 1)
+                    ? 'bg-sky-600 text-white border-sky-600' : 'bg-background hover:bg-muted border-input'}`}>
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Purview */}
+          <div>
+            <p className="text-sm font-medium mb-1.5">Purview (who orders this)</p>
+            <div className="flex flex-wrap gap-1.5">
+              {orderers.map(o => (
+                <button key={o} onClick={() => onUpdate(item.item_name, { purview: o })} data-testid={`pl-purview-${o}`}
+                  className={`text-xs rounded-full px-3 py-1.5 border transition-colors ${item.purview === o
+                    ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-background hover:bg-muted border-input'}`}>
+                  {o}
+                </button>
+              ))}
+              <button onClick={() => setShowAdd(s => !s)} data-testid="pl-purview-add-toggle"
+                className="text-xs rounded-full px-2.5 py-1.5 border border-dashed border-input hover:bg-muted inline-flex items-center gap-1">
+                <Plus className="h-3 w-3" />New
+              </button>
+            </div>
+            {showAdd && (
+              <div className="flex gap-2 mt-2">
+                <Input value={newOrderer} onChange={e => setNewOrderer(e.target.value)} placeholder="Salesman name"
+                  className="h-9" data-testid="pl-new-orderer-input"
+                  onKeyDown={e => { if (e.key === 'Enter') addNew(); }} />
+                <Button size="sm" className="h-9" onClick={addNew} data-testid="pl-new-orderer-save"><Plus className="h-4 w-4" /></Button>
+              </div>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};

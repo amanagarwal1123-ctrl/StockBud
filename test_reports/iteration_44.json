@@ -1,0 +1,27 @@
+{
+  "summary": "Full backend + frontend testing of the new admin-only 'Purchase List' and 'Goods to Arrive' feature. Backend: 14/14 pytest cases pass (RBAC, snapshot maths, per-item state, temp/refresh, season, purview, fixed baseline, config, goods-order lifecycle, 404). Frontend (admin/admin123): sidebar order Dashboard->Purchase List->Goods to Arrive correct, list renders (297 rows), default sort Profit Ag desc, item_name & order_qty sorts work, green checkbox marks row + auto-creates a matching goods order, left-swipe (mouse drag) temp-removes row, Refresh restores swiped rows but preserves green marks and does not undo seasonal removal, item dialog toggles seasons/purview/baseline, adding a salesman via + adds chip at top and re-filters correctly, fixed baseline of 8 produced order_qty exactly 8 - current_stock (7.867 for NAJARIYA PLAIN 92.5), qty edit in Goods to Arrive recomputes fine/labour, Mark Arrived + Undo move between tabs, past-date picker (2 weeks ago) loads its snapshot. Dashboard and Sales Report regression pages both load without errors.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_purchase_list_feature.py",
+    "/app/test_reports/pytest/purchase_list_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "PurchaseList.jsx SwipeRow: pointerdown drag state is not cancelled on window blur / pointercancel - a mid-drag focus loss can leave the drag armed and misinterpret a later click as a swipe. Consider adding a pointercancel handler.",
+    "server.py update_purchase_item_state: passing an empty string for fixed_baseline_kg silently sets it to None; a small validation error for negative values would help (currently negative floats are accepted)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_purchase_list_feature.py"
+  ],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "seed_data_creation": "Added purchase orderers TEST_ORDR_QA and SURESH_QA2 via API (persisted). All per-item state (green marks, temp_removed, seasons, purview, baseline_mode) was reset for touched items (NAJARIYA PLAIN 92.5, GHUNTI KP-120) at the end of testing. Two orderer chips remain in the purchase_orderers collection for future admin tests.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": false,
+  "test_credentials": "admin/admin123, TEST_EXEC/exec123, TEST_SM/sm123 (all read from /app/memory/test_credentials.md)",
+  "context_for_next_testing_agent": "Backend regression suite is /app/backend/tests/test_purchase_list_feature.py (14 tests, ~11s). Left-swipe UI works via Playwright's mouse.down/move/up. Toast notifications from Sonner can intercept clicks on the Goods to Arrive tab-pending trigger immediately after arriving/undo; wait ~4s or use force=True. purchase_orderers now contains RAJESH, TEST_ORDR_QA, SURESH_QA2 in addition to Admin."
+}

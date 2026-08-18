@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Upload, Package, Users, TrendingUp, History, RotateCcw, Power, Tag, Scale, Link2, GitBranch, Receipt, LogOut, User, CheckCircle2, Activity, Box, BarChart3, ShoppingCart, Layers, UserCog, ChevronDown, ChevronRight, FileUp, Combine, FileText } from 'lucide-react';
+import { LayoutDashboard, Upload, Package, Users, TrendingUp, History, RotateCcw, Power, Tag, Scale, Link2, GitBranch, Receipt, LogOut, User, CheckCircle2, Activity, Box, BarChart3, ShoppingCart, Layers, UserCog, ChevronDown, ChevronRight, FileUp, Combine, FileText, Truck } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -62,6 +62,8 @@ export default function Layout({ children }) {
       id: 'main',
       items: [
         { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['admin'] },
+        { name: 'Purchase List', href: '/purchase-list', icon: ShoppingCart, roles: ['admin'] },
+        { name: 'Goods to Arrive', href: '/goods-to-arrive', icon: Truck, roles: ['admin'] },
         { name: 'Stock Entry', href: '/executive-entry', icon: Package, roles: ['executive', 'sales_manager'] },
         { name: 'Sales View', href: '/manager-sales', icon: FileText, roles: ['sales_manager'] },
         { name: 'Polythene Entry', href: '/polythene-entry', icon: Box, roles: ['polythene_executive'] },
