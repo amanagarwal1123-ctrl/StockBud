@@ -187,6 +187,8 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Tested (iteration_44.json)**: 100% backend (14/14, suite `tests/test_purchase_list_feature.py`) + 100% frontend. Post-test polish: pointercancel handler on swipe rows, negative fixed_baseline_kg rejected (400). QA orderers cleaned; 'RAJESH' demo orderer remains in preview.
 - **REDEPLOY required** to get this on production.
 
+- **Bugfix (production empty list, Aug 17-19 2026 — iteration_45.json)**: production showed 'No items to order for this view'. Two contributors fixed: (1) GET /purchase-list no longer serves a cached snapshot with empty rows (`or not snap.get('rows')` in cache-bypass) — protects against snapshots computed mid-upload; response now includes `window_txn_count`; (2) frontend empty state differentiates: hidden-by-filters (count + breakdown + 'Show all orderers' pl-show-all-btn + 'Restore swiped items' pl-restore-swiped-btn), no-transactions-in-window (pl-empty-nodata), or genuinely-at-peak. New suite `tests/test_purchase_list_bugfix_45.py`. NOTE: likely production cause is rows hidden under other orderers' purview or swiped away — the new banner reveals it; user must REDEPLOY.
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document

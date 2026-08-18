@@ -1,0 +1,29 @@
+{
+  "summary": "Iteration 45 – Bug-fix verification for admin Purchase List empty-state and cached-empty-snapshot guard. Backend: 3/3 new tests + 29/29 regression tests pass. GET /api/purchase-list returns 298 rows and window_txn_count > 0. Poisoning today's snapshot in Mongo with rows=[] while preserving the current fingerprint/baseline_start correctly triggers a recompute on the next GET (rows repopulated to 298; guard works). Frontend (admin/admin123): /purchase-list loads with pl-row-0 visible; created EMPTY_QA orderer, checked EMPTY_QA and unchecked Admin -> pl-empty + pl-empty-filtered rendered with 'All 298 item(s) are hidden by current filters — 0 swiped away, 0 out of season, rest under other orderers.' plus pl-show-all-btn and pl-restore-swiped-btn. pl-show-all-btn resets selection to ALL and rows return. Left-swipe on row 0 works and Refresh (pl-refresh-btn) restores rows.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_purchase_list_bugfix_45.py",
+    "/app/backend/tests/test_purchase_list_feature.py",
+    "/app/backend/tests/test_sales_manager_feature.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py: _purchase_fingerprint uses only a count of transactions in the window as the fingerprint. If an equal number of rows are added and removed (e.g. delete + upload same count) the fingerprint would remain unchanged and the cached snapshot would not refresh. Consider mixing in a max(updated_at) or checksum in addition to the count.",
+    "There is no admin DELETE endpoint for /api/purchase-list/orderers; QA/cleanup requires direct Mongo access. A DELETE endpoint would make orderer management round-trippable from the UI."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_purchase_list_bugfix_45.py"
+  ],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "seed_data_creation": "Created purchase orderer EMPTY_QA (via API), then deleted it directly from Mongo (purchase_orderers). Final orderers collection: ['RAJESH','TEST_ORDR_QA'] (left as-is from prior iterations, per instructions). Today's snapshot in purchase_list_snapshots was poisoned to rows=[] and then automatically recomputed by the backend during the test — it is now fully populated again.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": false,
+  "test_credentials": "admin/admin123",
+  "context_for_next_testing_agent": "New regression file added: /app/backend/tests/test_purchase_list_bugfix_45.py (3 tests, ~2.5s). It relies on Mongo (MONGO_URL/DB_NAME from backend/.env) and uses asyncio.run per test. The window_txn_count field on GET /purchase-list is now part of the contract. Frontend testids added by developer: pl-empty, pl-empty-filtered, pl-empty-nodata, pl-show-all-btn, pl-restore-swiped-btn. Session storage key for the auth token is sessionStorage.getItem('token') (not localStorage).",
+  "rca_of_the_issue": "Two independent contributors reproduced: (1) client-side filters could hide all rows silently (single generic empty message) — fixed by differentiating the empty state; (2) if an empty snapshot got persisted with the current fingerprint (e.g. computed during an in-progress upload), a subsequent GET would happily return rows=[] because the fingerprint match short-circuited recomputation — fixed by adding `or not snap.get('rows')` to the cache-bypass condition. Both are verified end-to-end."
+}

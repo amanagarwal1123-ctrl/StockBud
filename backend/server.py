@@ -5598,12 +5598,12 @@ async def _get_purchase_config():
     return {'baseline_start': cfg.get('baseline_start') or f"{year}-01-01"}
 
 
-async def _purchase_fingerprint(date_s: str, baseline_start: str) -> str:
+async def _purchase_fingerprint(date_s: str, baseline_start: str):
     sale_start = (datetime.strptime(date_s, '%Y-%m-%d') - timedelta(days=60)).strftime('%Y-%m-%d')
     win_start = min(baseline_start, sale_start)
     cnt = await db.transactions.count_documents(
         {'date': {'$gte': win_start, '$lte': date_s + ' 23:59:59'}})
-    return f"{baseline_start}:{cnt}"
+    return f"{baseline_start}:{cnt}", cnt
 
 
 @api_router.get("/purchase-list")
@@ -5630,9 +5630,9 @@ async def get_purchase_list(date: str = Query(None), current_user: dict = Depend
     async for s in db.purchase_item_state.find({}, {"_id": 0}):
         states[s['item_name']] = s
 
-    fp = await _purchase_fingerprint(date_s, baseline_start)
+    fp, win_txn_count = await _purchase_fingerprint(date_s, baseline_start)
     snap = await db.purchase_list_snapshots.find_one({'date': date_s}, {"_id": 0})
-    if not snap or snap.get('fingerprint') != fp or snap.get('baseline_start') != baseline_start:
+    if not snap or snap.get('fingerprint') != fp or snap.get('baseline_start') != baseline_start or not snap.get('rows'):
         rows = await compute_purchase_snapshot(db, date_s, baseline_start, states, get_current_inventory_cached)
         await db.purchase_list_snapshots.update_one(
             {'date': date_s},
@@ -5657,7 +5657,8 @@ async def get_purchase_list(date: str = Query(None), current_user: dict = Depend
                     'purview': s.get('purview') or 'Admin',
                     'baseline_mode': s.get('baseline_mode', 'variable'),
                     'fixed_baseline_kg': s.get('fixed_baseline_kg')})
-    return {'date': date_s, 'baseline_start': baseline_start, 'orderers': orderers, 'rows': out}
+    return {'date': date_s, 'baseline_start': baseline_start, 'orderers': orderers, 'rows': out,
+            'window_txn_count': win_txn_count}
 
 
 @api_router.post("/purchase-list/item-state")

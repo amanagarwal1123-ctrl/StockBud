@@ -254,7 +254,26 @@ export default function PurchaseList() {
           {loading ? (
             <div className="py-14 text-center text-muted-foreground">Computing purchase list…</div>
           ) : rows.length === 0 ? (
-            <div className="py-14 text-center text-muted-foreground" data-testid="pl-empty">No items to order for this view</div>
+            <div className="py-14 text-center space-y-3 px-4" data-testid="pl-empty">
+              {(data?.rows?.length || 0) > 0 ? (
+                <>
+                  <p className="text-muted-foreground" data-testid="pl-empty-filtered">
+                    All <span className="font-semibold text-foreground">{data.rows.length}</span> item(s) are hidden by current filters
+                    — {data.rows.filter(x => x.temp_removed).length} swiped away, {data.rows.filter(x => x.season_months?.length && !x.season_months.includes(month)).length} out of season, rest under other orderers.
+                  </p>
+                  <div className="flex justify-center gap-2">
+                    <Button size="sm" variant="outline" onClick={() => setSel(['ALL'])} data-testid="pl-show-all-btn">Show all orderers</Button>
+                    <Button size="sm" variant="outline" onClick={onRefresh} data-testid="pl-restore-swiped-btn">Restore swiped items</Button>
+                  </div>
+                </>
+              ) : data?.window_txn_count === 0 ? (
+                <p className="text-muted-foreground" data-testid="pl-empty-nodata">
+                  No transactions found between {data.baseline_start} and {data.date} — upload data for this period first.
+                </p>
+              ) : (
+                <p className="text-muted-foreground">No items to order for this date — every item is at its peak stock.</p>
+              )}
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <Table>
