@@ -11,13 +11,42 @@ For a given date D:
   vs the same long-run cost basis (canonical per-entry margin math).
 """
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from services.group_utils import build_group_maps, build_group_ledger, resolve_to_leader
 from services.profit_helpers import EXCLUDED_ITEMS, ledger_cost_basis, fetch_ledger_with_fallback
 
 ADD_TYPES = ("purchase", "purchase_return", "receive")
 SUB_TYPES = ("sale", "sale_return", "issue")
+
+
+async def _get_opening_cached(db, prev_day, inventory_fn, resolve, excluded):
+    """DB-cached opening stock per leader (grams) as of end of prev_day.
+    The as-of inventory is the heaviest part of the snapshot compute; caching it
+    in Mongo makes recomputes (fingerprint change / baseline edits) fast."""
+    txn_cnt = await db.transactions.count_documents({'date': {'$lte': prev_day + ' 23:59:59'}})
+    anchor_cnt = await db.inventory_baselines.count_documents({})
+    fp = f"{txn_cnt}:{anchor_cnt}"
+    doc = await db.purchase_opening_cache.find_one({'date': prev_day}, {"_id": 0})
+    if doc and doc.get('fingerprint') == fp:
+        return defaultdict(float, {e['item']: e['g'] for e in doc.get('entries', [])})
+    inv = await inventory_fn(as_of_date=prev_day)
+    opening = defaultdict(float)
+    for si in inv.get('stamp_items', []):
+        raw = si.get('item_name', '') or ''
+        if not raw or raw.isdigit():
+            continue
+        leader = resolve(raw)
+        if leader in excluded:
+            continue
+        opening[leader] += si.get('net_wt', 0) or 0
+    await db.purchase_opening_cache.update_one(
+        {'date': prev_day},
+        {'$set': {'date': prev_day, 'fingerprint': fp,
+                  'entries': [{'item': k, 'g': v} for k, v in opening.items()],
+                  'computed_at': datetime.now(timezone.utc).isoformat()}},
+        upsert=True)
+    return opening
 
 
 async def compute_purchase_snapshot(db, date_s: str, baseline_start: str,
@@ -38,16 +67,7 @@ async def compute_purchase_snapshot(db, date_s: str, baseline_start: str,
         return resolve_to_leader(n, map_dict, m2l)
 
     prev_day = (sd_dt - timedelta(days=1)).strftime('%Y-%m-%d')
-    inv = await inventory_fn(as_of_date=prev_day)
-    opening = defaultdict(float)
-    for si in inv.get('stamp_items', []):
-        raw = si.get('item_name', '') or ''
-        if not raw or raw.isdigit():
-            continue
-        leader = _resolve(raw)
-        if leader in excluded:
-            continue
-        opening[leader] += si.get('net_wt', 0) or 0
+    opening = await _get_opening_cached(db, prev_day, inventory_fn, _resolve, excluded)
 
     daily_delta = defaultdict(lambda: defaultdict(float))  # leader -> date -> grams
     sale_agg = defaultdict(lambda: {'silver_kg': 0.0, 'labour': 0.0, 'wt_g': 0.0})

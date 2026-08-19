@@ -1,0 +1,35 @@
+{
+  "summary": "Iteration 47 – Purchase List perm-delete/undelete flow + opening-stock Mongo cache. Backend: 25/25 tests pass in ~17s (4 new perm+cache + 14 feature regression + 3 bugfix-45 + 4 seasonal). Verified: POST /purchase-list/item-state {perm_removed:true} sets row.perm_removed=true (row remains in /purchase-list payload for the frontend to filter); GET /purchase-list/deleted-items lists it; POST /purchase-list/refresh does NOT clear perm_removed (only clears temp_removed); {perm_removed:false} restores; non-admin (TEST_EXEC) gets 403 on /purchase-list/deleted-items. Opening cache: purchase_opening_cache collection has doc with fingerprint + entries; after wiping ALL purchase_list_snapshots the subsequent GET /purchase-list returns 296 rows quickly and the opening-cache doc's computed_at is unchanged (opening not recomputed). Frontend (admin/admin123 on /purchase-list): a simple CLICK on a row opens the item dialog (no drag needed); dialog shows pl-temp-delete-btn and pl-perm-delete-btn; Remove temporarily hides the row, Refresh restores it; Delete permanently hides the row, Refresh does NOT restore it, pl-deleted-list-btn opens pl-deleted-dialog listing the deleted item, pl-undelete-btn-{i} restores it to the main table. Regression: green checkbox click on row does NOT open the item dialog (stopPropagation working), Seasonal dialog still works and lists GOBI PAYAL 60-122 with Jul/Aug/Sep. Cleanup: no items left temp_removed / perm_removed / green. GOBI PAYAL 60-122 preserved seasonal [7,8,9] purview RAJESH.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "PurchaseList item dialog + deleted-list dialog", "issues": ["Radix DialogContent still emits 'Missing Description or aria-describedby' console warnings (carried over from iter46, non-blocking a11y warning)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_purchase_list_perm_v47.py",
+    "/app/backend/tests/test_purchase_list_feature.py",
+    "/app/backend/tests/test_purchase_list_bugfix_45.py",
+    "/app/backend/tests/test_purchase_list_seasonal_v46.py",
+    "/app/test_reports/pytest/iter47.xml"
+  ],
+  "action_items": [
+    "(Optional, carried from iter46) Add DialogDescription (or aria-describedby) to PurchaseItemSheet DialogContent and to pl-deleted-dialog to silence Radix a11y console warnings."
+  ],
+  "critical_code_review_comments": [
+    "server.py L5768 /purchase-list/deleted-items is defined BEFORE /purchase-list/refresh (correct — no route-shadowing issue). Good.",
+    "server.py L5679-5680 accepts perm_removed independently from temp_removed. Note: no explicit clearing of temp_removed when perm_removed goes true — if a user swipes temp-removed then perm-deletes, the record carries both flags. Not a bug per current spec (perm_removed alone drives the deleted-items list and frontend filter), but could be normalized on write."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_purchase_list_perm_v47.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None. NAJARIYA PLAIN 92.5 was used as the transient perm-delete/undelete test item and is left with perm_removed=false (verified via API and by row re-appearing in the table). GOBI PAYAL 60-122 preserved seasonal [7,8,9] purview RAJESH; TEST_ORDR_QA orderer preserved.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": false,
+  "test_credentials": "admin/admin123, TEST_EXEC/exec123",
+  "context_for_next_testing_agent": "New backend regression file: /app/backend/tests/test_purchase_list_perm_v47.py (4 tests, ~2s). Frontend testids added this iteration: pl-temp-delete-btn, pl-perm-delete-btn, pl-deleted-list-btn, pl-deleted-dialog, pl-deleted-item-{i}, pl-undelete-btn-{i}, pl-deleted-empty. The old swipe pointer-event code is fully removed — do NOT attempt drag gestures; row click opens the dialog. Green checkbox cell uses stopPropagation. Opening cache collection is purchase_opening_cache (fingerprinted by baseline-window txn count); it survives snapshot wipes.",
+  "rca_of_the_issue": "N/A – feature enhancement + bugfix testing, no defects found."
+}

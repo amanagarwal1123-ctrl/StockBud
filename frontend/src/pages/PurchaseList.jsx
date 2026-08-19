@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { ShoppingCart, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown, Settings2, Users, CalendarRange } from 'lucide-react';
+import { ShoppingCart, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown, Settings2, Users, CalendarRange, Trash2, Undo2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
@@ -32,47 +32,16 @@ function SortHead({ label, field, sort, onSort, align = 'right' }) {
   );
 }
 
-function SwipeRow({ row, idx, onSwipeLeft, onOpen, onGreenToggle, date }) {
-  const [dx, setDx] = useState(0);
-  const drag = useRef(null);
-
-  const onPointerDown = (e) => {
-    if (e.target.closest('[data-noswipe]')) return;
-    drag.current = { x: e.clientX, moved: false };
-  };
-  const onPointerMove = (e) => {
-    if (!drag.current) return;
-    const d = e.clientX - drag.current.x;
-    if (Math.abs(d) > 8) drag.current.moved = true;
-    if (d < 0) setDx(Math.max(d, -160));
-  };
-  const endDrag = () => {
-    if (!drag.current) return;
-    const moved = drag.current.moved;
-    drag.current = null;
-    if (dx < -90) {
-      setDx(0);
-      onSwipeLeft(row.item_name);
-    } else {
-      setDx(0);
-      if (!moved) onOpen(row);
-    }
-  };
-
+function ItemRow({ row, idx, onOpen, onGreenToggle, date }) {
   return (
     <TableRow
       data-testid={`pl-row-${idx}`}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={endDrag}
-      onPointerCancel={() => { drag.current = null; setDx(0); }}
-      onPointerLeave={() => { if (drag.current) { drag.current = null; setDx(0); } }}
-      style={{ transform: `translateX(${dx}px)`, transition: dx === 0 ? 'transform 0.2s' : 'none', touchAction: 'pan-y' }}
-      className={`cursor-pointer select-none ${row.green
+      onClick={() => onOpen(row)}
+      className={`cursor-pointer ${row.green
         ? 'bg-green-100 outline outline-2 -outline-offset-2 outline-green-500 hover:bg-green-100'
         : 'hover:bg-muted/40'}`}
     >
-      <TableCell data-noswipe className="w-10" onClick={(e) => e.stopPropagation()}>
+      <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
         <Checkbox checked={row.green} data-testid={`pl-green-check-${idx}`}
           className="data-[state=checked]:bg-green-600 data-[state=checked]:border-green-600"
           onCheckedChange={(v) => onGreenToggle(row.item_name, !!v, date)} />
@@ -107,6 +76,8 @@ export default function PurchaseList() {
   const [baselineInput, setBaselineInput] = useState('');
   const [seasonalOpen, setSeasonalOpen] = useState(false);
   const [seasonalItems, setSeasonalItems] = useState([]);
+  const [deletedOpen, setDeletedOpen] = useState(false);
+  const [deletedItems, setDeletedItems] = useState([]);
 
   const fetchList = useCallback(async (d) => {
     setLoading(true);
@@ -138,10 +109,18 @@ export default function PurchaseList() {
     }
   };
 
-  const onSwipeLeft = (itemName) => {
+  const onTempDelete = (itemName) => {
     patchRow(itemName, { temp_removed: true });
     updateState(itemName, { temp_removed: true });
+    setOpenItem(null);
     toast(`${itemName} removed temporarily`, { description: 'Press Refresh to bring it back' });
+  };
+
+  const onPermDelete = (itemName) => {
+    patchRow(itemName, { perm_removed: true });
+    updateState(itemName, { perm_removed: true });
+    setOpenItem(null);
+    toast(`${itemName} permanently deleted`, { description: 'Restore it from "Permanently Deleted Items"' });
   };
 
   const onGreenToggle = (itemName, green) => {
@@ -181,6 +160,23 @@ export default function PurchaseList() {
     } catch { toast.error('Failed to load seasonal items'); }
   };
 
+  const openDeletedList = async () => {
+    try {
+      const res = await axios.get(`${API}/purchase-list/deleted-items`);
+      setDeletedItems(res.data.items || []);
+      setDeletedOpen(true);
+    } catch { toast.error('Failed to load deleted items'); }
+  };
+
+  const undeleteItem = async (itemName) => {
+    try {
+      await axios.post(`${API}/purchase-list/item-state`, { item_name: itemName, perm_removed: false });
+      setDeletedItems(prev => prev.filter(x => x.item_name !== itemName));
+      patchRow(itemName, { perm_removed: false });
+      toast.success(`${itemName} restored to the list`);
+    } catch (e) { toast.error(e.response?.data?.detail || 'Failed to restore'); }
+  };
+
   const toggleSel = (name) => {
     setSel(prev => {
       if (name === 'ALL') return prev.includes('ALL') ? ['Admin'] : ['ALL'];
@@ -193,7 +189,7 @@ export default function PurchaseList() {
   const month = useMemo(() => parseInt(date.slice(5, 7), 10), [date]);
   const rows = useMemo(() => {
     if (!data) return [];
-    let r = data.rows.filter(x => !x.temp_removed);
+    let r = data.rows.filter(x => !x.temp_removed && !x.perm_removed);
     r = r.filter(x => !(x.seasonal_enabled && x.season_months?.length) || x.season_months.includes(month));
     if (!sel.includes('ALL')) r = r.filter(x => sel.includes(x.purview));
     const dirMul = sort.dir === 'asc' ? 1 : -1;
@@ -220,8 +216,12 @@ export default function PurchaseList() {
             <ShoppingCart className="h-8 w-8 text-indigo-600" />Purchase List
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Order qty = baseline (peak stock since {data?.baseline_start || '…'}) − current stock · swipe a row left to remove it temporarily · tap a row for seasons, baseline &amp; purview
+            Order qty = baseline (peak stock since {data?.baseline_start || '…'}) − current stock · tap a row to manage seasons, baseline, purview &amp; removal
           </p>
+          <button onClick={openDeletedList} data-testid="pl-deleted-list-btn"
+            className="text-sm text-red-600 hover:text-red-700 underline underline-offset-2 mt-1 inline-flex items-center gap-1">
+            <Trash2 className="h-3.5 w-3.5" />Permanently Deleted Items
+          </button>
         </div>
         <div className="flex items-end gap-2">
           <div>
@@ -275,11 +275,11 @@ export default function PurchaseList() {
                 <>
                   <p className="text-muted-foreground" data-testid="pl-empty-filtered">
                     All <span className="font-semibold text-foreground">{data.rows.length}</span> item(s) are hidden by current filters
-                    — {data.rows.filter(x => x.temp_removed).length} swiped away, {data.rows.filter(x => x.seasonal_enabled && x.season_months?.length && !x.season_months.includes(month)).length} out of season, rest under other orderers.
+                    — {data.rows.filter(x => x.temp_removed).length} removed temporarily, {data.rows.filter(x => x.perm_removed).length} permanently deleted, {data.rows.filter(x => x.seasonal_enabled && x.season_months?.length && !x.season_months.includes(month)).length} out of season, rest under other orderers.
                   </p>
                   <div className="flex justify-center gap-2">
                     <Button size="sm" variant="outline" onClick={() => setSel(['ALL'])} data-testid="pl-show-all-btn">Show all orderers</Button>
-                    <Button size="sm" variant="outline" onClick={onRefresh} data-testid="pl-restore-swiped-btn">Restore swiped items</Button>
+                    <Button size="sm" variant="outline" onClick={onRefresh} data-testid="pl-restore-swiped-btn">Restore temporary removals</Button>
                   </div>
                 </>
               ) : data?.window_txn_count === 0 ? (
@@ -308,8 +308,8 @@ export default function PurchaseList() {
                 </TableHeader>
                 <TableBody>
                   {rows.map((r, idx) => (
-                    <SwipeRow key={r.item_name} row={r} idx={idx} date={date}
-                      onSwipeLeft={onSwipeLeft} onOpen={setOpenItem} onGreenToggle={onGreenToggle} />
+                    <ItemRow key={r.item_name} row={r} idx={idx} date={date}
+                      onOpen={setOpenItem} onGreenToggle={onGreenToggle} />
                   ))}
                 </TableBody>
               </Table>
@@ -324,13 +324,44 @@ export default function PurchaseList() {
         onClose={() => setOpenItem(null)}
         onUpdate={updateState}
         onAddOrderer={addOrderer}
+        onTempDelete={onTempDelete}
+        onPermDelete={onPermDelete}
       />
+
+      {/* Permanently deleted items dialog */}
+      <Dialog open={deletedOpen} onOpenChange={setDeletedOpen}>
+        <DialogContent className="max-w-md" data-testid="pl-deleted-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Trash2 className="h-5 w-5 text-red-600" />Permanently Deleted Items</DialogTitle>
+            <DialogDescription className="sr-only">Restore items permanently deleted from the purchase list</DialogDescription>
+          </DialogHeader>
+          {deletedItems.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center" data-testid="pl-deleted-empty">
+              No permanently deleted items.
+            </p>
+          ) : (
+            <div className="max-h-[60vh] overflow-y-auto space-y-1.5">
+              {deletedItems.map((s, i) => (
+                <div key={s.item_name} data-testid={`pl-deleted-item-${i}`}
+                  className="rounded-lg border border-input px-3 py-2 flex items-center justify-between gap-2">
+                  <span className="font-medium text-sm truncate">{s.item_name}</span>
+                  <Button size="sm" variant="outline" className="h-8 shrink-0" data-testid={`pl-undelete-btn-${i}`}
+                    onClick={() => undeleteItem(s.item_name)}>
+                    <Undo2 className="h-4 w-4 mr-1" />Undelete
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Seasonal items dialog */}
       <Dialog open={seasonalOpen} onOpenChange={setSeasonalOpen}>
         <DialogContent className="max-w-md" data-testid="pl-seasonal-dialog">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><CalendarRange className="h-5 w-5 text-sky-600" />Seasonal items</DialogTitle>
+            <DialogDescription className="sr-only">All items with seasonal selling enabled</DialogDescription>
           </DialogHeader>
           {seasonalItems.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4 text-center" data-testid="pl-seasonal-empty">

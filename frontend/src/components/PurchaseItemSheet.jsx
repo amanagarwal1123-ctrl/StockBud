@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, EyeOff, Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,7 +8,7 @@ import { Switch } from '@/components/ui/switch';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-export const PurchaseItemSheet = ({ item, orderers, onClose, onUpdate, onAddOrderer }) => {
+export const PurchaseItemSheet = ({ item, orderers, onClose, onUpdate, onAddOrderer, onTempDelete, onPermDelete }) => {
   const [fixedVal, setFixedVal] = useState('');
   const [newOrderer, setNewOrderer] = useState('');
   const [showAdd, setShowAdd] = useState(false);
@@ -147,6 +147,19 @@ export const PurchaseItemSheet = ({ item, orderers, onClose, onUpdate, onAddOrde
                 <Button size="sm" className="h-9" onClick={addNew} data-testid="pl-new-orderer-save"><Plus className="h-4 w-4" /></Button>
               </div>
             )}
+          </div>
+
+          {/* Removal */}
+          <div className="pt-3 border-t space-y-2">
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => onTempDelete(item.item_name)} data-testid="pl-temp-delete-btn">
+                <EyeOff className="h-4 w-4 mr-1.5" />Remove temporarily
+              </Button>
+              <Button variant="destructive" className="flex-1" onClick={() => onPermDelete(item.item_name)} data-testid="pl-perm-delete-btn">
+                <Trash2 className="h-4 w-4 mr-1.5" />Delete permanently
+              </Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">Temporary removals come back with the Refresh button. Permanent deletions can be restored from "Permanently Deleted Items" on the list page.</p>
           </div>
         </div>
       </DialogContent>

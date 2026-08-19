@@ -5651,6 +5651,7 @@ async def get_purchase_list(date: str = Query(None), current_user: dict = Depend
         s = states.get(r['item_name']) or {}
         out.append({**r,
                     'temp_removed': bool(s.get('temp_removed')),
+                    'perm_removed': bool(s.get('perm_removed')),
                     'green': bool(s.get('green')),
                     'green_at': s.get('green_at'),
                     'season_months': s.get('season_months'),
@@ -5675,6 +5676,8 @@ async def update_purchase_item_state(request: Dict, current_user: dict = Depends
     baseline_changed = False
     if 'temp_removed' in request:
         updates['temp_removed'] = bool(request['temp_removed'])
+    if 'perm_removed' in request:
+        updates['perm_removed'] = bool(request['perm_removed'])
     if 'season_months' in request:
         sm = request['season_months']
         if sm:
@@ -5759,6 +5762,21 @@ async def get_seasonal_items(current_user: dict = Depends(get_current_user)):
                       'baseline_mode': s.get('baseline_mode', 'variable'),
                       'fixed_baseline_kg': s.get('fixed_baseline_kg'),
                       'green': bool(s.get('green'))})
+    return {'items': items}
+
+
+@api_router.get("/purchase-list/deleted-items")
+async def get_deleted_purchase_items(current_user: dict = Depends(get_current_user)):
+    """All permanently deleted purchase-list items, so admin can undelete them."""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    items = []
+    async for s in db.purchase_item_state.find(
+            {'perm_removed': True}, {"_id": 0}).sort('item_name', 1):
+        items.append({'item_name': s['item_name'],
+                      'purview': s.get('purview') or 'Admin',
+                      'season_months': s.get('season_months') or [],
+                      'seasonal_enabled': bool(s.get('seasonal_enabled', bool(s.get('season_months'))))})
     return {'items': items}
 
 

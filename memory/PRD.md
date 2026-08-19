@@ -194,6 +194,11 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - Header 'Seasonal' button (pl-seasonal-list-btn) → dialog (pl-seasonal-dialog) listing all seasonal items (new GET /api/purchase-list/seasonal-items, admin) with month badges; click opens the item editor even when out of season (metrics guarded with '—' when item not in day's rows; patchRow also patches openItem for live dialog updates). DialogDescription added for a11y.
 - Tested iteration_46.json: 100% backend (21/21 incl. regressions) + 100% frontend. New suite tests/test_purchase_list_seasonal_v46.py. REDEPLOY required.
 
+## Perm Delete + Removal Buttons + Opening Cache (Aug 19, 2026 — session 9 cont.)
+- Left-swipe REMOVED (was unreliable on mobile). Item dialog footer now has 'Remove temporarily' (pl-temp-delete-btn, = old swipe, restored by Refresh) and 'Delete permanently' (pl-perm-delete-btn, perm_removed flag, NOT restored by Refresh). Red 'Permanently Deleted Items' link on top (pl-deleted-list-btn) → dialog with Undelete per item (GET /api/purchase-list/deleted-items; undelete via item-state perm_removed:false). Rows filter excludes perm_removed client-side.
+- Performance: `purchase_opening_cache` Mongo collection caches the heavy as-of-baseline-start-1 opening inventory (entries list, fingerprint = txn count ≤ prev_day + anchor count) so snapshot recomputes only stream the in-window transactions. Verified: opening not recomputed after snapshot wipes.
+- Tested iteration_47.json: 100% backend (25/25 incl. all regressions) + 100% frontend. New suite tests/test_purchase_list_perm_v47.py. DialogDescription a11y added to all purchase dialogs. REDEPLOY required.
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document
