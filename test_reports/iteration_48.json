@@ -1,0 +1,35 @@
+{
+  "summary": "Iteration 48 (group-aware purchase list) fully tested. Backend: created /app/backend/tests/test_purchase_list_groups_v48.py (8 tests) covering profit_silver_tunch desc sort with nulls last, tunch == per_kg/10 (all 298 rows within 0.06), members array on every row, the 3 preview grouped leaders (KADA-AS 70, TULSI 70 -264, SNT 40-256) each with 2 members carrying current_stock_kg + sold_60d_kg with leader stock == member sum (<=0.005), grouped member names absent as own rows, v2 fingerprints on purchase_list_snapshots + purchase_opening_cache, and group-edit cache invalidation (QA_TMP_GROUP insert -> new fingerprint + newer computed_at; delete -> fingerprint restored to original). Full regression 33/33 passed (v48 + feature + bugfix_45 + seasonal_v46 + perm_v47). Frontend: desktop 1920 column order '#, Item, Order kg, Ag tunch, Lbr Rs/kg, Stock kg, Fine kg, Labour Rs' confirmed, default sort Ag tunch desc (45.4, 28.5, 24.3...), tunch plain numbers (no 'g'), Lbr with Indian commas (Rs 3,11,945), pl-sort-profit_silver_tunch toggles asc(-101.5 first)/desc, pl-sort-item_name sorts alphabetically. Grouped row SNT 40-256 shows x2 badge; dialog shows 'Group members (combined into this row)' with pl-member-0/1 (SNT 40-256 stock 54.291/sold 9.738; SNT-40 PREMIUM stock -14.509/sold 56.750). Mobile 390x844: Item/Order/Ag tunch/Lbr fully visible, td:nth-child(6) right edge = 367px, wrapper scrollWidth == clientWidth (no h-scroll); zoom-out x2 -> 80% (td6 right 306), reset -> 100%, zoom-in caps at 140%. Regression: green checkbox creates then removes the Goods to Arrive entry, Remove temporarily + Refresh restore works, Permanently Deleted Items dialog opens ('No permanently deleted items'). No console errors, no error elements. State left clean.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/purchase-list", "issue": "222 of 298 rows still show NEGATIVE current_stock_kg (e.g. RING KASTING 65-235 -9.383, CHEKS PANJA 60-070 -5.691, grouped leader KADA-AS 70 -9.83 with both members negative). Grouping fixed only the interchangeable-name cases; the underlying negative-stock cause (opening/as-of baseline seeded lower than sales in the window, order_qty = -stock when variable baseline is 0) is unresolved and is exactly what the user originally reported as 'distorting the list'. Group math itself is correct (leader == sum of members)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Purchase List mobile 390px", "issues": ["Item names truncate quite aggressively at 100px column width (e.g. 'NAJARIYA PLAI...', 'CHITAI BARTA...') - readable but ambiguous for similar item names; zooming out to 80% helps but shrinks text.", "Negative Stock kg values render in plain color; consider red styling since negative stock is the user's pain point."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_purchase_list_groups_v48.py",
+    "/app/test_reports/pytest/pytest_results_48.xml"
+  ],
+  "action_items": [
+    "Decide whether the remaining 222 rows with negative current_stock_kg are acceptable; if not, investigate opening/baseline seeding (baseline_start 2026-01-01 vs as-of inventory at 2025-12-31) because order_qty for those rows is just |negative stock|."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/server.py is 8493 lines - long-standing violation of the 700-line module guideline; purchase-list endpoints could move into a router module.",
+    "Frontend uses the CSS `zoom` property for table scaling; fine on current Chromium/Safari/Firefox 126+, but `transform: scale()` with transform-origin would be more portable."
+  ],
+  "updated_files": ["/app/backend/tests/test_purchase_list_groups_v48.py"],
+  "success_rate": {"backend": "100% (33/33 pytest)", "frontend": "100% of requested flows verified"},
+  "seed_data_creation": "Temporary QA_TMP_GROUP doc in item_groups inserted and deleted by the cache-invalidation test; GHUNTI KP-120 green + temp_removed toggled on and off. Verified afterwards: no green/temp/perm flags set, goods_orders empty, GOBI PAYAL 60-122 seasonal [7,8,9] purview RAJESH intact, no QA_TMP_GROUP.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "admin/admin123 (from /app/memory/test_credentials.md)",
+  "context_for_next_testing_agent": "Snapshot fingerprint format is 'v2:<baseline_start>:<txn_count>:g<groups>:m<mappings>'; opening cache 'v2:<txn>:<anchors>:m<mappings>'. Table td indices on purchase list: 0=green checkbox, 1=#, 2=Item, 3=Order kg, 4=Ag tunch, 5=Lbr Rs/kg, 6=Stock kg, 7=Fine kg, 8=Labour Rs (nth-child is +1). Only 3 multi-member rows exist. Business date 2026-08-19.",
+  "rca_of_the_issue": "Group-aware caching works as designed: v2 fingerprints include item_groups/item_mappings counts so a group insert forces recompute (verified computed_at moved forward and reverted fingerprint on delete), and the opening cache is stored per member so group edits do not force a heavy as-of inventory recompute. Remaining negative stocks are not a grouping bug: they come from members whose windowed sales exceed the seeded opening stock (e.g. SNT-40 PREMIUM -14.509 kg with 56.75 kg sold in 60d), i.e. an inventory-baseline/mapping data issue upstream of the purchase list."
+}

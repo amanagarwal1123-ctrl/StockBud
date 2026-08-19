@@ -53,7 +53,7 @@ export const PurchaseItemSheet = ({ item, orderers, onClose, onUpdate, onAddOrde
 
   return (
     <Dialog open={!!item} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-md" data-testid="pl-item-sheet">
+      <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto" data-testid="pl-item-sheet">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {item.item_name}
@@ -77,6 +77,24 @@ export const PurchaseItemSheet = ({ item, orderers, onClose, onUpdate, onAddOrde
               <p className="font-semibold tabular-nums">{item.order_qty_kg != null ? `${item.order_qty_kg.toFixed(3)} kg` : '—'}</p>
             </div>
           </div>
+
+          {/* Group members */}
+          {item.members?.length > 1 && (
+            <div data-testid="pl-members-section">
+              <p className="text-sm font-medium mb-1.5">Group members (combined into this row)</p>
+              <div className="rounded-lg border divide-y">
+                {item.members.map((m, i) => (
+                  <div key={m.name} data-testid={`pl-member-${i}`}
+                    className="flex items-center justify-between gap-2 px-3 py-1.5 text-xs">
+                    <span className="font-medium truncate">{m.name}</span>
+                    <span className="tabular-nums text-muted-foreground shrink-0">
+                      stock {m.current_stock_kg.toFixed(3)} kg · sold {m.sold_60d_kg.toFixed(3)} kg
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Baseline */}
           <div>

@@ -1,32 +1,35 @@
 """Purchase List daily snapshot computation.
 
 For a given date D:
-- Daily CLOSING stock per item from baseline_start..D (engine sign rules:
+- Daily CLOSING stock per GROUP LEADER from baseline_start..D (engine sign rules:
   purchase/purchase_return/receive ADD, sale/sale_return/issue SUBTRACT),
-  opening seeded from inventory as-of baseline_start - 1.
+  opening seeded from inventory as-of baseline_start - 1 (cached per member).
+- Interchangeable items (item_groups) are combined under their leader; each row
+  carries a per-member breakdown (current stock + net sold in the profit window).
 - Variable baseline = max closing stock in the window; fixed = admin value.
 - order_qty = baseline - closing(D); only rows with order_qty > 0 are kept.
 - Fine/labour of order qty from the cumulative purchase-ledger cost basis.
-- Profit per kg (silver g/kg, labour INR/kg) from the last 60 days of sales
-  vs the same long-run cost basis (canonical per-entry margin math).
+- Profit: silver in TUNCH points (weighted avg sale tunch - purchase tunch) and
+  labour in INR/kg, from the last 60 days of sales vs the same cost basis
+  (weighted by sold weight, i.e. group members are weight-averaged naturally).
 """
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
-from services.group_utils import build_group_maps, build_group_ledger, resolve_to_leader
+from services.group_utils import build_group_maps, build_group_ledger
 from services.profit_helpers import EXCLUDED_ITEMS, ledger_cost_basis, fetch_ledger_with_fallback
 
 ADD_TYPES = ("purchase", "purchase_return", "receive")
 SUB_TYPES = ("sale", "sale_return", "issue")
 
 
-async def _get_opening_cached(db, prev_day, inventory_fn, resolve, excluded):
-    """DB-cached opening stock per leader (grams) as of end of prev_day.
-    The as-of inventory is the heaviest part of the snapshot compute; caching it
-    in Mongo makes recomputes (fingerprint change / baseline edits) fast."""
+async def _get_opening_cached(db, prev_day, inventory_fn, map_dict):
+    """DB-cached opening stock per MEMBER (alias-resolved master name, grams) as of
+    end of prev_day. Group aggregation happens at compute time so group edits never
+    require recomputing this heavy as-of inventory."""
     txn_cnt = await db.transactions.count_documents({'date': {'$lte': prev_day + ' 23:59:59'}})
     anchor_cnt = await db.inventory_baselines.count_documents({})
-    fp = f"{txn_cnt}:{anchor_cnt}"
+    fp = f"v2:{txn_cnt}:{anchor_cnt}:m{len(map_dict)}"
     doc = await db.purchase_opening_cache.find_one({'date': prev_day}, {"_id": 0})
     if doc and doc.get('fingerprint') == fp:
         return defaultdict(float, {e['item']: e['g'] for e in doc.get('entries', [])})
@@ -36,10 +39,8 @@ async def _get_opening_cached(db, prev_day, inventory_fn, resolve, excluded):
         raw = si.get('item_name', '') or ''
         if not raw or raw.isdigit():
             continue
-        leader = resolve(raw)
-        if leader in excluded:
-            continue
-        opening[leader] += si.get('net_wt', 0) or 0
+        mem = map_dict.get(raw, raw)
+        opening[mem] += si.get('net_wt', 0) or 0
     await db.purchase_opening_cache.update_one(
         {'date': prev_day},
         {'$set': {'date': prev_day, 'fingerprint': fp,
@@ -63,13 +64,21 @@ async def compute_purchase_snapshot(db, date_s: str, baseline_start: str,
     grp_ledger = build_group_ledger(ledger_items, all_groups, mappings)
     excluded = set(EXCLUDED_ITEMS)
 
-    def _resolve(n):
-        return resolve_to_leader(n, map_dict, m2l)
-
     prev_day = (sd_dt - timedelta(days=1)).strftime('%Y-%m-%d')
-    opening = await _get_opening_cached(db, prev_day, inventory_fn, _resolve, excluded)
+    opening_mem = await _get_opening_cached(db, prev_day, inventory_fn, map_dict)
 
-    daily_delta = defaultdict(lambda: defaultdict(float))  # leader -> date -> grams
+    leader_open = defaultdict(float)
+    member_open = defaultdict(lambda: defaultdict(float))  # leader -> member -> grams
+    for mem, g in opening_mem.items():
+        leader = m2l.get(mem, mem)
+        if leader in excluded:
+            continue
+        leader_open[leader] += g
+        member_open[leader][mem] += g
+
+    daily_delta = defaultdict(lambda: defaultdict(float))    # leader -> date -> grams
+    member_delta = defaultdict(lambda: defaultdict(float))   # leader -> member -> grams
+    member_sold = defaultdict(lambda: defaultdict(float))    # leader -> member -> grams sold (net)
     sale_agg = defaultdict(lambda: {'silver_kg': 0.0, 'labour': 0.0, 'wt_g': 0.0})
     async for t in db.transactions.find(
             {'date': {'$gte': win_start, '$lte': date_s + ' 23:59:59'},
@@ -79,7 +88,8 @@ async def compute_purchase_snapshot(db, date_s: str, baseline_start: str,
         raw = t.get('item_name', '') or ''
         if not raw or raw.isdigit():
             continue
-        leader = _resolve(raw)
+        mem = map_dict.get(raw, raw)
+        leader = m2l.get(mem, mem)
         if leader in excluded:
             continue
         d = (t.get('date') or '')[:10]
@@ -88,13 +98,16 @@ async def compute_purchase_snapshot(db, date_s: str, baseline_start: str,
         w = t.get('net_wt', 0) or 0
         ttype = t['type']
         if baseline_start <= d <= date_s:
-            daily_delta[leader][d] += w if ttype in ADD_TYPES else -w
+            delta = w if ttype in ADD_TYPES else -w
+            daily_delta[leader][d] += delta
+            member_delta[leader][mem] += delta
         if ttype in ('sale', 'sale_return') and sale_start <= d <= date_s:
             cb = ledger_cost_basis(grp_ledger, leader, raw)
+            sign = -1 if ttype == 'sale_return' else 1
+            sw = abs(w) * sign
+            member_sold[leader][mem] += sw
             if cb is not None:
                 cost_tunch, cost_lpg = cb
-                sign = -1 if ttype == 'sale_return' else 1
-                sw = abs(w) * sign
                 st = float(t.get('tunch', 0) or 0)
                 amt = abs(t.get('total_amount', 0) or 0) or abs(t.get('labor', 0) or 0)
                 a = sale_agg[leader]
@@ -106,8 +119,8 @@ async def compute_purchase_snapshot(db, date_s: str, baseline_start: str,
     date_list = [(sd_dt + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(n_days + 1)]
 
     rows = []
-    for leader in set(opening) | set(daily_delta):
-        running = opening.get(leader, 0.0)
+    for leader in set(leader_open) | set(daily_delta):
+        running = leader_open.get(leader, 0.0)
         deltas = daily_delta.get(leader, {})
         max_closing = None
         for ds in date_list:
@@ -132,13 +145,27 @@ async def compute_purchase_snapshot(db, date_s: str, baseline_start: str,
         order_kg = order_g / 1000.0
         a = sale_agg.get(leader)
         if a and abs(a['wt_g']) > 1:
-            ps = a['silver_kg'] * 1000.0 / abs(a['wt_g']) * 1000.0  # g fine silver / kg sold
+            fine_frac = a['silver_kg'] * 1000.0 / abs(a['wt_g'])   # g fine / g sold
+            ps_tunch = fine_frac * 100.0                            # tunch points
+            ps = fine_frac * 1000.0                                 # g fine / kg sold
             pl = a['labour'] / abs(a['wt_g']) * 1000.0              # INR / kg sold
         else:
+            ps_tunch = None
             ps = None
             pl = None
+
+        mem_names = set(member_open.get(leader, {})) | set(member_delta.get(leader, {}))
+        members = []
+        for mem in mem_names:
+            mc = member_open.get(leader, {}).get(mem, 0.0) + member_delta.get(leader, {}).get(mem, 0.0)
+            members.append({'name': mem,
+                            'current_stock_kg': round(mc / 1000.0, 3),
+                            'sold_60d_kg': round(member_sold.get(leader, {}).get(mem, 0.0) / 1000.0, 3)})
+        members.sort(key=lambda m: -m['current_stock_kg'])
+
         rows.append({
             'item_name': leader,
+            'members': members,
             'order_qty_kg': round(order_kg, 3),
             'current_stock_kg': round(closing_g / 1000.0, 3),
             'baseline_kg': round(baseline_g / 1000.0, 3),
@@ -147,8 +174,9 @@ async def compute_purchase_snapshot(db, date_s: str, baseline_start: str,
             'labour_inr': round(order_kg * lpg * 1000.0, 0),
             'purchase_tunch': round(p_tunch, 2),
             'labour_per_kg': round(lpg * 1000.0, 2),
+            'profit_silver_tunch': round(ps_tunch, 2) if ps_tunch is not None else None,
             'profit_silver_per_kg': round(ps, 1) if ps is not None else None,
             'profit_labour_per_kg': round(pl, 0) if pl is not None else None,
         })
-    rows.sort(key=lambda r: (r['profit_silver_per_kg'] is None, -(r['profit_silver_per_kg'] or 0)))
+    rows.sort(key=lambda r: (r['profit_silver_tunch'] is None, -(r['profit_silver_tunch'] or 0)))
     return rows

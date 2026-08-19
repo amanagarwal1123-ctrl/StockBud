@@ -199,6 +199,13 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - Performance: `purchase_opening_cache` Mongo collection caches the heavy as-of-baseline-start-1 opening inventory (entries list, fingerprint = txn count ≤ prev_day + anchor count) so snapshot recomputes only stream the in-window transactions. Verified: opening not recomputed after snapshot wipes.
 - Tested iteration_47.json: 100% backend (25/25 incl. all regressions) + 100% frontend. New suite tests/test_purchase_list_perm_v47.py. DialogDescription a11y added to all purchase dialogs. REDEPLOY required.
 
+## Group-Aware Rows + Tunch Profit + Mobile Fit (Aug 19, 2026 — session 9 cont.)
+- **Root cause of 'negative weights' distortion**: caches didn't invalidate on group/mapping edits. Fingerprints now v2: snapshot fp includes item_groups+item_mappings counts; opening cache stores per-MEMBER entries (v2 fp incl. mappings count) with group aggregation at compute time — group edits recompute instantly without redoing the heavy as-of inventory.
+- Rows are group leaders with `members` array [{name, current_stock_kg, sold_60d_kg}]; item dialog shows 'Group members (combined into this row)' (pl-members-section) when >1. Profits inherently weight-averaged across members via sale-weight aggregation.
+- Silver profit now in TUNCH points (`profit_silver_tunch` = per_kg/10, per_kg kept for compat); labour ₹/kg with Indian commas. Column order: #, Item, Order kg, Ag tunch, Lbr ₹/kg, Stock kg, Fine kg, Labour ₹; default sort Ag tunch desc. Negative stock shown red.
+- Mobile 390px: 4 key columns fit without horizontal scroll (right edge 367px, compact px-1 cells, truncated item names). Pinch-zoom (0.5–1.4 via touch on pl-table-wrapper) + pl-zoom-in/out/reset buttons.
+- Tested iteration_48.json: 33/33 backend (new suite tests/test_purchase_list_groups_v48.py) + 100% frontend incl. cache-invalidation-on-group-edit e2e. NOTE: remaining negative stocks in preview are DATA (members selling more than seeded opening → need more groups/mappings, which the user manages); on production, creating groups now takes effect immediately. REDEPLOY required.
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document

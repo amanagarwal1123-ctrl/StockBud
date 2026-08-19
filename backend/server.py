@@ -5603,7 +5603,9 @@ async def _purchase_fingerprint(date_s: str, baseline_start: str):
     win_start = min(baseline_start, sale_start)
     cnt = await db.transactions.count_documents(
         {'date': {'$gte': win_start, '$lte': date_s + ' 23:59:59'}})
-    return f"{baseline_start}:{cnt}", cnt
+    g_cnt = await db.item_groups.count_documents({})
+    m_cnt = await db.item_mappings.count_documents({})
+    return f"v2:{baseline_start}:{cnt}:g{g_cnt}:m{m_cnt}", cnt
 
 
 @api_router.get("/purchase-list")
