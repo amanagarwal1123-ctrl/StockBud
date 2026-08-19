@@ -15,6 +15,18 @@ MONGO_URL = backend_env.get("MONGO_URL")
 DB_NAME = backend_env.get("DB_NAME")
 
 
+def _get_loop():
+    """Reusable event loop (_get_loop() raises on py3.11 when unset/closed)."""
+    try:
+        loop = asyncio.get_event_loop_policy().get_event_loop()
+        if loop.is_closed():
+            raise RuntimeError("closed")
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop
+
+
 def _login(u, p):
     r = requests.post(f"{API}/auth/login", json={"username": u, "password": p}, timeout=30)
     assert r.status_code == 200, r.text[:400]
@@ -106,12 +118,12 @@ class TestCacheV2:
             snaps = await db.purchase_list_snapshots.find({}, {"_id": 0, "date": 1, "fingerprint": 1}).to_list(None)
             opens = await db.purchase_opening_cache.find({}, {"_id": 0, "date": 1, "fingerprint": 1}).to_list(None)
             return snaps, opens
-        snaps, opens = asyncio.get_event_loop().run_until_complete(_run())
+        snaps, opens = _get_loop().run_until_complete(_run())
         assert snaps, "no purchase_list_snapshots docs"
         latest = sorted(snaps, key=lambda s: s["date"])[-1]
-        assert latest["fingerprint"].startswith("v2:"), latest
+        assert latest["fingerprint"].startswith("v4:"), latest
         assert opens, "no purchase_opening_cache docs"
-        assert any(o["fingerprint"].startswith("v2:") for o in opens), opens
+        assert any(o["fingerprint"].startswith("v4:") for o in opens), opens
 
     def test_group_edit_invalidates_snapshot(self, admin_headers, plist):
         async def _read(db_state=None):
@@ -128,7 +140,7 @@ class TestCacheV2:
             db = _mongo()
             await db.item_groups.delete_many({"group_name": "QA_TMP_GROUP"})
 
-        loop = asyncio.get_event_loop()
+        loop = _get_loop()
         date0, fp0, ca0 = loop.run_until_complete(_read())
         try:
             loop.run_until_complete(_insert())
@@ -137,7 +149,7 @@ class TestCacheV2:
             date1, fp1, ca1 = loop.run_until_complete(_read())
             assert fp1 != fp0, f"fingerprint unchanged after group insert: {fp0}"
             assert ca1 > ca0, f"computed_at not newer: {ca0} -> {ca1}"
-            assert fp1.startswith("v2:")
+            assert fp1.startswith("v4:")
         finally:
             loop.run_until_complete(_delete())
             r = requests.get(f"{API}/purchase-list", headers=admin_headers, timeout=240)

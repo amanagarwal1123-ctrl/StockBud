@@ -206,6 +206,12 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - Mobile 390px: 4 key columns fit without horizontal scroll (right edge 367px, compact px-1 cells, truncated item names). Pinch-zoom (0.5–1.4 via touch on pl-table-wrapper) + pl-zoom-in/out/reset buttons.
 - Tested iteration_48.json: 33/33 backend (new suite tests/test_purchase_list_groups_v48.py) + 100% frontend incl. cache-invalidation-on-group-edit e2e. NOTE: remaining negative stocks in preview are DATA (members selling more than seeded opening → need more groups/mappings, which the user manages); on production, creating groups now takes effect immediately. REDEPLOY required.
 
+## Mapping Parity Fix + Search Bars + Item Groups Mobile (Aug 19, 2026 — session 9 cont.)
+- **BUG (stock wrong in Purchase List vs Current Stock)** — 3 root causes fixed in `purchase_list_service.py`: (1) names now stripped before mapping lookup; (2) per-item baseline anchors (inventory_baselines + opening_effective_date) honored in the delta series; (3) CHAINED mappings (JB-70 KADA CC → II → KADA) resolved transitively via `_flatten_map` and consistently everywhere. Current stock is now read DIRECTLY from get_current_inventory(as_of=date) → **exact parity with the Current Stock page (0/297 mismatches, suite test_purchase_list_parity_v49.py)**; the peak series is anchor-aware and aligned to end at the engine value. Fingerprints bumped to v4. Cutoffs keyed via flat_map for chain safety.
+- **Search bars**: Purchase List (pl-search-input; searches leaders AND members, suggestion '<member> → <leader>', bypasses orderer/season/temp filters while searching) and Goods to Arrive (gta-search-input) with autocomplete dropdowns + clear buttons.
+- **Item Groups mobile**: auto-suggestions card hidden while searching (results sit right under the input, above the keyboard); Create/Edit dialog now flex-column capped at 85dvh (search pinned, chips max-h-24, list flex-1 scroll, save pinned) so the keyboard no longer hides the list; leader auto-selected as first picked item. Purchase list mobile item column trimmed to 80px so the 4 key columns fit 390px.
+- Tested iteration_49.json: 37/37 backend + 100% frontend. Note: preview master_items nearly empty (1 doc) limits Item Groups create-dialog data — data artifact, not code. REDEPLOY required.
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document

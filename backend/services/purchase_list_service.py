@@ -1,46 +1,62 @@
 """Purchase List daily snapshot computation.
 
-For a given date D:
-- Daily CLOSING stock per GROUP LEADER from baseline_start..D (engine sign rules:
-  purchase/purchase_return/receive ADD, sale/sale_return/issue SUBTRACT),
-  opening seeded from inventory as-of baseline_start - 1 (cached per member).
+Correctness contract: the 'current stock' of every row equals the Current Stock
+page exactly — it is read from the same inventory engine (get_current_inventory)
+as-of the snapshot date, which applies item-mapping normalization (stripped
+names) and per-item physical-stock baseline anchors.
+
+The baseline (peak) series is reconstructed from baseline_start..D using the
+cached engine opening at baseline_start-1 plus in-window transaction deltas
+(anchor-aware: txns on/before an item's baseline cutoff are skipped, same rule
+as the engine), then uniformly aligned so the series ends at the engine value.
+
 - Interchangeable items (item_groups) are combined under their leader; each row
-  carries a per-member breakdown (current stock + net sold in the profit window).
-- Variable baseline = max closing stock in the window; fixed = admin value.
+  carries a per-member breakdown (engine stock + net sold in the profit window).
+- Variable baseline = max closing in the window; fixed = admin value.
 - order_qty = baseline - closing(D); only rows with order_qty > 0 are kept.
-- Fine/labour of order qty from the cumulative purchase-ledger cost basis.
-- Profit: silver in TUNCH points (weighted avg sale tunch - purchase tunch) and
-  labour in INR/kg, from the last 60 days of sales vs the same cost basis
-  (weighted by sold weight, i.e. group members are weight-averaged naturally).
+- Profit: silver in TUNCH points and labour in INR/kg from the last 60 days of
+  sales vs the group ledger cost basis (weight-averaged across members).
 """
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 from services.group_utils import build_group_maps, build_group_ledger
 from services.profit_helpers import EXCLUDED_ITEMS, ledger_cost_basis, fetch_ledger_with_fallback
+from services.stock_service import get_opening_effective_date
 
 ADD_TYPES = ("purchase", "purchase_return", "receive")
 SUB_TYPES = ("sale", "sale_return", "issue")
 
 
+def _flatten_map(map_dict):
+    """Resolve chained mappings (A -> B -> C) to their final master, cycle-safe."""
+    flat = {}
+    for k in map_dict:
+        seen = set()
+        cur = k
+        while cur in map_dict and cur not in seen:
+            seen.add(cur)
+            cur = map_dict[cur]
+        flat[k] = cur
+    return flat
+
+
 async def _get_opening_cached(db, prev_day, inventory_fn, map_dict):
-    """DB-cached opening stock per MEMBER (alias-resolved master name, grams) as of
-    end of prev_day. Group aggregation happens at compute time so group edits never
-    require recomputing this heavy as-of inventory."""
+    """DB-cached opening stock per MEMBER (stripped, alias-resolved master name,
+    grams) as of end of prev_day, straight from the inventory engine."""
     txn_cnt = await db.transactions.count_documents({'date': {'$lte': prev_day + ' 23:59:59'}})
     anchor_cnt = await db.inventory_baselines.count_documents({})
-    fp = f"v2:{txn_cnt}:{anchor_cnt}:m{len(map_dict)}"
+    fp = f"v4:{txn_cnt}:{anchor_cnt}:m{len(map_dict)}"
     doc = await db.purchase_opening_cache.find_one({'date': prev_day}, {"_id": 0})
     if doc and doc.get('fingerprint') == fp:
         return defaultdict(float, {e['item']: e['g'] for e in doc.get('entries', [])})
     inv = await inventory_fn(as_of_date=prev_day)
     opening = defaultdict(float)
     for si in inv.get('stamp_items', []):
-        raw = si.get('item_name', '') or ''
+        raw = (si.get('item_name') or '').strip()
         if not raw or raw.isdigit():
             continue
-        mem = map_dict.get(raw, raw)
-        opening[mem] += si.get('net_wt', 0) or 0
+        opening[raw] += si.get('net_wt', 0) or 0
     await db.purchase_opening_cache.update_one(
         {'date': prev_day},
         {'$set': {'date': prev_day, 'fingerprint': fp,
@@ -60,24 +76,55 @@ async def compute_purchase_snapshot(db, date_s: str, baseline_start: str,
     all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
     mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
     map_dict, m2l, _ = build_group_maps(all_groups, mappings)
+    flat_map = _flatten_map(map_dict)
     ledger_items = await fetch_ledger_with_fallback(db, all_groups, mappings)
     grp_ledger = build_group_ledger(ledger_items, all_groups, mappings)
     excluded = set(EXCLUDED_ITEMS)
 
+    def _leader_of(mem):
+        """Member (engine display name) -> transitive master -> group leader."""
+        t = flat_map.get(mem, mem)
+        return m2l.get(t, t)
+
+    # Per-item baseline anchor cutoffs (same rule as the inventory engine)
+    oed = await get_opening_effective_date()
+    cutoffs = {}
+    async for b in db.inventory_baselines.find(
+            {'baseline_date': {'$lte': date_s}},
+            {"_id": 0, "item_name": 1, "baseline_date": 1}):
+        if oed and b['baseline_date'] < oed:
+            continue
+        master = b['item_name'].strip()
+        master = flat_map.get(map_dict.get(master, master), map_dict.get(master, master))
+        k = master.strip().lower()
+        if k not in cutoffs or b['baseline_date'] > cutoffs[k]:
+            cutoffs[k] = b['baseline_date']
+
     prev_day = (sd_dt - timedelta(days=1)).strftime('%Y-%m-%d')
     opening_mem = await _get_opening_cached(db, prev_day, inventory_fn, map_dict)
-
     leader_open = defaultdict(float)
-    member_open = defaultdict(lambda: defaultdict(float))  # leader -> member -> grams
     for mem, g in opening_mem.items():
-        leader = m2l.get(mem, mem)
+        leader = _leader_of(mem)
         if leader in excluded:
             continue
         leader_open[leader] += g
-        member_open[leader][mem] += g
+
+    # Current stock straight from the engine (matches the Current Stock page)
+    inv_now = await inventory_fn(as_of_date=date_s)
+    leader_direct = defaultdict(float)
+    member_direct = defaultdict(lambda: defaultdict(float))
+    for si in inv_now.get('stamp_items', []):
+        raw = (si.get('item_name') or '').strip()
+        if not raw or raw.isdigit():
+            continue
+        leader = _leader_of(raw)
+        if leader in excluded:
+            continue
+        g = si.get('net_wt', 0) or 0
+        leader_direct[leader] += g
+        member_direct[leader][raw] += g
 
     daily_delta = defaultdict(lambda: defaultdict(float))    # leader -> date -> grams
-    member_delta = defaultdict(lambda: defaultdict(float))   # leader -> member -> grams
     member_sold = defaultdict(lambda: defaultdict(float))    # leader -> member -> grams sold (net)
     sale_agg = defaultdict(lambda: {'silver_kg': 0.0, 'labour': 0.0, 'wt_g': 0.0})
     async for t in db.transactions.find(
@@ -85,11 +132,11 @@ async def compute_purchase_snapshot(db, date_s: str, baseline_start: str,
              'type': {'$in': list(ADD_TYPES + SUB_TYPES)}},
             {"_id": 0, "date": 1, "type": 1, "item_name": 1, "net_wt": 1,
              "tunch": 1, "labor": 1, "total_amount": 1}):
-        raw = t.get('item_name', '') or ''
+        raw = (t.get('item_name') or '').strip()
         if not raw or raw.isdigit():
             continue
-        mem = map_dict.get(raw, raw)
-        leader = m2l.get(mem, mem)
+        mem = map_dict.get(raw, raw)          # engine-equivalent display name (one hop)
+        leader = _leader_of(mem)              # transitive master + group leader
         if leader in excluded:
             continue
         d = (t.get('date') or '')[:10]
@@ -98,9 +145,9 @@ async def compute_purchase_snapshot(db, date_s: str, baseline_start: str,
         w = t.get('net_wt', 0) or 0
         ttype = t['type']
         if baseline_start <= d <= date_s:
-            delta = w if ttype in ADD_TYPES else -w
-            daily_delta[leader][d] += delta
-            member_delta[leader][mem] += delta
+            cut = cutoffs.get(flat_map.get(mem, mem).lower(), oed)
+            if not (cut and d <= cut):
+                daily_delta[leader][d] += w if ttype in ADD_TYPES else -w
         if ttype in ('sale', 'sale_return') and sale_start <= d <= date_s:
             cb = ledger_cost_basis(grp_ledger, leader, raw)
             sign = -1 if ttype == 'sale_return' else 1
@@ -119,7 +166,7 @@ async def compute_purchase_snapshot(db, date_s: str, baseline_start: str,
     date_list = [(sd_dt + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(n_days + 1)]
 
     rows = []
-    for leader in set(leader_open) | set(daily_delta):
+    for leader in set(leader_direct) | set(daily_delta) | set(leader_open):
         running = leader_open.get(leader, 0.0)
         deltas = daily_delta.get(leader, {})
         max_closing = None
@@ -127,8 +174,9 @@ async def compute_purchase_snapshot(db, date_s: str, baseline_start: str,
             running += deltas.get(ds, 0.0)
             if max_closing is None or running > max_closing:
                 max_closing = running
-        closing_g = running
-        variable_baseline_g = max_closing if max_closing is not None else closing_g
+        closing_g = leader_direct.get(leader, 0.0)       # engine truth
+        adjust = closing_g - running                     # align series to engine
+        variable_baseline_g = max((max_closing if max_closing is not None else running) + adjust, closing_g)
 
         st_doc = item_states.get(leader) or {}
         if st_doc.get('baseline_mode') == 'fixed' and st_doc.get('fixed_baseline_kg') is not None:
@@ -146,20 +194,19 @@ async def compute_purchase_snapshot(db, date_s: str, baseline_start: str,
         a = sale_agg.get(leader)
         if a and abs(a['wt_g']) > 1:
             fine_frac = a['silver_kg'] * 1000.0 / abs(a['wt_g'])   # g fine / g sold
-            ps_tunch = fine_frac * 100.0                            # tunch points
-            ps = fine_frac * 1000.0                                 # g fine / kg sold
-            pl = a['labour'] / abs(a['wt_g']) * 1000.0              # INR / kg sold
+            ps_tunch = fine_frac * 100.0
+            ps = fine_frac * 1000.0
+            pl = a['labour'] / abs(a['wt_g']) * 1000.0
         else:
             ps_tunch = None
             ps = None
             pl = None
 
-        mem_names = set(member_open.get(leader, {})) | set(member_delta.get(leader, {}))
+        mem_names = set(member_direct.get(leader, {})) | set(member_sold.get(leader, {}))
         members = []
         for mem in mem_names:
-            mc = member_open.get(leader, {}).get(mem, 0.0) + member_delta.get(leader, {}).get(mem, 0.0)
             members.append({'name': mem,
-                            'current_stock_kg': round(mc / 1000.0, 3),
+                            'current_stock_kg': round(member_direct.get(leader, {}).get(mem, 0.0) / 1000.0, 3),
                             'sold_60d_kg': round(member_sold.get(leader, {}).get(mem, 0.0) / 1000.0, 3)})
         members.sort(key=lambda m: -m['current_stock_kg'])
 

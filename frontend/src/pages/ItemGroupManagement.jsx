@@ -90,9 +90,11 @@ export default function ItemGroupManagement() {
   };
 
   const toggleItem = (itemName) => {
-    setSelectedItems(prev =>
-      prev.includes(itemName) ? prev.filter(i => i !== itemName) : [...prev, itemName]
-    );
+    setSelectedItems(prev => {
+      const next = prev.includes(itemName) ? prev.filter(i => i !== itemName) : [...prev, itemName];
+      setLeaderItem(l => next.includes(l) ? l : (next[0] || ''));
+      return next;
+    });
   };
 
   const filteredGroups = groups.filter(g =>
@@ -131,8 +133,8 @@ export default function ItemGroupManagement() {
         </div>
       )}
 
-      {/* Auto-suggested groups from mappings */}
-      {autoSuggestions.filter(s => !alreadyGrouped.includes(s.leader)).length > 0 && (
+      {/* Auto-suggested groups from mappings (hidden while searching so results stay visible above the keyboard) */}
+      {!search && autoSuggestions.filter(s => !alreadyGrouped.includes(s.leader)).length > 0 && (
         <Card className="border-amber-200 bg-amber-50/30">
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
@@ -236,17 +238,17 @@ export default function ItemGroupManagement() {
 
       {/* Create/Edit Group Dialog */}
       <Dialog open={showCreate} onOpenChange={(open) => { setShowCreate(open); if (!open) setEditingGroup(null); }}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>{editingGroup ? `Edit Group: ${editingGroup}` : 'Create Item Group'}</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            <div className="relative">
+        <DialogContent className="max-w-lg max-h-[85dvh] flex flex-col overflow-hidden">
+          <DialogHeader className="shrink-0"><DialogTitle>{editingGroup ? `Edit Group: ${editingGroup}` : 'Create Item Group'}</DialogTitle></DialogHeader>
+          <div className="flex flex-col gap-3 flex-1 min-h-0">
+            <div className="relative shrink-0">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input placeholder="Search items..." value={createSearch} onChange={e => setCreateSearch(e.target.value)}
                 className="pl-10" data-testid="create-group-search" />
             </div>
             {selectedItems.length > 0 && (
-              <div>
-                <p className="text-xs font-medium text-muted-foreground mb-2">Selected ({selectedItems.length}) — click one as Leader:</p>
+              <div className="shrink-0 max-h-24 overflow-y-auto">
+                <p className="text-xs font-medium text-muted-foreground mb-1.5">Selected ({selectedItems.length}) — click one as Leader:</p>
                 <div className="flex flex-wrap gap-1.5">
                   {selectedItems.map(item => (
                     <Badge key={item}
@@ -259,7 +261,7 @@ export default function ItemGroupManagement() {
                 </div>
               </div>
             )}
-            <div className="max-h-60 overflow-y-auto border rounded-md">
+            <div className="flex-1 min-h-[100px] overflow-y-auto border rounded-md">
               {availableItems.map(i => (
                 <label key={i.item_name} className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/50 cursor-pointer text-sm">
                   <Checkbox checked={selectedItems.includes(i.item_name)} onCheckedChange={() => toggleItem(i.item_name)} />
@@ -269,7 +271,7 @@ export default function ItemGroupManagement() {
               ))}
               {availableItems.length === 0 && <p className="text-sm text-muted-foreground p-4 text-center">No items match</p>}
             </div>
-            <Button onClick={handleSave} className="w-full" disabled={!leaderItem || selectedItems.length < 2}
+            <Button onClick={handleSave} className="w-full shrink-0" disabled={!leaderItem || selectedItems.length < 2}
               data-testid="save-group-btn">
               {editingGroup ? 'Update Group' : 'Create Group'} ({selectedItems.length} items)
             </Button>

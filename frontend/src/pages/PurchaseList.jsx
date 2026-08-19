@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { ShoppingCart, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown, Settings2, Users, CalendarRange, Trash2, Undo2, ZoomIn, ZoomOut } from 'lucide-react';
+import { ShoppingCart, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown, Settings2, Users, CalendarRange, Trash2, Undo2, ZoomIn, ZoomOut, Search, X } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,7 +48,7 @@ function ItemRow({ row, idx, onOpen, onGreenToggle, date }) {
       </TableCell>
       <TableCell className="text-muted-foreground text-[10px] sm:text-xs w-6 px-0.5 sm:px-2">{idx + 1}</TableCell>
       <TableCell className="px-1 py-2 sm:px-3">
-        <div className="font-medium truncate max-w-[92px] sm:max-w-[220px] md:max-w-none">
+        <div className="font-medium truncate max-w-[80px] sm:max-w-[220px] md:max-w-none">
           {row.item_name}
           {row.members?.length > 1 && <span className="ml-1 text-[10px] text-indigo-500 font-semibold">×{row.members.length}</span>}
           {row.baseline_mode === 'fixed' && <span className="ml-1 text-[10px] uppercase text-amber-600 font-semibold">fixed</span>}
@@ -83,6 +83,8 @@ export default function PurchaseList() {
   const [deletedItems, setDeletedItems] = useState([]);
   const [zoom, setZoom] = useState(1);
   const pinchRef = useRef(null);
+  const [query, setQuery] = useState('');
+  const [showSug, setShowSug] = useState(false);
 
   const fetchList = useCallback(async (d) => {
     setLoading(true);
@@ -191,12 +193,33 @@ export default function PurchaseList() {
     });
   };
 
+  const suggestions = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q || !data) return [];
+    const out = [];
+    for (const r of data.rows) {
+      if (r.perm_removed) continue;
+      const names = [r.item_name, ...(r.members || []).map(m => m.name)];
+      const hit = names.find(n => n.toLowerCase().includes(q));
+      if (hit) out.push({ label: hit, leader: r.item_name });
+      if (out.length >= 8) break;
+    }
+    return out;
+  }, [query, data]);
+
   const month = useMemo(() => parseInt(date.slice(5, 7), 10), [date]);
   const rows = useMemo(() => {
     if (!data) return [];
-    let r = data.rows.filter(x => !x.temp_removed && !x.perm_removed);
-    r = r.filter(x => !(x.seasonal_enabled && x.season_months?.length) || x.season_months.includes(month));
-    if (!sel.includes('ALL')) r = r.filter(x => sel.includes(x.purview));
+    const q = query.trim().toLowerCase();
+    let r;
+    if (q) {
+      r = data.rows.filter(x => !x.perm_removed &&
+        (x.item_name.toLowerCase().includes(q) || x.members?.some(m => m.name.toLowerCase().includes(q))));
+    } else {
+      r = data.rows.filter(x => !x.temp_removed && !x.perm_removed);
+      r = r.filter(x => !(x.seasonal_enabled && x.season_months?.length) || x.season_months.includes(month));
+      if (!sel.includes('ALL')) r = r.filter(x => sel.includes(x.purview));
+    }
     const dirMul = sort.dir === 'asc' ? 1 : -1;
     r.sort((a, b) => {
       if (sort.field === 'item_name') return dirMul * a.item_name.localeCompare(b.item_name);
@@ -207,7 +230,7 @@ export default function PurchaseList() {
       return dirMul * (av - bv);
     });
     return r;
-  }, [data, sel, sort, month]);
+  }, [data, sel, sort, month, query]);
 
   const pinchDist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
   const onPinchStart = (e) => {
@@ -264,6 +287,33 @@ export default function PurchaseList() {
             </PopoverContent>
           </Popover>
         </div>
+      </div>
+
+      {/* Search */}
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input value={query} placeholder="Search items (leaders & group members)…"
+          onChange={e => { setQuery(e.target.value); setShowSug(true); }}
+          onFocus={() => setShowSug(true)}
+          onBlur={() => setTimeout(() => setShowSug(false), 150)}
+          className="pl-10 pr-9 h-10" data-testid="pl-search-input" />
+        {query && (
+          <button className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            onClick={() => setQuery('')} data-testid="pl-search-clear"><X className="h-4 w-4" /></button>
+        )}
+        {showSug && suggestions.length > 0 && (
+          <div className="absolute z-30 mt-1 w-full rounded-md border bg-popover shadow-lg max-h-64 overflow-y-auto"
+            data-testid="pl-search-suggestions">
+            {suggestions.map((s, i) => (
+              <button key={`${s.label}-${i}`} data-testid={`pl-search-suggestion-${i}`}
+                onMouseDown={(e) => { e.preventDefault(); setQuery(s.leader); setShowSug(false); }}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center justify-between gap-2">
+                <span className="truncate">{s.label}</span>
+                {s.label !== s.leader && <span className="text-xs text-muted-foreground shrink-0">→ {s.leader}</span>}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Orderer filter */}

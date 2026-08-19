@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { Truck, Check, Undo2 } from 'lucide-react';
+import { Truck, Check, Undo2, Search, X } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,6 +35,8 @@ export default function GoodsToArrive() {
   const [data, setData] = useState({ to_arrive: [], arrived: [] });
   const [tab, setTab] = useState('to_arrive');
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
+  const [showSug, setShowSug] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -65,7 +67,15 @@ export default function GoodsToArrive() {
     } catch (e) { toast.error(e.response?.data?.detail || 'Failed'); }
   };
 
-  const rows = tab === 'to_arrive' ? data.to_arrive : data.arrived;
+  const allRows = tab === 'to_arrive' ? data.to_arrive : data.arrived;
+  const q = query.trim().toLowerCase();
+  const rows = q ? allRows.filter(o => o.item_name.toLowerCase().includes(q)) : allRows;
+
+  const suggestions = useMemo(() => {
+    if (!q) return [];
+    const names = [...new Set([...data.to_arrive, ...data.arrived].map(o => o.item_name))];
+    return names.filter(n => n.toLowerCase().includes(q)).slice(0, 8);
+  }, [q, data]);
 
   return (
     <div className="p-4 sm:p-6 md:p-8 space-y-4" data-testid="goods-to-arrive-page">
@@ -84,13 +94,40 @@ export default function GoodsToArrive() {
         </Tabs>
       </div>
 
+      {/* Search */}
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input value={query} placeholder="Search ordered items…"
+          onChange={e => { setQuery(e.target.value); setShowSug(true); }}
+          onFocus={() => setShowSug(true)}
+          onBlur={() => setTimeout(() => setShowSug(false), 150)}
+          className="pl-10 pr-9 h-10" data-testid="gta-search-input" />
+        {query && (
+          <button className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            onClick={() => setQuery('')} data-testid="gta-search-clear"><X className="h-4 w-4" /></button>
+        )}
+        {showSug && suggestions.length > 0 && (
+          <div className="absolute z-30 mt-1 w-full rounded-md border bg-popover shadow-lg max-h-64 overflow-y-auto"
+            data-testid="gta-search-suggestions">
+            {suggestions.map((s, i) => (
+              <button key={s} data-testid={`gta-search-suggestion-${i}`}
+                onMouseDown={(e) => { e.preventDefault(); setQuery(s); setShowSug(false); }}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-muted truncate">
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       <Card>
         <CardContent className="p-0">
           {loading ? (
             <div className="py-14 text-center text-muted-foreground">Loading…</div>
           ) : rows.length === 0 ? (
             <div className="py-14 text-center text-muted-foreground" data-testid="gta-empty">
-              {tab === 'to_arrive' ? 'Nothing pending — green-mark items in the Purchase List to order them' : 'No arrivals yet'}
+              {q ? 'No ordered items match your search'
+                : tab === 'to_arrive' ? 'Nothing pending — green-mark items in the Purchase List to order them' : 'No arrivals yet'}
             </div>
           ) : (
             <div className="overflow-x-auto">

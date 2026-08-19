@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 49: verified the purchase-list vs Current Stock engine parity bugfix (chained mappings + baseline anchors), v4 fingerprints, and the three new UI features. Backend: new suite /app/backend/tests/test_purchase_list_parity_v49.py (4 tests) — all 297 purchase rows match the inventory engine within 0.002 kg (0 mismatches), 'JB-70 KADA' = 4.180 kg with members JB-70 KADA II (17.139) + JB-70 KADA (-12.959), no phantom 'JB-70 KADA II' leader row, members sum == row stock for every grouped row, and latest purchase_list_snapshots + purchase_opening_cache fingerprints start with 'v4:'. Full purchase-list regression: 37/37 pass (33 existing + 4 new). Frontend (desktop 1920 + mobile 390x844): Purchase List search suggestions/live filter/member->leader mapping/clear/orderer-bypass all work; Goods to Arrive search+clear+empty-state work end-to-end with a real green-marked order (cleaned up); Item Groups dialog is capped at 85dvh (717px) with scrollable item list and the save button fully on-screen at 390x844, in-dialog search filters in place. Mobile purchase list has no page-level horizontal scroll and the row/group dialogs show all sections (members, baseline, seasons, purview, remove buttons).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/item-groups/suggestions", "issue": "In the preview DB db.master_items has only 1 doc ('Test Master Item'), so the Create Group dialog offers a single selectable item (group creation practically impossible) and auto_suggestions is empty. Not a regression, but the auto-suggestion hide-on-search fix could not be exercised with live data (verified by code guard `!search && ...` only). Consider sourcing the dialog item list from the inventory/master item universe used elsewhere."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Purchase List @390x844", "issues": ["Table inner scroll width 549px vs 356px wrapper — Item/Order kg/Ag tunch fit, but the 'Lbr Rs/kg' column is partially clipped and Stock/Fine/Labour need horizontal scroll inside the table wrapper (page itself does not scroll horizontally). Acceptable if intended, but the review claim 'fits Item/Order/Ag tunch/Lbr without horizontal scroll' is only ~3.5 columns."]},
+      {"screen": "Item Groups create dialog", "issues": ["After selecting items the Create/Update button stays disabled until a chip is clicked as Leader; no leader is auto-selected, which can read as a broken save button (hint text exists but is small)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_purchase_list_parity_v49.py",
+    "/app/backend/tests/seed_tmp_master_items.py",
+    "/app/test_reports/pytest/pl_v49.xml"
+  ],
+  "action_items": [
+    "Optional: make the Item Groups create dialog list use a populated item source (master_items is nearly empty in preview) or auto-select the first selected item as leader.",
+    "Optional: revisit mobile purchase-list column widths — Lbr Rs/kg is clipped at 390px."
+  ],
+  "critical_code_review_comments": [
+    "purchase_list_service._flatten_map is cycle-safe and applied in both the opening-cache leader roll-up and the engine-direct current stock path, so the double-hop/single-hop split is genuinely fixed; the alignment `adjust = closing_g - running` guarantees the peak series ends at the engine value, keeping baseline >= closing.",
+    "Anchor cutoff lookup uses `cutoffs.get(mem.lower(), oed)` where mem is the one-hop mapped name while cutoffs keys are built from map_dict-resolved masters (one hop too) — consistent today, but if a baseline is stored against a chained alias (A->B->C) the cutoff key would be B while transactions resolve to leader C; consider keying cutoffs off flat_map for full chain safety.",
+    "test_purchase_list_groups_v48.py used asyncio.get_event_loop() which raises 'no current event loop' on Python 3.11 when the suite runs after other files (2 failures). Fixed with a _get_loop() helper (test-infra only)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_purchase_list_parity_v49.py (new)",
+    "/app/backend/tests/test_purchase_list_groups_v48.py (test-infra: _get_loop() replaces asyncio.get_event_loop())",
+    "/app/backend/tests/seed_tmp_master_items.py (new helper, data cleaned up)"
+  ],
+  "success_rate": {"backend": "100% (37/37)", "frontend": "100% of tested flows (Purchase List search, GTA search, Item Groups dialog, mobile regression)"},
+  "seed_data_creation": "Temporarily inserted 40 TEST_QA_ITEM_* docs in master_items to scroll-test the Item Groups dialog, then deleted (master_items back to 1 doc). Green-marked NAJARIYA PLAIN 92.5 to create a Goods-to-Arrive order, then unmarked (GET /api/goods-to-arrive now returns empty to_arrive/arrived). No item_mappings or item_groups were modified.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "admin / admin123",
+  "context_for_next_testing_agent": "New parity suite: /app/backend/tests/test_purchase_list_parity_v49.py (rebuilds member->leader from purchase rows and diffs against /api/inventory/current; also asserts v4 fingerprints via motor). Purchase list = 297 rows (296 shown in UI after seasonal/temp filters). Server business date IST 2026-08-19. Item Groups create dialog is limited by an almost-empty master_items collection in preview — seed TEST_QA_ITEM_* via /app/backend/tests/seed_tmp_master_items.py (seed|clean) if you need a long list. Orderer checkbox state persists per browser session; leave 'All' checked when done.",
+  "rca_of_the_issue": "Reported mismatch is resolved: purchase list current stock now reads from get_current_inventory as-of the date with transitive chain resolution, so previously-split chained aliases (JB-70 KADA CC -> JB-70 KADA II -> JB-70 KADA) roll into one leader row (4.180 kg) and no phantom intermediate row exists. Confirmed empirically over all 297 rows (0 mismatches > 0.002 kg)."
+}
