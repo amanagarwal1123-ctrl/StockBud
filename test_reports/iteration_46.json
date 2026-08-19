@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 46 – Seasonal ON/OFF switch & 'Seasonal' list dialog. Backend: 21/21 tests pass (4 new seasonal + 14 feature regression + 3 bugfix-45 regression, ~13s). Verified: GET /purchase-list/seasonal-items returns list including auto-migrated legacy 'GOBI PAYAL 60-122' (months [7,8,9], purview RAJESH) with seasonal_enabled=true; non-admin gets 403; purchase-list rows carry boolean seasonal_enabled (true for legacy GOBI, false for items without months); POST /purchase-list/item-state seasonal_enabled=false clears season_months; seasonal_enabled=true with season_months=null enables with clear selection; subsequent {season_months:[8]} persists while enabled stays true. Frontend (admin/admin123 on /purchase-list): opening non-seasonal row (GHUNTI KP-120) shows pl-seasonal-toggle OFF with no month grid; switching ON reveals the grid with zero selections and row does NOT disappear; selecting current month (Aug=pl-season-8) keeps row visible with 'SEASONAL' badge; changing to a non-current month (pl-season-1) hides the row and Refresh does not bring it back; header pl-seasonal-list-btn opens pl-seasonal-dialog listing GOBI PAYAL 60-122 AND the just-hidden item with month badges; clicking the entry opens its edit dialog with toggle ON; switching OFF hides the grid immediately and item returns to main table after Refresh. Regression: left-swipe on row 0 (NAJARIYA PLAIN 92.5) shown by 'Restored 1 removed item(s)' toast; green check still clickable.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "PurchaseList item dialog", "issues": ["Radix DialogContent for the item edit sheet is missing an aria-describedby / Description (console warning): 'Missing Description or aria-describedby={undefined} for {DialogContent}'. Non-blocking accessibility warning."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_purchase_list_seasonal_v46.py",
+    "/app/backend/tests/test_purchase_list_feature.py",
+    "/app/backend/tests/test_purchase_list_bugfix_45.py",
+    "/app/test_reports/pytest/iter46_seasonal.xml"
+  ],
+  "action_items": [
+    "(Optional) Add DialogDescription (or aria-describedby) to PurchaseItemSheet DialogContent to silence Radix a11y console warning."
+  ],
+  "critical_code_review_comments": [
+    "server.py L5657 legacy-fallback `bool(s.get('season_months'))` is fine for read, but the item-state handler unifies the two only via explicit seasonal_enabled writes. On the first admin write of a legacy row that only touches season_months (e.g. clearing to []), seasonal_enabled remains unset in the doc — subsequent reads then still evaluate `bool(season_months)` as False. That is the desired behaviour, but consider persisting seasonal_enabled explicitly on any season_months mutation so DB state matches API state and future queries can rely on the flag alone.",
+    "Frontend PurchaseItemSheet toggles pl-seasonal-toggle with `onCheckedChange={(v)=>onUpdate(..., {seasonal_enabled:v, season_months:null})}` — this always wipes any selected months when the switch changes, even accidentally toggling back to ON. Confirmed by product spec (starts clear) but call out clearly in UX (e.g. tooltip) since re-toggling ON does not restore prior months."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_purchase_list_seasonal_v46.py"
+  ],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "seed_data_creation": "None. GHUNTI KP-120 was used as the transient test item and is left with seasonal_enabled=false (verified via API in cleanup). GOBI PAYAL 60-122 left as-is (seasonal Jul/Aug/Sep, purview RAJESH). NAJARIYA PLAIN 92.5 baseline untouched (only swiped+restored).",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": false,
+  "test_credentials": "admin/admin123, TEST_EXEC/exec123",
+  "context_for_next_testing_agent": "New backend regression file: /app/backend/tests/test_purchase_list_seasonal_v46.py (4 tests, <5s). It picks a candidate non-seasonal item dynamically and always resets seasonal_enabled=false in finally. Frontend testids in scope for future edits: pl-seasonal-toggle, pl-season-{1..12}, pl-seasonal-list-btn, pl-seasonal-dialog, pl-seasonal-item-{i}, pl-seasonal-empty. Server business date is IST currently 2026-08-19 so current month=8; adjust month selections accordingly when Aug rolls over.",
+  "rca_of_the_issue": "Not applicable — feature enhancement testing, no defects found."
+}

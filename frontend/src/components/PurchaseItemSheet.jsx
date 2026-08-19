@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Plus } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -58,21 +59,22 @@ export const PurchaseItemSheet = ({ item, orderers, onClose, onUpdate, onAddOrde
             {item.item_name}
             {item.green && <Badge className="bg-green-600">Ordered</Badge>}
           </DialogTitle>
+          <DialogDescription className="sr-only">Edit baseline, selling season and purview for this item</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-5">
           <div className="grid grid-cols-3 gap-2 text-center">
             <div className="rounded-lg bg-muted p-2">
               <p className="text-[11px] text-muted-foreground">Current Stock</p>
-              <p className="font-semibold tabular-nums">{item.current_stock_kg?.toFixed(3)} kg</p>
+              <p className="font-semibold tabular-nums">{item.current_stock_kg != null ? `${item.current_stock_kg.toFixed(3)} kg` : '—'}</p>
             </div>
             <div className="rounded-lg bg-muted p-2">
               <p className="text-[11px] text-muted-foreground">Baseline</p>
-              <p className="font-semibold tabular-nums">{item.baseline_kg?.toFixed(3)} kg</p>
+              <p className="font-semibold tabular-nums">{item.baseline_kg != null ? `${item.baseline_kg.toFixed(3)} kg` : '—'}</p>
             </div>
             <div className="rounded-lg bg-muted p-2">
               <p className="text-[11px] text-muted-foreground">Order Qty</p>
-              <p className="font-semibold tabular-nums">{item.order_qty_kg?.toFixed(3)} kg</p>
+              <p className="font-semibold tabular-nums">{item.order_qty_kg != null ? `${item.order_qty_kg.toFixed(3)} kg` : '—'}</p>
             </div>
           </div>
 
@@ -98,17 +100,27 @@ export const PurchaseItemSheet = ({ item, orderers, onClose, onUpdate, onAddOrde
 
           {/* Season */}
           <div>
-            <p className="text-sm font-medium mb-0.5">Selling season</p>
-            <p className="text-xs text-muted-foreground mb-1.5">Tap the months it sells in — it will only appear in those months. None selected = shows all year.</p>
-            <div className="grid grid-cols-6 gap-1.5">
-              {MONTHS.map((m, i) => (
-                <button key={m} onClick={() => toggleMonth(i + 1)} data-testid={`pl-season-${i + 1}`}
-                  className={`text-xs rounded-md py-1.5 border transition-colors ${seasons.includes(i + 1)
-                    ? 'bg-sky-600 text-white border-sky-600' : 'bg-background hover:bg-muted border-input'}`}>
-                  {m}
-                </button>
-              ))}
+            <div className="flex items-center justify-between mb-0.5">
+              <p className="text-sm font-medium">Seasonal selling</p>
+              <Switch checked={!!item.seasonal_enabled} data-testid="pl-seasonal-toggle"
+                onCheckedChange={(v) => onUpdate(item.item_name, { seasonal_enabled: v, season_months: null })} />
             </div>
+            {item.seasonal_enabled ? (
+              <>
+                <p className="text-xs text-muted-foreground mb-1.5">Tap the months it sells in — it will only appear in those months. No months selected yet = shows all year.</p>
+                <div className="grid grid-cols-6 gap-1.5">
+                  {MONTHS.map((m, i) => (
+                    <button key={m} onClick={() => toggleMonth(i + 1)} data-testid={`pl-season-${i + 1}`}
+                      className={`text-xs rounded-md py-1.5 border transition-colors ${seasons.includes(i + 1)
+                        ? 'bg-sky-600 text-white border-sky-600' : 'bg-background hover:bg-muted border-input'}`}>
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">Off — item shows all year. Switch on to pick its selling months.</p>
+            )}
           </div>
 
           {/* Purview */}

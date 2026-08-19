@@ -189,6 +189,11 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 
 - **Bugfix (production empty list, Aug 17-19 2026 — iteration_45.json)**: production showed 'No items to order for this view'. Two contributors fixed: (1) GET /purchase-list no longer serves a cached snapshot with empty rows (`or not snap.get('rows')` in cache-bypass) — protects against snapshots computed mid-upload; response now includes `window_txn_count`; (2) frontend empty state differentiates: hidden-by-filters (count + breakdown + 'Show all orderers' pl-show-all-btn + 'Restore swiped items' pl-restore-swiped-btn), no-transactions-in-window (pl-empty-nodata), or genuinely-at-peak. New suite `tests/test_purchase_list_bugfix_45.py`. NOTE: likely production cause is rows hidden under other orderers' purview or swiped away — the new banner reveals it; user must REDEPLOY.
 
+## Seasonal Switch + Seasonal Items List (Aug 19, 2026 — session 9 cont.)
+- Per-item 'Seasonal selling' Switch (pl-seasonal-toggle), OFF by default; ON reveals month grid with selection cleared; OFF clears months. Filtering applies only when enabled AND months chosen. Legacy items with months auto-treated as enabled (read-time fallback `seasonal_enabled` = bool(season_months)).
+- Header 'Seasonal' button (pl-seasonal-list-btn) → dialog (pl-seasonal-dialog) listing all seasonal items (new GET /api/purchase-list/seasonal-items, admin) with month badges; click opens the item editor even when out of season (metrics guarded with '—' when item not in day's rows; patchRow also patches openItem for live dialog updates). DialogDescription added for a11y.
+- Tested iteration_46.json: 100% backend (21/21 incl. regressions) + 100% frontend. New suite tests/test_purchase_list_seasonal_v46.py. REDEPLOY required.
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document

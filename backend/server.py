@@ -5654,6 +5654,7 @@ async def get_purchase_list(date: str = Query(None), current_user: dict = Depend
                     'green': bool(s.get('green')),
                     'green_at': s.get('green_at'),
                     'season_months': s.get('season_months'),
+                    'seasonal_enabled': bool(s.get('seasonal_enabled', bool(s.get('season_months')))),
                     'purview': s.get('purview') or 'Admin',
                     'baseline_mode': s.get('baseline_mode', 'variable'),
                     'fixed_baseline_kg': s.get('fixed_baseline_kg')})
@@ -5680,6 +5681,10 @@ async def update_purchase_item_state(request: Dict, current_user: dict = Depends
             months = sorted({int(m) for m in sm if 1 <= int(m) <= 12})
             updates['season_months'] = months or None
         else:
+            updates['season_months'] = None
+    if 'seasonal_enabled' in request:
+        updates['seasonal_enabled'] = bool(request['seasonal_enabled'])
+        if not updates['seasonal_enabled']:
             updates['season_months'] = None
     if 'purview' in request:
         updates['purview'] = (request['purview'] or 'Admin').strip() or 'Admin'
@@ -5735,6 +5740,26 @@ async def update_purchase_item_state(request: Dict, current_user: dict = Depends
     if baseline_changed:
         await db.purchase_list_snapshots.delete_many({})
     return {'success': True}
+
+
+@api_router.get("/purchase-list/seasonal-items")
+async def get_seasonal_items(current_user: dict = Depends(get_current_user)):
+    """All items marked as seasonal, so admin can edit them even when out of season."""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    items = []
+    async for s in db.purchase_item_state.find(
+            {'$or': [{'seasonal_enabled': True},
+                     {'seasonal_enabled': {'$exists': False}, 'season_months.0': {'$exists': True}}]},
+            {"_id": 0}).sort('item_name', 1):
+        items.append({'item_name': s['item_name'],
+                      'season_months': s.get('season_months') or [],
+                      'seasonal_enabled': True,
+                      'purview': s.get('purview') or 'Admin',
+                      'baseline_mode': s.get('baseline_mode', 'variable'),
+                      'fixed_baseline_kg': s.get('fixed_baseline_kg'),
+                      'green': bool(s.get('green'))})
+    return {'items': items}
 
 
 @api_router.post("/purchase-list/refresh")

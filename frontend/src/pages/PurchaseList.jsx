@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { ShoppingCart, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown, Settings2, Users } from 'lucide-react';
+import { ShoppingCart, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown, Settings2, Users, CalendarRange } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
 import { PurchaseItemSheet } from '../components/PurchaseItemSheet';
@@ -79,7 +81,7 @@ function SwipeRow({ row, idx, onSwipeLeft, onOpen, onGreenToggle, date }) {
       <TableCell className="font-medium whitespace-nowrap">
         {row.item_name}
         {row.baseline_mode === 'fixed' && <span className="ml-1.5 text-[10px] uppercase text-amber-600 font-semibold">fixed</span>}
-        {row.season_months?.length > 0 && <span className="ml-1.5 text-[10px] uppercase text-sky-600 font-semibold">seasonal</span>}
+        {row.seasonal_enabled && <span className="ml-1.5 text-[10px] uppercase text-sky-600 font-semibold">seasonal</span>}
       </TableCell>
       <TableCell className="text-right tabular-nums font-semibold">{row.order_qty_kg.toFixed(3)}</TableCell>
       <TableCell className="text-right tabular-nums">{row.current_stock_kg.toFixed(3)}</TableCell>
@@ -103,6 +105,8 @@ export default function PurchaseList() {
   const [sel, setSel] = useState(['Admin']);
   const [openItem, setOpenItem] = useState(null);
   const [baselineInput, setBaselineInput] = useState('');
+  const [seasonalOpen, setSeasonalOpen] = useState(false);
+  const [seasonalItems, setSeasonalItems] = useState([]);
 
   const fetchList = useCallback(async (d) => {
     setLoading(true);
@@ -121,6 +125,7 @@ export default function PurchaseList() {
 
   const patchRow = (itemName, patch) => {
     setData(prev => prev ? { ...prev, rows: prev.rows.map(r => r.item_name === itemName ? { ...r, ...patch } : r) } : prev);
+    setOpenItem(prev => prev && prev.item_name === itemName ? { ...prev, ...patch } : prev);
   };
 
   const updateState = async (itemName, updates, { refetch = false } = {}) => {
@@ -168,6 +173,14 @@ export default function PurchaseList() {
     } catch (e) { toast.error(e.response?.data?.detail || 'Failed'); }
   };
 
+  const openSeasonalList = async () => {
+    try {
+      const res = await axios.get(`${API}/purchase-list/seasonal-items`);
+      setSeasonalItems(res.data.items || []);
+      setSeasonalOpen(true);
+    } catch { toast.error('Failed to load seasonal items'); }
+  };
+
   const toggleSel = (name) => {
     setSel(prev => {
       if (name === 'ALL') return prev.includes('ALL') ? ['Admin'] : ['ALL'];
@@ -181,7 +194,7 @@ export default function PurchaseList() {
   const rows = useMemo(() => {
     if (!data) return [];
     let r = data.rows.filter(x => !x.temp_removed);
-    r = r.filter(x => !x.season_months?.length || x.season_months.includes(month));
+    r = r.filter(x => !(x.seasonal_enabled && x.season_months?.length) || x.season_months.includes(month));
     if (!sel.includes('ALL')) r = r.filter(x => sel.includes(x.purview));
     const dirMul = sort.dir === 'asc' ? 1 : -1;
     r.sort((a, b) => {
@@ -218,6 +231,9 @@ export default function PurchaseList() {
           </div>
           <Button variant="outline" size="sm" className="h-9" onClick={onRefresh} data-testid="pl-refresh-btn">
             <RotateCcw className="h-4 w-4 mr-1" />Refresh
+          </Button>
+          <Button variant="outline" size="sm" className="h-9" onClick={openSeasonalList} data-testid="pl-seasonal-list-btn">
+            <CalendarRange className="h-4 w-4 mr-1" />Seasonal
           </Button>
           <Popover>
             <PopoverTrigger asChild>
@@ -259,7 +275,7 @@ export default function PurchaseList() {
                 <>
                   <p className="text-muted-foreground" data-testid="pl-empty-filtered">
                     All <span className="font-semibold text-foreground">{data.rows.length}</span> item(s) are hidden by current filters
-                    — {data.rows.filter(x => x.temp_removed).length} swiped away, {data.rows.filter(x => x.season_months?.length && !x.season_months.includes(month)).length} out of season, rest under other orderers.
+                    — {data.rows.filter(x => x.temp_removed).length} swiped away, {data.rows.filter(x => x.seasonal_enabled && x.season_months?.length && !x.season_months.includes(month)).length} out of season, rest under other orderers.
                   </p>
                   <div className="flex justify-center gap-2">
                     <Button size="sm" variant="outline" onClick={() => setSel(['ALL'])} data-testid="pl-show-all-btn">Show all orderers</Button>
@@ -309,6 +325,40 @@ export default function PurchaseList() {
         onUpdate={updateState}
         onAddOrderer={addOrderer}
       />
+
+      {/* Seasonal items dialog */}
+      <Dialog open={seasonalOpen} onOpenChange={setSeasonalOpen}>
+        <DialogContent className="max-w-md" data-testid="pl-seasonal-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><CalendarRange className="h-5 w-5 text-sky-600" />Seasonal items</DialogTitle>
+          </DialogHeader>
+          {seasonalItems.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center" data-testid="pl-seasonal-empty">
+              No seasonal items yet — open an item and switch on "Seasonal selling".
+            </p>
+          ) : (
+            <div className="max-h-[60vh] overflow-y-auto space-y-1.5">
+              {seasonalItems.map((s, i) => (
+                <button key={s.item_name} data-testid={`pl-seasonal-item-${i}`}
+                  onClick={() => {
+                    setSeasonalOpen(false);
+                    setOpenItem(data?.rows.find(r => r.item_name === s.item_name) || s);
+                  }}
+                  className="w-full text-left rounded-lg border border-input hover:bg-muted px-3 py-2 flex items-center justify-between gap-2">
+                  <span className="font-medium text-sm truncate">{s.item_name}</span>
+                  <span className="flex flex-wrap gap-1 justify-end">
+                    {(s.season_months || []).map(m => (
+                      <Badge key={m} variant="outline" className="text-[10px] px-1.5 bg-sky-50 text-sky-700 border-sky-200">
+                        {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1]}
+                      </Badge>
+                    ))}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
