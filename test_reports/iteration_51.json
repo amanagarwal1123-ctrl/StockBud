@@ -1,0 +1,35 @@
+{
+  "summary": "v50 testing of the two new Purchase List features (orderer PDF/WhatsApp split + Manage Orderers). Backend: new pytest suite test_purchase_list_orderer_mgmt_v50.py (13 tests) covering create->assign->rename->delete/reassign lifecycle with GET-verified persistence plus all guards (Admin rename/delete 400, rename-to-admin 400, unknown 404, duplicate 400, empty new_name 400, reassign-to-self 400, unknown reassign target 400, non-admin 403, unauth 401) — 13/13 pass. All 6 pre-existing purchase-list regression suites pass (37/37). Frontend (admin/admin123, /purchase-list): PDF popover shows 'Current view (n)' + per-orderer entries with correct in-season/non-removed counts (Current 295 while Admin filter active, Admin 295, RAJESH 1, QA_EMPTY 0); current-view download purchase-list-2026-08-20.pdf (9 pages, 295 items); per-orderer download purchase-list-RAJESH-2026-08-20.pdf verified with pypdf: title 'Purchase List — RAJESH', 1 item 'GOBI PAYAL 60-122' only; empty orderer -> 'No items for QA_EMPTY' error toast with NO download; WhatsApp menu (pl-share-option-*) opens and falls back to download purchase-list-RAJESH-2026-08-20.pdf in headless. Manage Orderers: dialog lists salesmen with item-count badges, rename RAJESH->RAJESH_X (toast '1 item(s) moved', chips + item purview updated, selection reset to Admin), rename back OK; delete QA_DEL with reassign select -> toast 'QA_DEL deleted — 1 item(s) moved to Admin', chip gone, item back under Admin (API verified). Error paths verified in UI (rename to Admin -> backend 400 toast, blank name -> 'Enter a name'). Regressions OK: ALL/per-orderer filters, search (GOBI -> 2 rows), green checkbox toggle on/off leaves no goods-to-arrive order. Cleanup done: final orderers [Admin, RAJESH], GOBI PAYAL 60-122 purview RAJESH seasonal [7,8,9], no green marks, no QA_*/TEST_ORDR_QA orderers.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "PurchaseList ExportMenu", "issue": "Popover is uncontrolled and does not close when an option is chosen that aborts (empty orderer) — menu stays open behind the error toast. Also caused a flaky 'element not stable / detached from DOM' failure when re-opening the trigger right after an export (ExportMenu is an inline component re-created on every render). Cosmetic/flakiness only; retry with a 700ms settle wait always works.", "selector": "[data-testid=\"pl-export-pdf-btn\"], [data-testid^=\"pl-pdf-option-\"]", "priority": "LOW"},
+      {"component": "OrdererManageDialog", "issue": "Count badge always pluralised: shows '1 items' instead of '1 item'.", "selector": "[data-testid^=\"om-row-\"]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Purchase List orderer filter", "issues": ["When 'All' is checked the individual orderer checkboxes are rendered disabled while still appearing checked/blue — visually indistinguishable from an enabled selection (also blocks direct clicks). Consider a dimmed style or making them clickable (auto-unchecking All)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_purchase_list_orderer_mgmt_v50.py",
+    "/app/tests/pl_v50_helper.py"
+  ],
+  "action_items": [
+    "Optional polish: close the export popover explicitly after an option click (controlled open state) and hoist ExportMenu out of the render body to avoid remount flicker.",
+    "Optional copy fix: singular/plural for item-count badge in OrdererManageDialog."
+  ],
+  "critical_code_review_comments": [
+    "Rename/delete orderer endpoints correctly do the orderer doc update plus purchase_item_state update_many and return items_moved/items_reassigned; guards are complete (Admin, 404, duplicate, self-reassign, non-existent target). No _id leakage.",
+    "doExport uses baseRows (temp/perm removed filtered, in-season) + sortArr for per-orderer exports and rows for current view — matches spec; filename slugifies whitespace.",
+    "PurchaseList.jsx is 560 lines — approaching the split threshold; ExportMenu/table could be extracted."
+  ],
+  "updated_files": ["/app/backend/tests/test_purchase_list_orderer_mgmt_v50.py", "/app/tests/pl_v50_helper.py"],
+  "success_rate": {"backend": "100% (50/50: 13 new + 37 regression)", "frontend": "100% of feature flows verified (2 low-severity cosmetic issues)"},
+  "seed_data_creation": "Temporarily created orderers QA_SPLIT/QA_SPLIT2/QA_G1/QA_G2 (backend) and QA_EMPTY/QA_DEL (frontend, QA_DEL held NAJARIYA PLAIN 92.5). All deleted with reassign_to=Admin; leftover TEST_ORDR_QA from a previous iteration also removed. Verified final state: orderers [Admin, RAJESH].",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "admin/admin123, TEST_EXEC/exec123 (from /app/memory/test_credentials.md)",
+  "context_for_next_testing_agent": "New backend suite: /app/backend/tests/test_purchase_list_orderer_mgmt_v50.py (run with -p no:randomly if guard-test ordering matters; it also passes with random order). Helper /app/tests/pl_v50_helper.py supports 'state', 'setup', 'cleanup'. Business date 2026-08-20; 297 purchase rows; GOBI PAYAL 60-122 = RAJESH, seasonal [7,8,9]. Playwright notes: sonner toasts are queryable via [data-sonner-toast]; the ALL chip testid is lowercase 'pl-orderer-all'; individual orderer checkboxes are DISABLED while ALL is selected (expected), so uncheck ALL first; add a ~700ms wait after opening the PDF/WhatsApp popover before clicking an option to avoid element-detach flakiness.",
+  "rca_of_the_issue": "No functional defect found. The only test-run failures were (a) my selector using 'pl-orderer-All' instead of 'pl-orderer-all' and clicking an intentionally disabled checkbox while ALL was selected, and (b) a timing/remount flake on the export popover (ExportMenu is defined inline inside PurchaseList so it remounts on each render; the popover is not explicitly closed after a selection)."
+}

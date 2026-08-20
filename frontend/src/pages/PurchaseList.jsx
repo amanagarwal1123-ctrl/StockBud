@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { ShoppingCart, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown, Settings2, Users, CalendarRange, Trash2, Undo2, ZoomIn, ZoomOut, Search, X, FileDown, Share2 } from 'lucide-react';
+import { ShoppingCart, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown, Settings2, Users, CalendarRange, Trash2, Undo2, ZoomIn, ZoomOut, Search, X, FileDown, Share2, UserCog } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
 import { PurchaseItemSheet } from '../components/PurchaseItemSheet';
+import { OrdererManageDialog } from '../components/OrdererManageDialog';
 import { buildPdf, sharePdf } from '../lib/pdfExport';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -86,6 +87,9 @@ export default function PurchaseList() {
   const pinchRef = useRef(null);
   const [query, setQuery] = useState('');
   const [showSug, setShowSug] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
+  const [pdfMenuOpen, setPdfMenuOpen] = useState(false);
+  const [shareMenuOpen, setShareMenuOpen] = useState(false);
 
   const fetchList = useCallback(async (d) => {
     setLoading(true);
@@ -160,27 +164,43 @@ export default function PurchaseList() {
     } catch (e) { toast.error(e.response?.data?.detail || 'Failed'); }
   };
 
-  const makePdf = () => {
-    if (!rows.length) { toast.error('Nothing to export'); return null; }
-    return buildPdf({
-      title: 'Purchase List',
-      subtitle: `Date: ${date} · ${rows.length} items · Baseline since ${data?.baseline_start || ''}`,
-      rows: rows.map((r, i) => [i + 1, r.item_name, r.order_qty_kg.toFixed(3), r.current_stock_kg.toFixed(3)]),
+  const doExport = async (mode, target) => {
+    const list = target === 'CURRENT' ? rows : sortArr(baseRows.filter(x => x.purview === target));
+    const label = target === 'CURRENT' ? 'Current view' : target;
+    if (!list.length) { toast.error(`No items for ${label}`); return; }
+    const doc = buildPdf({
+      title: target === 'CURRENT' ? 'Purchase List' : `Purchase List — ${target}`,
+      subtitle: `Date: ${date} · ${list.length} items · Baseline since ${data?.baseline_start || ''}`,
+      rows: list.map((r, i) => [i + 1, r.item_name, r.order_qty_kg.toFixed(3), r.current_stock_kg.toFixed(3)]),
     });
+    const fname = target === 'CURRENT'
+      ? `purchase-list-${date}.pdf`
+      : `purchase-list-${target.replace(/\s+/g, '_')}-${date}.pdf`;
+    if (mode === 'pdf') {
+      doc.save(fname);
+      toast.success(`PDF downloaded${target !== 'CURRENT' ? ` — ${target}` : ''}`);
+    } else {
+      const res = await sharePdf(doc, fname, `Purchase List ${target !== 'CURRENT' ? target + ' ' : ''}${date}`);
+      if (res === 'shared') toast.success('Shared');
+      else if (res === 'downloaded') toast('PDF downloaded', { description: 'Sharing not supported on this browser — attach the file in WhatsApp manually' });
+    }
   };
 
-  const exportPdf = () => {
-    const doc = makePdf();
-    if (doc) { doc.save(`purchase-list-${date}.pdf`); toast.success('PDF downloaded'); }
-  };
-
-  const shareWhatsApp = async () => {
-    const doc = makePdf();
-    if (!doc) return;
-    const res = await sharePdf(doc, `purchase-list-${date}.pdf`, `Purchase List ${date}`);
-    if (res === 'shared') toast.success('Shared');
-    else if (res === 'downloaded') toast('PDF downloaded', { description: 'Sharing not supported on this browser — attach the file in WhatsApp manually' });
-  };
+  const ExportMenu = ({ mode, onPick }) => (
+    <PopoverContent align="end" className="w-60 p-1.5">
+      <button onClick={() => { onPick(); doExport(mode, 'CURRENT'); }} data-testid={`pl-${mode}-option-current`}
+        className="w-full text-left text-sm rounded-md px-2.5 py-2 hover:bg-muted flex justify-between">
+        <span>Current view</span><span className="text-muted-foreground">{rows.length}</span>
+      </button>
+      <p className="text-[11px] text-muted-foreground uppercase px-2.5 pt-2 pb-1">Per orderer</p>
+      {(data?.orderers || ['Admin']).map(o => (
+        <button key={o} onClick={() => { onPick(); doExport(mode, o); }} data-testid={`pl-${mode}-option-${o}`}
+          className="w-full text-left text-sm rounded-md px-2.5 py-2 hover:bg-muted flex justify-between">
+          <span className="truncate">{o}</span><span className="text-muted-foreground">{ordererCounts[o] || 0}</span>
+        </button>
+      ))}
+    </PopoverContent>
+  );
 
   const openSeasonalList = async () => {
     try {
@@ -231,6 +251,31 @@ export default function PurchaseList() {
   }, [query, data]);
 
   const month = useMemo(() => parseInt(date.slice(5, 7), 10), [date]);
+
+  const baseRows = useMemo(() => {
+    if (!data) return [];
+    let r = data.rows.filter(x => !x.temp_removed && !x.perm_removed);
+    return r.filter(x => !(x.seasonal_enabled && x.season_months?.length) || x.season_months.includes(month));
+  }, [data, month]);
+
+  const ordererCounts = useMemo(() => {
+    const c = {};
+    for (const r of baseRows) c[r.purview] = (c[r.purview] || 0) + 1;
+    return c;
+  }, [baseRows]);
+
+  const sortArr = useCallback((arr) => {
+    const dirMul = sort.dir === 'asc' ? 1 : -1;
+    return [...arr].sort((a, b) => {
+      if (sort.field === 'item_name') return dirMul * a.item_name.localeCompare(b.item_name);
+      const av = a[sort.field]; const bv = b[sort.field];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      return dirMul * (av - bv);
+    });
+  }, [sort]);
+
   const rows = useMemo(() => {
     if (!data) return [];
     const q = query.trim().toLowerCase();
@@ -239,21 +284,11 @@ export default function PurchaseList() {
       r = data.rows.filter(x => !x.perm_removed &&
         (x.item_name.toLowerCase().includes(q) || x.members?.some(m => m.name.toLowerCase().includes(q))));
     } else {
-      r = data.rows.filter(x => !x.temp_removed && !x.perm_removed);
-      r = r.filter(x => !(x.seasonal_enabled && x.season_months?.length) || x.season_months.includes(month));
+      r = baseRows;
       if (!sel.includes('ALL')) r = r.filter(x => sel.includes(x.purview));
     }
-    const dirMul = sort.dir === 'asc' ? 1 : -1;
-    r.sort((a, b) => {
-      if (sort.field === 'item_name') return dirMul * a.item_name.localeCompare(b.item_name);
-      const av = a[sort.field]; const bv = b[sort.field];
-      if (av == null && bv == null) return 0;
-      if (av == null) return 1;
-      if (bv == null) return -1;
-      return dirMul * (av - bv);
-    });
-    return r;
-  }, [data, sel, sort, month, query]);
+    return sortArr(r);
+  }, [data, baseRows, sel, sortArr, query]);
 
   const pinchDist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
   const onPinchStart = (e) => {
@@ -298,12 +333,22 @@ export default function PurchaseList() {
           <Button variant="outline" size="sm" className="h-9" onClick={openSeasonalList} data-testid="pl-seasonal-list-btn">
             <CalendarRange className="h-4 w-4 mr-1" />Seasonal
           </Button>
-          <Button variant="outline" size="sm" className="h-9" onClick={exportPdf} data-testid="pl-export-pdf-btn">
-            <FileDown className="h-4 w-4 mr-1" />PDF
-          </Button>
-          <Button variant="outline" size="sm" className="h-9 text-green-700 border-green-300 hover:bg-green-50" onClick={shareWhatsApp} data-testid="pl-share-whatsapp-btn">
-            <Share2 className="h-4 w-4 mr-1" />WhatsApp
-          </Button>
+          <Popover open={pdfMenuOpen} onOpenChange={setPdfMenuOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="h-9" data-testid="pl-export-pdf-btn">
+                <FileDown className="h-4 w-4 mr-1" />PDF
+              </Button>
+            </PopoverTrigger>
+            <ExportMenu mode="pdf" onPick={() => setPdfMenuOpen(false)} />
+          </Popover>
+          <Popover open={shareMenuOpen} onOpenChange={setShareMenuOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="h-9 text-green-700 border-green-300 hover:bg-green-50" data-testid="pl-share-whatsapp-btn">
+                <Share2 className="h-4 w-4 mr-1" />WhatsApp
+              </Button>
+            </PopoverTrigger>
+            <ExportMenu mode="share" onPick={() => setShareMenuOpen(false)} />
+          </Popover>
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="outline" size="sm" className="h-9" data-testid="pl-settings-btn"><Settings2 className="h-4 w-4" /></Button>
@@ -349,11 +394,14 @@ export default function PurchaseList() {
       <Card>
         <CardContent className="py-3 flex flex-wrap items-center gap-x-5 gap-y-2">
           <span className="text-sm text-muted-foreground flex items-center gap-1"><Users className="h-4 w-4" />Orderers:</span>
+          <Button variant="ghost" size="sm" className="h-7 px-1.5 -ml-3" onClick={() => setManageOpen(true)} data-testid="pl-manage-orderers-btn">
+            <UserCog className="h-4 w-4" />
+          </Button>
           <label className="flex items-center gap-1.5 text-sm cursor-pointer" data-testid="pl-orderer-all">
             <Checkbox checked={sel.includes('ALL')} onCheckedChange={() => toggleSel('ALL')} />All
           </label>
           {(data?.orderers || ['Admin']).map(o => (
-            <label key={o} className="flex items-center gap-1.5 text-sm cursor-pointer" data-testid={`pl-orderer-${o}`}>
+            <label key={o} className={`flex items-center gap-1.5 text-sm cursor-pointer ${sel.includes('ALL') ? 'opacity-50' : ''}`} data-testid={`pl-orderer-${o}`}>
               <Checkbox checked={sel.includes('ALL') || sel.includes(o)} disabled={sel.includes('ALL')}
                 onCheckedChange={() => toggleSel(o)} />{o}
             </label>
@@ -436,6 +484,14 @@ export default function PurchaseList() {
         onAddOrderer={addOrderer}
         onTempDelete={onTempDelete}
         onPermDelete={onPermDelete}
+      />
+
+      <OrdererManageDialog
+        open={manageOpen}
+        onClose={() => setManageOpen(false)}
+        orderers={data?.orderers || ['Admin']}
+        counts={ordererCounts}
+        onChanged={() => { setSel(['Admin']); fetchList(date); }}
       />
 
       {/* Permanently deleted items dialog */}

@@ -217,6 +217,11 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - Testids: pl-export-pdf-btn, pl-share-whatsapp-btn, gta-export-pdf-btn, gta-share-whatsapp-btn.
 - Tested iteration_50.json (frontend): 100% — PDF content verified by text extraction. Fixed reported MEDIUM issue: Sonner Toaster moved top-right → bottom-right (was overlaying header buttons for ~4s per toast). REDEPLOY required.
 
+## Orderer PDF Split + Orderer Management (Aug 20, 2026 — session 9 cont.)
+- PDF & WhatsApp buttons now open a controlled popover menu: 'Current view (n)' + per-orderer entries with counts (pl-pdf-option-* / pl-share-option-*); per-orderer export titled 'Purchase List — <name>', filename purchase-list-<name>-<date>.pdf, uses baseRows (no temp/perm removed, in-season) + current sort; empty orderer → error toast, no download; popover closes on pick.
+- Manage Orderers (UserCog btn pl-manage-orderers-btn next to 'Orderers:' → components/OrdererManageDialog.jsx): rename (PUT /api/purchase-list/orderers/{name} {new_name}, moves all purviews) and delete (DELETE ...?reassign_to=X, reassigns items). Guards: Admin protected (400), 404 unknown, duplicate/blank/self-reassign 400, non-admin 403. Selection resets to Admin + refetch after changes.
+- Tested iteration_51.json: 50/50 backend (new suite test_purchase_list_orderer_mgmt_v50.py) + 100% frontend (PDF text-verified per-orderer content). Post-test polish: controlled popovers, '1 item' singular, dimmed orderer checkboxes when ALL selected. Final preview orderers: [Admin, RAJESH]. REDEPLOY required.
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document

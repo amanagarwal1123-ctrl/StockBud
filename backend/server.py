@@ -5805,6 +5805,45 @@ async def add_purchase_orderer(request: Dict, current_user: dict = Depends(get_c
     return {'success': True, 'name': name}
 
 
+@api_router.put("/purchase-list/orderers/{name}")
+async def rename_purchase_orderer(name: str, request: Dict, current_user: dict = Depends(get_current_user)):
+    """Rename a salesman and move all his items' purview in one step."""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    new_name = (request.get('new_name') or '').strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="new_name required")
+    if name.lower() == 'admin' or new_name.lower() == 'admin':
+        raise HTTPException(status_code=400, detail="Admin cannot be renamed or overwritten")
+    if not await db.purchase_orderers.find_one({'name': name}):
+        raise HTTPException(status_code=404, detail="Orderer not found")
+    if new_name != name and await db.purchase_orderers.find_one({'name': new_name}):
+        raise HTTPException(status_code=400, detail="An orderer with that name already exists")
+    await db.purchase_orderers.update_one({'name': name}, {'$set': {'name': new_name}})
+    res = await db.purchase_item_state.update_many({'purview': name}, {'$set': {'purview': new_name}})
+    return {'success': True, 'name': new_name, 'items_moved': res.modified_count}
+
+
+@api_router.delete("/purchase-list/orderers/{name}")
+async def delete_purchase_orderer(name: str, reassign_to: str = Query('Admin'),
+                                  current_user: dict = Depends(get_current_user)):
+    """Delete a salesman; his items are reassigned to `reassign_to` (default Admin)."""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    if name.lower() == 'admin':
+        raise HTTPException(status_code=400, detail="Admin cannot be deleted")
+    if not await db.purchase_orderers.find_one({'name': name}):
+        raise HTTPException(status_code=404, detail="Orderer not found")
+    reassign_to = (reassign_to or 'Admin').strip() or 'Admin'
+    if reassign_to == name:
+        raise HTTPException(status_code=400, detail="Cannot reassign to the orderer being deleted")
+    if reassign_to.lower() != 'admin' and not await db.purchase_orderers.find_one({'name': reassign_to}):
+        raise HTTPException(status_code=400, detail="Reassign target does not exist")
+    await db.purchase_orderers.delete_one({'name': name})
+    res = await db.purchase_item_state.update_many({'purview': name}, {'$set': {'purview': reassign_to}})
+    return {'success': True, 'items_reassigned': res.modified_count, 'reassigned_to': reassign_to}
+
+
 @api_router.put("/purchase-list/config")
 async def update_purchase_config(request: Dict, current_user: dict = Depends(get_current_user)):
     if current_user['role'] != 'admin':
