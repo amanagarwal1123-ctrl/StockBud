@@ -212,6 +212,11 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Item Groups mobile**: auto-suggestions card hidden while searching (results sit right under the input, above the keyboard); Create/Edit dialog now flex-column capped at 85dvh (search pinned, chips max-h-24, list flex-1 scroll, save pinned) so the keyboard no longer hides the list; leader auto-selected as first picked item. Purchase list mobile item column trimmed to 80px so the 4 key columns fit 390px.
 - Tested iteration_49.json: 37/37 backend + 100% frontend. Note: preview master_items nearly empty (1 doc) limits Item Groups create-dialog data — data artifact, not code. REDEPLOY required.
 
+## PDF Export + WhatsApp Share (Aug 20, 2026 — session 9 cont.)
+- Purchase List + Goods to Arrive: 'PDF' button downloads a jspdf/autotable PDF (S.No, Item Name, Order Qty kg, Current Stock kg; respects active search/filters; GTA looks up stock from /purchase-list incl. members, '—' if unknown, exports active tab). 'WhatsApp' button uses Web Share API with the PDF file; falls back to download + toast where unsupported. Util: /app/frontend/src/lib/pdfExport.js; deps jspdf + jspdf-autotable added.
+- Testids: pl-export-pdf-btn, pl-share-whatsapp-btn, gta-export-pdf-btn, gta-share-whatsapp-btn.
+- Tested iteration_50.json (frontend): 100% — PDF content verified by text extraction. Fixed reported MEDIUM issue: Sonner Toaster moved top-right → bottom-right (was overlaying header buttons for ~4s per toast). REDEPLOY required.
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document

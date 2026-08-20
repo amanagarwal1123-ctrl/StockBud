@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { ShoppingCart, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown, Settings2, Users, CalendarRange, Trash2, Undo2, ZoomIn, ZoomOut, Search, X } from 'lucide-react';
+import { ShoppingCart, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown, Settings2, Users, CalendarRange, Trash2, Undo2, ZoomIn, ZoomOut, Search, X, FileDown, Share2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
 import { PurchaseItemSheet } from '../components/PurchaseItemSheet';
+import { buildPdf, sharePdf } from '../lib/pdfExport';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -159,6 +160,28 @@ export default function PurchaseList() {
     } catch (e) { toast.error(e.response?.data?.detail || 'Failed'); }
   };
 
+  const makePdf = () => {
+    if (!rows.length) { toast.error('Nothing to export'); return null; }
+    return buildPdf({
+      title: 'Purchase List',
+      subtitle: `Date: ${date} · ${rows.length} items · Baseline since ${data?.baseline_start || ''}`,
+      rows: rows.map((r, i) => [i + 1, r.item_name, r.order_qty_kg.toFixed(3), r.current_stock_kg.toFixed(3)]),
+    });
+  };
+
+  const exportPdf = () => {
+    const doc = makePdf();
+    if (doc) { doc.save(`purchase-list-${date}.pdf`); toast.success('PDF downloaded'); }
+  };
+
+  const shareWhatsApp = async () => {
+    const doc = makePdf();
+    if (!doc) return;
+    const res = await sharePdf(doc, `purchase-list-${date}.pdf`, `Purchase List ${date}`);
+    if (res === 'shared') toast.success('Shared');
+    else if (res === 'downloaded') toast('PDF downloaded', { description: 'Sharing not supported on this browser — attach the file in WhatsApp manually' });
+  };
+
   const openSeasonalList = async () => {
     try {
       const res = await axios.get(`${API}/purchase-list/seasonal-items`);
@@ -274,6 +297,12 @@ export default function PurchaseList() {
           </Button>
           <Button variant="outline" size="sm" className="h-9" onClick={openSeasonalList} data-testid="pl-seasonal-list-btn">
             <CalendarRange className="h-4 w-4 mr-1" />Seasonal
+          </Button>
+          <Button variant="outline" size="sm" className="h-9" onClick={exportPdf} data-testid="pl-export-pdf-btn">
+            <FileDown className="h-4 w-4 mr-1" />PDF
+          </Button>
+          <Button variant="outline" size="sm" className="h-9 text-green-700 border-green-300 hover:bg-green-50" onClick={shareWhatsApp} data-testid="pl-share-whatsapp-btn">
+            <Share2 className="h-4 w-4 mr-1" />WhatsApp
           </Button>
           <Popover>
             <PopoverTrigger asChild>

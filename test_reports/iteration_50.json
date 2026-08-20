@@ -1,0 +1,27 @@
+{
+  "summary": "Frontend-only testing (backend suites skipped per request) of the new PDF export + WhatsApp share feature on Purchase List and Goods to Arrive. Logged in as admin/admin123 on the public preview URL. Verified: (1) Purchase List PDF button downloads purchase-list-2026-08-20.pdf (277KB, valid %PDF header, 296 rows) with 'PDF downloaded' toast; (2) WhatsApp button in headless Chromium (navigator.canShare undefined) correctly FALLS BACK to a download + explanatory toast 'PDF downloaded / Sharing not supported on this browser — attach the file in WhatsApp manually'; (3) filtered export with pl-search-input='JB-70' downloads a 6KB PDF and extracted PDF text confirms exactly the 2 filtered rows with correct columns (S.No, Item Name, Order Qty (kg), Current Stock (kg)) and values matching the UI (6.006/-4.055, 5.017/4.180) plus subtitle 'Date: 2026-08-20 · 2 items · Baseline since 2026-01-01'; (4) green-marked pl-green-check-0 -> Goods to Arrive showed To Arrive (1); gta-export-pdf-btn downloaded goods-to-arrive-to_arrive-2026-08-20.pdf (valid PDF) and gta-share-whatsapp-btn fell back to the same download + toast; (5) empty tab export shows 'Nothing to export' error toast and produces NO download (verified on both Arrived and empty Pending); (6) regression smoke: 296 purchase-list rows render, search suggestions work, GTA tabs switch with correct empty-state copy. CLEANUP done: green mark unchecked, GET /api/goods-to-arrive returns to_arrive=0/arrived=0 and 0 checked green checkboxes remain.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Sonner toast container (global)", "issue": "Toasts render top-right and overlay the header control bar on Purchase List, intercepting pointer events on the PDF/WhatsApp/Seasonal/Refresh buttons for the toast lifetime (~4s). A real user clicking PDF twice in a row, or clicking PDF after any toast, cannot click the button until the toast auto-dismisses (Playwright normal click timed out for 30s with 'toast subtree intercepts pointer events'). Suggest offsetting the toaster (top-center / lower offset) or making toasts pointer-events-none on the non-close area.", "selector": "[data-sonner-toast] over [data-testid=\"pl-export-pdf-btn\"]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "MEDIUM: Fix toast overlay blocking header action buttons (PDF/WhatsApp/Refresh/Seasonal) on Purchase List — reposition/offset the Sonner Toaster or disable pointer events on toast body."
+  ],
+  "critical_code_review_comments": [
+    "pdfExport.sharePdf: when navigator.share throws a non-AbortError the function still falls through to doc.save() — good; but the aborted branch returns 'aborted' with no user feedback in callers (silent no-op). Minor UX gap on mobile.",
+    "GoodsToArrive.makePdf swallows the /api/purchase-list stock-lookup failure silently ('—' printed) — consider a warning toast so the user knows stock column is incomplete."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (skipped per request)", "frontend": "100% of feature assertions passed (1 medium non-blocking UI overlay issue)"},
+  "seed_data_creation": "Temporarily green-marked purchase-list row 0 (NAJARIYA PLAIN 92.5) to create a pending order; unchecked afterwards and verified to_arrive=0. No residual test data.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "admin / admin123",
+  "context_for_next_testing_agent": "PDF export/WhatsApp fallback verified end-to-end on both pages (filenames purchase-list-<date>.pdf, goods-to-arrive-<tab>-<date>.pdf; PDF text extraction confirmed columns/values). Headless Chromium has no navigator.canShare so WhatsApp always downloads — expected. When re-testing PDF buttons, wait ~4-5s or reload the page between clicks because Sonner toasts overlay the header buttons. App state left clean (no green marks).",
+  "rca_of_the_issue": "Toast overlay: the Sonner Toaster is anchored top-right with default offset, which is the same region as the Purchase List header control bar; toast <li> elements accept pointer events, so subsequent clicks on pl-export-pdf-btn / pl-share-whatsapp-btn are intercepted until the toast auto-dismisses."
+}

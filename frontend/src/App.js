@@ -126,7 +126,7 @@ function App() {
               }
             />
           </Routes>
-          <Toaster richColors position="top-right" />
+          <Toaster richColors position="bottom-right" />
           </UploadProvider>
         </AuthProvider>
       </BrowserRouter>

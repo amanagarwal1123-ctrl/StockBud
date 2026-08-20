@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { Truck, Check, Undo2, Search, X } from 'lucide-react';
+import { Truck, Check, Undo2, Search, X, FileDown, Share2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
+import { buildPdf, sharePdf } from '../lib/pdfExport';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -77,6 +78,41 @@ export default function GoodsToArrive() {
     return names.filter(n => n.toLowerCase().includes(q)).slice(0, 8);
   }, [q, data]);
 
+  const makePdf = async () => {
+    if (!rows.length) { toast.error('Nothing to export'); return null; }
+    let stockMap = {};
+    try {
+      const res = await axios.get(`${API}/purchase-list`);
+      for (const r of res.data.rows || []) {
+        stockMap[r.item_name] = r.current_stock_kg;
+        for (const m of r.members || []) if (!(m.name in stockMap)) stockMap[m.name] = m.current_stock_kg;
+      }
+    } catch { /* stock lookup optional */ }
+    const today = new Date().toISOString().slice(0, 10);
+    return {
+      doc: buildPdf({
+        title: `Goods to Arrive — ${tab === 'to_arrive' ? 'Pending' : 'Arrived'}`,
+        subtitle: `Generated ${today} · ${rows.length} orders`,
+        rows: rows.map((o, i) => [i + 1, o.item_name, Number(o.order_qty_kg).toFixed(3),
+          stockMap[o.item_name] != null ? stockMap[o.item_name].toFixed(3) : '—']),
+      }),
+      filename: `goods-to-arrive-${tab}-${today}.pdf`,
+    };
+  };
+
+  const exportPdf = async () => {
+    const r = await makePdf();
+    if (r) { r.doc.save(r.filename); toast.success('PDF downloaded'); }
+  };
+
+  const shareWhatsApp = async () => {
+    const r = await makePdf();
+    if (!r) return;
+    const res = await sharePdf(r.doc, r.filename, 'Goods to Arrive');
+    if (res === 'shared') toast.success('Shared');
+    else if (res === 'downloaded') toast('PDF downloaded', { description: 'Sharing not supported on this browser — attach the file in WhatsApp manually' });
+  };
+
   return (
     <div className="p-4 sm:p-6 md:p-8 space-y-4" data-testid="goods-to-arrive-page">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -86,12 +122,20 @@ export default function GoodsToArrive() {
           </h1>
           <p className="text-sm text-muted-foreground mt-1">Green-marked orders from the Purchase List — mark them arrived when goods come in</p>
         </div>
-        <Tabs value={tab} onValueChange={setTab}>
-          <TabsList>
-            <TabsTrigger value="to_arrive" data-testid="gta-tab-pending">To Arrive ({data.to_arrive.length})</TabsTrigger>
-            <TabsTrigger value="arrived" data-testid="gta-tab-arrived">Arrived ({data.arrived.length})</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button variant="outline" size="sm" className="h-9" onClick={exportPdf} data-testid="gta-export-pdf-btn">
+            <FileDown className="h-4 w-4 mr-1" />PDF
+          </Button>
+          <Button variant="outline" size="sm" className="h-9 text-green-700 border-green-300 hover:bg-green-50" onClick={shareWhatsApp} data-testid="gta-share-whatsapp-btn">
+            <Share2 className="h-4 w-4 mr-1" />WhatsApp
+          </Button>
+          <Tabs value={tab} onValueChange={setTab}>
+            <TabsList>
+              <TabsTrigger value="to_arrive" data-testid="gta-tab-pending">To Arrive ({data.to_arrive.length})</TabsTrigger>
+              <TabsTrigger value="arrived" data-testid="gta-tab-arrived">Arrived ({data.arrived.length})</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
       </div>
 
       {/* Search */}
