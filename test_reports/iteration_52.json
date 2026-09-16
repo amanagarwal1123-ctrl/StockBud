@@ -1,0 +1,27 @@
+{
+  "summary": "Verified iteration-52 heavy-queue + cache + streaming refactor + frontend button-lock. All 6 backend integration tests pass (sales-report shape+cache, monthly-profit streaming, sales-reconciliation streaming, 10-req concurrent burst all 200 + /api/stats alive, sales-manager-report regression). Frontend: admin login OK, /sales-report ALL button loads data (1 stamp row / 264 items), month buttons + year-select verified DISABLED during load (as designed), Purchase List loads 296 rows, Profit Analysis page loads. Button-lock works: when clicking month-1/2/3 rapidly, disabled buttons natively suppress subsequent clicks in browser, so users cannot cause stale-data flashes.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_heavy_queue_v52_integration.py",
+    "/app/test_reports/pytest/iter52.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "SalesReport.jsx: Because month buttons are disabled during load, native browsers already suppress subsequent clicks — the reqSeq guard is defensive/redundant but harmless. Consider adding a subtle 'Loading...' indicator so users understand why buttons appear unresponsive after a click.",
+    "server.py: heavy_queue infra (_heavy_gate semaphore=2, _report_cache TTL 5min) is sound; ensure _inv_cache.invalidate() also clears _report_cache (task states this is done — verified by cache-hit test)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_heavy_queue_v52_integration.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin/admin123, TEST_SM/sm123",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Login response uses key 'access_token' (not 'token'). Preview DB is small (~500 txns 2025) — heavy endpoints respond <1s so real 503/queue-timeout paths cannot be triggered here; only correctness + concurrency-no-crash was verified. Sales-report shape: by_stamp/by_item/totals; by_item rows include stock_sale_ratio, avg_stock_kg, merged_names. Monthly-profit uses key 'all_items' + 'total_net_wt_sold'. Sales-reconciliation uses 'grand_totals_all_items' as totals-like key."
+}

@@ -222,6 +222,18 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - Manage Orderers (UserCog btn pl-manage-orderers-btn next to 'Orderers:' → components/OrdererManageDialog.jsx): rename (PUT /api/purchase-list/orderers/{name} {new_name}, moves all purviews) and delete (DELETE ...?reassign_to=X, reassigns items). Guards: Admin protected (400), 404 unknown, duplicate/blank/self-reassign 400, non-admin 403. Selection resets to Admin + refetch after changes.
 - Tested iteration_51.json: 50/50 backend (new suite test_purchase_list_orderer_mgmt_v50.py) + 100% frontend (PDF text-verified per-orderer content). Post-test polish: controlled popovers, '1 item' singular, dimmed orderer checkboxes when ALL selected. Final preview orderers: [Admin, RAJESH]. REDEPLOY required.
 
+## Server Crash Fix — Heavy-Analytics Queue + Streaming + Report Cache (Jun 2026 — session 10, iteration_52)
+- **User bug (production)**: Sales Report "2025 ALL" crashed the server repeatedly; pressing 2-3 buttons simultaneously also crashed it (pod OOM kills). User asked for a request queue so the server isn't overwhelmed.
+- **Root causes**: (1) `/analytics/sales-report` buffered the ENTIRE period's transactions via `.to_list(None)` (100K+ docs for a full production year); same class of bug in `/analytics/monthly-profit` (year sale txns) and `/analytics/sales-reconciliation`; (2) zero concurrency control — parallel heavy requests multiplied peak memory.
+- **Fixes (server.py)**:
+  1. **Heavy-request queue**: `_heavy_gate = asyncio.Semaphore(2)` + `_acquire_heavy()` (45s max wait → friendly 503 "Server is busy...") + `heavy_queue_slot()` FastAPI yield-dependency. Applied via `_slot=Depends(heavy_queue_slot)` to: profit, customer-profit, supplier-profit, sales-reconciliation, sales-manager-report, sales-report-drill, monthly-profit, daily-profit, daily-profit-detail, visualization, purchase-list (GET). Max 2 heavy computations run at once; extras queue.
+  2. **Streaming**: sales-report txn aggregation moved to `_compute_sales_report()` helper using `async for` cursor (no buffering); monthly-profit sale totals + sales-reconciliation loops also converted to `async for`.
+  3. **Report cache**: `_report_cache` (5-min TTL) keyed `sales-report:{sd}:{ed}`; cache checked BEFORE queueing (instant repeat clicks). `_LinkedInventoryCache` makes every existing `_inv_cache.invalidate()` (uploads, group edits, etc.) also clear the report cache.
+- **Frontend (SalesReport.jsx)**: month/ALL buttons, year select, Apply disabled while loading; `AbortController` + `reqSeq` guard cancels superseded requests; 503 → sonner toast "Server is busy — please try again in a few seconds" (keeps old data); drill chart toggle guarded while a chart is loading + 503 toast.
+- **Tested (iteration_52.json — 100% backend + 100% frontend)**: 10-request concurrent burst all 200 + server alive; cache-hit identical; streaming endpoints' math regression clean; TEST_SM report OK; UI buttons verified disabled during load; Purchase List (296 rows) + Profit Analysis regression OK. Unit suite `tests/test_heavy_queue_v52.py` (5) + integration `tests/test_heavy_queue_v52_integration.py`; 54 prior regressions pass. NOTE: preview data too small to trigger real 503/queue waits — logic unit-tested instead.
+- **Also fixed**: 4 bare `except:` → `except Exception:` (lint) in generate_manuals.py, server.py, services/helpers.py.
+- **ACTION REQUIRED BY USER**: REDEPLOY to apply on production.
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document
