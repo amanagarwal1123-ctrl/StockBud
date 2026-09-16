@@ -138,7 +138,7 @@ def annotate_screenshot(img_path, annotations, output_path):
     try:
         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
         small_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 13)
-    except:
+    except Exception:
         font = ImageFont.load_default()
         small_font = font
     

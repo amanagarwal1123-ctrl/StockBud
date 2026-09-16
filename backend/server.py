@@ -80,8 +80,41 @@ class InventoryCache:
         else:
             self._cache.clear()
 
-_inv_cache = InventoryCache(ttl_seconds=30)
+_report_cache = InventoryCache(ttl_seconds=300)
+
+
+class _LinkedInventoryCache(InventoryCache):
+    """Invalidating inventory also clears computed report caches."""
+    def invalidate(self, key=None):
+        super().invalidate(key)
+        _report_cache.invalidate()
+
+
+_inv_cache = _LinkedInventoryCache(ttl_seconds=30)
 _inv_locks: Dict[str, asyncio.Lock] = {}
+
+# Heavy-analytics queue: at most 2 heavy computations run at once; extra
+# requests wait (queued) up to _HEAVY_WAIT_SECONDS, then get a friendly 503
+# instead of piling up in memory and OOM-killing the pod.
+_heavy_gate = asyncio.Semaphore(2)
+_HEAVY_WAIT_SECONDS = 45
+_BUSY_MSG = "Server is busy processing other reports. Please try again in a few seconds."
+
+
+async def _acquire_heavy():
+    try:
+        await asyncio.wait_for(_heavy_gate.acquire(), timeout=_HEAVY_WAIT_SECONDS)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=503, detail=_BUSY_MSG)
+
+
+async def heavy_queue_slot():
+    """FastAPI dependency that queues heavy analytics endpoints."""
+    await _acquire_heavy()
+    try:
+        yield
+    finally:
+        _heavy_gate.release()
 
 
 async def get_current_inventory_cached(as_of_date: str = None):
@@ -4095,7 +4128,8 @@ async def upload_purchase_ledger(file: UploadFile = File(...), current_user: dic
 async def get_customer_profit(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _slot=Depends(heavy_queue_slot)
 ):
     """Calculate profit per customer (silver & labour).
     Sale returns are treated as purchases — we 'buy back' at the return rate,
@@ -4202,7 +4236,8 @@ async def get_customer_profit(
 async def get_supplier_profit(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _slot=Depends(heavy_queue_slot)
 ):
     """Calculate profit per supplier based on items they supply"""
     
@@ -4632,7 +4667,8 @@ async def get_sales_summary(
 async def calculate_profit(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _slot=Depends(heavy_queue_slot)
 ):
     """Calculate profit: Silver profit (in kg) and Labour profit (in INR)"""
     
@@ -4855,7 +4891,8 @@ async def sale_debug_breakdown(
 async def sales_reconciliation(
     start_date: str = Query(...),
     end_date: str = Query(...),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _slot=Depends(heavy_queue_slot)
 ):
     """Item-by-item sale reconciliation for any date range.
 
@@ -4871,13 +4908,6 @@ async def sales_reconciliation(
     """
     if current_user['role'] != 'admin':
         raise HTTPException(status_code=403, detail="Admin only")
-
-    txns = await db.transactions.find({
-        'date': {'$gte': start_date, '$lte': end_date + ' 23:59:59'},
-        'type': {'$in': ['sale', 'sale_return']}
-    }, {"_id": 0, "type": 1, "item_name": 1, "net_wt": 1, "gr_wt": 1,
-        "fine": 1, "total_amount": 1, "tunch": 1, "party_name": 1,
-        "date": 1, "pc": 1}).to_list(None)
 
     EXCLUDED = {"SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"}
     all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
@@ -4905,7 +4935,12 @@ async def sales_reconciliation(
         'customers': set(), 'first_date': '', 'last_date': '',
     })
 
-    for t in txns:
+    async for t in db.transactions.find({
+            'date': {'$gte': start_date, '$lte': end_date + ' 23:59:59'},
+            'type': {'$in': ['sale', 'sale_return']}},
+            {"_id": 0, "type": 1, "item_name": 1, "net_wt": 1, "gr_wt": 1,
+             "fine": 1, "total_amount": 1, "tunch": 1, "party_name": 1,
+             "date": 1, "pc": 1}):
         raw = t.get('item_name', '') or ''
         leader = _resolve(raw)
         stamp = _stamp_for(leader, raw)
@@ -5147,13 +5182,24 @@ async def get_sales_report(
     else:
         raise HTTPException(status_code=400, detail="Provide either start_date+end_date or year[+month]")
     
-    # Pull sales + sale_returns in range
-    txns = await db.transactions.find({
-        'date': {'$gte': sd, '$lte': ed + ' 23:59:59'},
-        'type': {'$in': ['sale', 'sale_return']}
-    }, {"_id": 0, "type": 1, "item_name": 1, "net_wt": 1, "gr_wt": 1,
-        "fine": 1, "tunch": 1, "total_amount": 1, "party_name": 1, "date": 1}).to_list(None)
-    
+    # Instant cache hit for repeated clicks / multiple viewers (cleared on data changes)
+    cache_key = f"sales-report:{sd}:{ed}"
+    cached = _report_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    await _acquire_heavy()
+    try:
+        cached = _report_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        result = await _compute_sales_report(sd, ed, year, month)
+        _report_cache.set(cache_key, result)
+        return result
+    finally:
+        _heavy_gate.release()
+
+
+async def _compute_sales_report(sd: str, ed: str, year: Optional[int], month: int):
     # Build resolution context
     EXCLUDED = {"SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"}
     all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
@@ -5189,7 +5235,11 @@ async def get_sales_report(
     from collections import defaultdict as _dd2
     excluded_by_item = _dd2(lambda: {'net_g': 0.0, 'amount': 0.0, 'fine_g': 0.0, 'rows': 0})
     
-    for t in txns:
+    async for t in db.transactions.find({
+            'date': {'$gte': sd, '$lte': ed + ' 23:59:59'},
+            'type': {'$in': ['sale', 'sale_return']}},
+            {"_id": 0, "type": 1, "item_name": 1, "net_wt": 1, "gr_wt": 1,
+             "fine": 1, "tunch": 1, "total_amount": 1, "party_name": 1}):
         item_raw = t.get('item_name', '')
         leader = _resolve(item_raw)
         if leader in EXCLUDED:
@@ -5394,7 +5444,8 @@ async def get_sales_report(
 async def get_sales_manager_report(
     start_date: str = Query(...),
     end_date: str = Query(...),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _slot=Depends(heavy_queue_slot)
 ):
     """Restricted sales view for sales managers: gross + net weight only,
     limited to stamps assigned to the user (stamp_assignments) and to the
@@ -5485,7 +5536,8 @@ async def get_sales_report_drill(
     entity_type: str = Query("item"),
     start_date: str = Query(...),
     end_date: str = Query(...),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _slot=Depends(heavy_queue_slot)
 ):
     """Day-wise opening net stock (bars) vs day sales (line) for one item or stamp.
 
@@ -5609,7 +5661,7 @@ async def _purchase_fingerprint(date_s: str, baseline_start: str):
 
 
 @api_router.get("/purchase-list")
-async def get_purchase_list(date: str = Query(None), current_user: dict = Depends(get_current_user)):
+async def get_purchase_list(date: str = Query(None), current_user: dict = Depends(get_current_user), _slot=Depends(heavy_queue_slot)):
     """Daily purchase list (lazily computed + cached per date, auto-recomputed when
     the underlying transactions for that window change). State (green marks, temp
     removals, seasons, purview, baselines) is stored per item and merged on read."""
@@ -6007,7 +6059,8 @@ async def find_orphan_transactions(
 async def get_monthly_profit(
     year: int = Query(...),
     month: int = Query(0),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _slot=Depends(heavy_queue_slot)
 ):
     """Get pre-computed item profit for a specific month (0 = all year).
 
@@ -6074,8 +6127,6 @@ async def get_monthly_profit(
         last_day = calendar.monthrange(year, month)[1]
         sales_query = {'date': {'$gte': f"{year}-{month:02d}-01", '$lte': f"{year}-{month:02d}-{last_day} 23:59:59"}, 'type': {'$in': ['sale', 'sale_return']}}
     
-    sale_txns = await db.transactions.find(sales_query, {"_id": 0, "type": 1, "net_wt": 1, "fine": 1, "total_amount": 1, "party_name": 1, "item_name": 1}).to_list(None)
-    
     # Build the same filter the profit pipeline uses
     EXCLUDED_ITEMS = {"SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"}
     all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
@@ -6095,7 +6146,9 @@ async def get_monthly_profit(
     total_fine_wt_sold = 0.0
     total_labour_sold = 0.0
     customer_set = set()
-    for st in sale_txns:
+    async for st in db.transactions.find(sales_query, {
+            "_id": 0, "type": 1, "net_wt": 1, "fine": 1,
+            "total_amount": 1, "party_name": 1, "item_name": 1}):
         if not _inc(st.get('item_name', '')):
             continue
         # Canonicalize: returns always subtract, whether DB stored them signed or unsigned
@@ -6207,7 +6260,8 @@ async def get_monthly_party(
 async def get_daily_profit(
     year: int = Query(...),
     month: int = Query(...),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _slot=Depends(heavy_queue_slot)
 ):
     """Get daily silver and labour profit for each day of the month.
 
@@ -6239,7 +6293,8 @@ async def get_daily_profit(
 @api_router.get("/analytics/daily-profit-detail")
 async def get_daily_profit_detail(
     date: str = Query(...),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _slot=Depends(heavy_queue_slot)
 ):
     """Get top 20 customers and top 20 items profit for a specific date.
 
@@ -7774,7 +7829,7 @@ async def auto_stock_alerts(current_user: dict = Depends(get_current_user)):
             last_ts = datetime.fromisoformat(last_check['timestamp'])
             if (now - last_ts).total_seconds() < 1800:  # 30 minutes
                 should_regenerate = False
-        except:
+        except Exception:
             pass
     
     if should_regenerate:
@@ -8130,7 +8185,8 @@ async def get_visualization_data(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     trend_granularity: Optional[str] = "auto",
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _slot=Depends(heavy_queue_slot)
 ):
     """Get aggregated data for charts and visualizations"""
     query = {}

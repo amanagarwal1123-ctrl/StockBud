@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
+import { toast } from 'sonner';
 import { FileText, Calendar, Download, Search, ChevronDown, ChevronRight, EyeOff, BarChart2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -43,10 +44,13 @@ export default function SalesReport() {
   const [chartKey, setChartKey] = useState(null); // "item:NAME" | "stamp:NAME"
   const [chartCache, setChartCache] = useState({});
   const [chartLoading, setChartLoading] = useState(false);
+  const abortRef = useRef(null);
+  const reqSeq = useRef(0);
 
   const toggleChart = async (type, entityName) => {
     const key = `${type}:${entityName}`;
     if (chartKey === key) { setChartKey(null); return; }
+    if (chartLoading) return;
     setChartKey(key);
     if (!chartCache[key] && data?.period) {
       setChartLoading(true);
@@ -57,6 +61,7 @@ export default function SalesReport() {
         setChartCache((p) => ({ ...p, [key]: r.data }));
       } catch (e) {
         console.error('Drill chart error:', e);
+        if (e.response?.status === 503) toast.error('Server is busy — please try the chart again in a few seconds.');
         setChartCache((p) => ({ ...p, [key]: null }));
       } finally {
         setChartLoading(false);
@@ -70,6 +75,10 @@ export default function SalesReport() {
   }, []);
 
   const fetchReport = async (overrides = {}) => {
+    const reqId = ++reqSeq.current;
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     setExcludedStamps(new Set());
     setChartKey(null);
@@ -86,13 +95,19 @@ export default function SalesReport() {
       } else {
         url = `${API}/analytics/sales-report?start_date=${sd}&end_date=${ed}`;
       }
-      const r = await axios.get(url);
+      const r = await axios.get(url, { signal: controller.signal });
+      if (reqId !== reqSeq.current) return;
       setData(r.data);
     } catch (e) {
+      if (reqId !== reqSeq.current || controller.signal.aborted) return;
       console.error('Sales report error:', e);
-      setData(null);
+      if (e.response?.status === 503) {
+        toast.error('Server is busy — please try again in a few seconds.');
+      } else {
+        setData(null);
+      }
     } finally {
-      setLoading(false);
+      if (reqId === reqSeq.current) setLoading(false);
     }
   };
 
@@ -286,7 +301,7 @@ export default function SalesReport() {
             <TabsContent value="month" className="pt-3 space-y-3">
               <div className="flex items-center gap-3 flex-wrap">
                 <label className="text-sm text-muted-foreground">Year:</label>
-                <Select value={String(year)} onValueChange={handleYearChange}>
+                <Select value={String(year)} onValueChange={handleYearChange} disabled={loading}>
                   <SelectTrigger className="w-[100px]" data-testid="year-select">
                     <SelectValue />
                   </SelectTrigger>
@@ -302,6 +317,7 @@ export default function SalesReport() {
                   variant={month === 0 ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => handleMonthClick(0)}
+                  disabled={loading}
                   data-testid="month-all"
                 >
                   ALL
@@ -312,6 +328,7 @@ export default function SalesReport() {
                     variant={month === idx + 1 ? 'default' : 'outline'}
                     size="sm"
                     onClick={() => handleMonthClick(idx + 1)}
+                    disabled={loading}
                     data-testid={`month-${idx + 1}`}
                   >
                     {label}
@@ -342,7 +359,7 @@ export default function SalesReport() {
                     data-testid="end-date-input"
                   />
                 </div>
-                <Button onClick={fetchReport} data-testid="apply-custom-range">
+                <Button onClick={fetchReport} disabled={loading} data-testid="apply-custom-range">
                   Apply
                 </Button>
               </div>

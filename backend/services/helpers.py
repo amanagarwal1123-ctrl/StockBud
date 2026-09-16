@@ -50,7 +50,7 @@ def parse_labor_value(tag_no):
             value = float(parts[0])
             labor_type = parts[1] if parts[1] in ['WT', 'PC'] else None
             return value, labor_type
-        except:
+        except Exception:
             pass
     return 0.0, None
 
@@ -87,7 +87,7 @@ def normalize_date(date_value):
         import pandas as pd
         dt = pd.to_datetime(date_str, dayfirst=True)
         return dt.strftime('%Y-%m-%d')
-    except:
+    except Exception:
         return date_str
 
 
