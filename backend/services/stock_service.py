@@ -503,15 +503,25 @@ async def get_current_inventory(as_of_date: str = None):
     negative_items = []
     grouped_items = set()  # Track items already included via a group
 
+    # Case/whitespace-insensitive lookup so member names match computed items
+    computed_by_key = {name.strip().lower(): name for name in all_computed}
+
     # Build group display entries
     for gname, members in group_members_list.items():
         member_items = []
+        seen_actual = set()
         for m_name in members:
-            if m_name in all_computed:
-                member_items.append(all_computed[m_name])
-                grouped_items.add(m_name)
+            actual = computed_by_key.get((m_name or '').strip().lower())
+            if actual is not None and actual not in seen_actual:
+                seen_actual.add(actual)
+                member_items.append(all_computed[actual])
 
         if len(member_items) > 1:
+            # Only now mark members as consumed by the group. Marking them earlier
+            # made single-computed-member groups (e.g. a member whose transactions
+            # are folded into the leader via item_mappings) vanish from BOTH the
+            # group list and the ungrouped list.
+            grouped_items.update(m['item_name'] for m in member_items)
             # Create a consolidated group display entry
             group_gr = sum(m['gr_wt'] for m in member_items)
             group_net = sum(m['net_wt'] for m in member_items)
@@ -550,9 +560,8 @@ async def get_current_inventory(as_of_date: str = None):
                 negative_items.append(group_entry)
             else:
                 inventory.append(group_entry)
-        elif len(member_items) == 1:
-            # Single member group — treat as individual
-            pass  # Will be handled below as ungrouped
+        # 0 or 1 computed members: no group row — the item (if any) stays in the
+        # ungrouped loop below so it is never dropped from the display.
 
     # Add ungrouped items (not part of any multi-member group)
     for item_name, item in all_computed.items():

@@ -234,6 +234,13 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Also fixed**: 4 bare `except:` → `except Exception:` (lint) in generate_manuals.py, server.py, services/helpers.py.
 - **ACTION REQUIRED BY USER**: REDEPLOY to apply on production.
 
+## Current Stock — Vanishing Single-Computed-Member Groups Fix (Jun 2026 — session 10b)
+- **User bug (production)**: group BARTAN-040 (members: BARTAN-040 + LOTA; leader has item_mappings LOTA & CHAMMACH) existed on Item Groups page but was completely MISSING from Current Stock. Same for SLG 70 BICCHIYA-255.
+- **Root cause (`services/stock_service.py` second display pass)**: members were added to `grouped_items` BEFORE the `len(member_items) > 1` check. When a member's transactions are folded into the leader via item_mappings (LOTA → BARTAN-040), the member never exists as its own computed item → the group has only 1 computed member → `elif len==1: pass` skipped the group row, but the leader was already in `grouped_items` → the ungrouped loop skipped it too → the item vanished from BOTH `inventory` and `negative_items` (also silently missing from `_flat_base_from_inventory` used by physical-stock baselines).
+- **Fix**: `grouped_items` now only updated when a multi-member group row is actually created; 0/1-computed-member groups fall through to the ungrouped loop as a plain row with full consolidated stock. Bonus: member→computed matching is now case/whitespace-insensitive (`computed_by_key`) with per-group dedup to prevent double counting.
+- **Verified (preview, direct API)**: BARTAN-040 (-13.123 kg, parity with stamp_items exact) + SLG 70 BICCHIYA-255 reappear; existing group rows (SNT 40-256, KADA-AS 70, TULSI 70 -264) intact; totals unchanged (15163.0); nothing removed. Regression: parity v49 + groups v48 suites 12/12 pass. (16 failures in test_item_grouping/test_individual_stock_computation are PRE-EXISTING data-dependent failures — identical with fix stashed.)
+- **ACTION REQUIRED BY USER**: REDEPLOY to see BARTAN-040 etc. on production Current Stock.
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document
