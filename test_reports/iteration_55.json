@@ -1,0 +1,22 @@
+{
+  "summary": "Retest of iteration_54 HIGH bug (showCum persistence across reload) on /compare-sales-daywise. FIX VERIFIED. Login admin/admin123 → set entry0 2026-02-12 days=10 → Make Table (sub-th=4 w/ Cum). Toggled cum-toggle OFF → sub-th=3, LS compareSalesDaywise_v1.print.showCum=false. Reload → table auto-rebuilt with sub-th=3 (Cum column hidden), LS still {showCum:false}. Toggled back ON → reload → sub-th=4, LS {showCum:true}. Sanity: Total row = 622.454 kg, cum @ countdown=0 (Thu 12/02) = 622.454 = Total — exact. Font pref persistence verified (fontPt=10 before/after reload; LS write pipeline intact). No console errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fix in CompareSalesDaywise.jsx is correct: loadedRef (useRef) replaced with `loaded` useState; save useEffect guarded by `if (!loaded) return;` with `loaded` in deps array. Save effect now only runs on renders AFTER load completes, so closure captures the loaded showCum value — eliminates the stale-closure race."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100% (all 3 retest checks pass)"},
+  "test_credentials": "admin/admin123",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "iter-54 HIGH bug resolved. All Compare Sales Daywise enhancements now pass: cum column rendering, cum math (Total=cum@0=622.454), main+toolbar cum-toggle, view-pdf, font/spacing/orientation persistence, Clear, AND showCum persistence across reload (both false→reload→false and true→reload→true).",
+  "rca of the issue": "N/A — fix verified working."
+}

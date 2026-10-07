@@ -249,6 +249,12 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Tested (iteration_53.json — 100%/100%)**: pytest `tests/test_daily_sales.py` (7/7, incl. 2026-02-10 = 93.539 kg regression anchor); full UI flow incl. persistence, clear, print preview controls, Sales Report regression.
 - Also fixed pre-existing lint error in ManagerApprovals.jsx (`fetchApprovalDetails` undefined → refresh via `toggleApprovalDetails`).
 
+## Compare Sales Daywise — Cumulative + View PDF (Jun 2026 — session 10d, iterations 54-55)
+- **Cumulative column**: per-year "Cum. (kg)" running sum starting x days before the anchor, increasing toward day 0 (final cum = Total row). Toggle (default ON) on main page (`cum-toggle`) and preview toolbar (`toolbar-cum-toggle`), persisted in localStorage. Days with no sales show "—" and cum carries forward.
+- **View PDF**: `view-pdf-btn` in print preview toolbar — jsPDF + autoTable (times serif, black grid, bold weekday/sales, day-0 row shaded, two-level year header), respects orientation/font/spacing/cumulative settings, opens via `doc.output('bloburl')` in new tab.
+- **Bug found by tester & fixed**: showCum persisted-state race — mount save-effect with stale closure overwrote the loaded LS value. Fixed by replacing `loadedRef` (useRef) with `loaded` useState guarding the save effect.
+- **Tested**: iteration_54 (12/13) + iteration_55 (fix verified 100%; cum math exact: anchor 2026-02-12/10 days → total 622.454 kg).
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document
