@@ -241,6 +241,14 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Verified (preview, direct API)**: BARTAN-040 (-13.123 kg, parity with stamp_items exact) + SLG 70 BICCHIYA-255 reappear; existing group rows (SNT 40-256, KADA-AS 70, TULSI 70 -264) intact; totals unchanged (15163.0); nothing removed. Regression: parity v49 + groups v48 suites 12/12 pass. (16 failures in test_item_grouping/test_individual_stock_computation are PRE-EXISTING data-dependent failures — identical with fix stashed.)
 - **ACTION REQUIRED BY USER**: REDEPLOY to see BARTAN-040 etc. on production Current Stock.
 
+## Compare Sales Daywise (Jun 2026 — session 10c, iteration_53)
+- **Feature**: Dashboard card "Compare Sales Daywise" → `/compare-sales-daywise` (ADMIN only). User choices: cell value = net weight kg (sale − return); rows = countdown of days before each year's anchor date (day 0 = anchor, e.g., Diwali); admin only.
+- **Backend**: `GET /api/analytics/daily-sales?start_date&end_date` (server.py, before sales-report) — aggregates sale − sale_return |net_wt| per day across `transactions` + `historical_transactions`, excludes EXCLUDED set, returns `daily_net_kg` map. Validation: admin 403, start>end 400, >400-day range 400, bad format 400. Caching: past-year ranges → `_daily_sales_cache` (24h TTL), current-year → `_report_cache` (5 min); both cleared by `_LinkedInventoryCache.invalidate()` on data changes.
+- **Frontend**: `pages/CompareSalesDaywise.jsx` + route in App.js + Dashboard link card. Config rows: anchor date (any year, default today) + days back (0–365); "+ Add Year" defaults to one-year-earlier anchor; Make Table / Clear. Table: countdown col + per-year groups (Day bold | Date dd/MM | Sales kg bold), day-0 row highlighted, blank cells for shorter ranges, Total row. Persists via localStorage `compareSalesDaywise_v1` — auto-refetches fresh data on revisit; Clear wipes.
+- **Print**: full-screen preview overlay (React portal) with toolbar: Vertical/Horizontal (@page A4 orientation), font ± (7–16pt), spacing ± (1–14px), Print (window.print), Close. Literata serif (Bookerly-like, Google Fonts @import in index.css), thin black horizontal rules + black group separators with light inner verticals, bold weekday + sales, repeating thead, page-break-inside avoid. `body.csd-printing #root` hidden in print so only the table prints.
+- **Tested (iteration_53.json — 100%/100%)**: pytest `tests/test_daily_sales.py` (7/7, incl. 2026-02-10 = 93.539 kg regression anchor); full UI flow incl. persistence, clear, print preview controls, Sales Report regression.
+- Also fixed pre-existing lint error in ManagerApprovals.jsx (`fetchApprovalDetails` undefined → refresh via `toggleApprovalDetails`).
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document
