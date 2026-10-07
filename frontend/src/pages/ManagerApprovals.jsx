@@ -108,7 +108,10 @@ export default function ManagerApprovals() {
       setEditingDate(prev => ({ ...prev, [stamp]: false }));
       fetchAllEntries();
       fetchDetailsForBadge(stamp, newDate);
-      if (selectedEntry?.startsWith(stamp)) fetchApprovalDetails(stamp, newDate);
+      if (selectedEntry?.startsWith(stamp)) {
+        setSelectedEntry(null);
+        toggleApprovalDetails(stamp, newDate);
+      }
     } catch (error) {
       toast.error('Failed to update date');
     }

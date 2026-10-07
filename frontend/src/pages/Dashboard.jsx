@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import { Link } from 'react-router-dom';
 import { Package, TrendingUp, AlertTriangle, CheckCircle2, Clock, FileText, Download, Calendar, Users, BarChart3, ArrowUpRight, RotateCcw, Filter, Scale, ChevronDown, ChevronRight } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -293,6 +294,24 @@ export default function Dashboard() {
           </Card>
         ))}
       </div>
+
+      {/* Compare Sales Daywise link */}
+      <Link to="/compare-sales-daywise" data-testid="compare-sales-daywise-link" className="block group">
+        <Card className="border-border/30 shadow-sm transition-colors group-hover:border-primary/50">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-md bg-primary/10">
+                <Calendar className="h-4 w-4 text-primary" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">Compare Sales Daywise</p>
+                <p className="text-xs text-muted-foreground">Day-by-day sales countdown to Diwali across years</p>
+              </div>
+            </div>
+            <ArrowUpRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+          </CardContent>
+        </Card>
+      </Link>
 
       {/* Year-Wise Comparison */}
       <Card className="border-border/30 shadow-sm" data-testid="year-comparison-card">

@@ -81,6 +81,7 @@ class InventoryCache:
             self._cache.clear()
 
 _report_cache = InventoryCache(ttl_seconds=300)
+_daily_sales_cache = InventoryCache(ttl_seconds=86400)  # past-year daywise sales (rarely change)
 
 
 class _LinkedInventoryCache(InventoryCache):
@@ -88,6 +89,7 @@ class _LinkedInventoryCache(InventoryCache):
     def invalidate(self, key=None):
         super().invalidate(key)
         _report_cache.invalidate()
+        _daily_sales_cache.invalidate()
 
 
 _inv_cache = _LinkedInventoryCache(ttl_seconds=30)
@@ -5143,6 +5145,60 @@ async def get_summary_status(
         "stored_max_created_at": (meta or {}).get('max_created_at'),
         "live_max_created_at": current_max_created,
     }
+
+
+@api_router.get("/analytics/daily-sales")
+async def get_daily_sales(
+    start_date: str = Query(...),
+    end_date: str = Query(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """Day-wise net sales (sale - sale_return) in kg, inclusive date range.
+    Past-year ranges use a long-lived cache; current-year ranges a short one."""
+    if current_user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    sd, ed = start_date[:10], end_date[:10]
+    if sd > ed:
+        raise HTTPException(status_code=400, detail="start_date must be <= end_date")
+    try:
+        span = (datetime.strptime(ed, '%Y-%m-%d') - datetime.strptime(sd, '%Y-%m-%d')).days
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Dates must be YYYY-MM-DD")
+    if span > 400:
+        raise HTTPException(status_code=400, detail="Range too large (max 400 days)")
+
+    cache_key = f"daily-sales:{sd}:{ed}"
+    cur_year_start = f"{datetime.now(timezone.utc).year}-01-01"
+    cache = _daily_sales_cache if ed < cur_year_start else _report_cache
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    _ds_excluded = ["SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"]
+    pipeline = [
+        {"$match": {
+            "type": {"$in": ["sale", "sale_return"]},
+            "date": {"$gte": sd, "$lte": ed + " 23:59:59"},
+            "item_name": {"$nin": _ds_excluded},
+        }},
+        {"$group": {
+            "_id": {"d": {"$substr": ["$date", 0, 10]}, "t": "$type"},
+            "wt": {"$sum": {"$abs": {"$ifNull": ["$net_wt", 0]}}},
+        }},
+    ]
+    daily = {}
+    for coll in (db.transactions, db.historical_transactions):
+        async for d in coll.aggregate(pipeline):
+            day = d["_id"]["d"]
+            sign = -1 if d["_id"]["t"] == "sale_return" else 1
+            daily[day] = daily.get(day, 0.0) + sign * (d["wt"] or 0)
+    result = {
+        "start_date": sd,
+        "end_date": ed,
+        "daily_net_kg": {day: round(g / 1000.0, 3) for day, g in sorted(daily.items())},
+    }
+    cache.set(cache_key, result)
+    return result
 
 
 @api_router.get("/analytics/sales-report")
