@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
 import jsPDF from 'jspdf';
@@ -39,7 +39,7 @@ export default function CompareSalesDaywise() {
   const [cellPad, setCellPad] = useState(4);
   const [orientation, setOrientation] = useState('portrait');
   const [showCum, setShowCum] = useState(true);
-  const loadedRef = useRef(false);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     try {
@@ -55,18 +55,18 @@ export default function CompareSalesDaywise() {
         if (saved.generated) buildTable(saved.entries, true);
       }
     } catch (e) { /* corrupt storage — start fresh */ }
-    loadedRef.current = true;
+    setLoaded(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    if (!loadedRef.current) return;
+    if (!loaded) return;
     const saved = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
     localStorage.setItem(LS_KEY, JSON.stringify({
       ...saved,
       print: { fontPt, cellPad, orientation, showCum },
     }));
-  }, [fontPt, cellPad, orientation, showCum]);
+  }, [fontPt, cellPad, orientation, showCum, loaded]);
 
   const updateEntry = (i, field, value) => {
     setEntries((prev) => prev.map((e, idx) => (idx === i ? { ...e, [field]: value } : e)));
