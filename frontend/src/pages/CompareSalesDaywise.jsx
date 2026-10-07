@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { CalendarRange, Plus, Trash2, Printer, X, Minus, Eraser, Table2 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { CalendarRange, Plus, Trash2, Printer, X, Minus, Eraser, Table2, FileText } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -35,6 +38,7 @@ export default function CompareSalesDaywise() {
   const [fontPt, setFontPt] = useState(10);
   const [cellPad, setCellPad] = useState(4);
   const [orientation, setOrientation] = useState('portrait');
+  const [showCum, setShowCum] = useState(true);
   const loadedRef = useRef(false);
 
   useEffect(() => {
@@ -46,6 +50,7 @@ export default function CompareSalesDaywise() {
           setFontPt(saved.print.fontPt ?? 10);
           setCellPad(saved.print.cellPad ?? 4);
           setOrientation(saved.print.orientation ?? 'portrait');
+          setShowCum(saved.print.showCum ?? true);
         }
         if (saved.generated) buildTable(saved.entries, true);
       }
@@ -59,9 +64,9 @@ export default function CompareSalesDaywise() {
     const saved = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
     localStorage.setItem(LS_KEY, JSON.stringify({
       ...saved,
-      print: { fontPt, cellPad, orientation },
+      print: { fontPt, cellPad, orientation, showCum },
     }));
-  }, [fontPt, cellPad, orientation]);
+  }, [fontPt, cellPad, orientation, showCum]);
 
   const updateEntry = (i, field, value) => {
     setEntries((prev) => prev.map((e, idx) => (idx === i ? { ...e, [field]: value } : e)));
@@ -117,14 +122,17 @@ export default function CompareSalesDaywise() {
   const rows = useMemo(() => {
     if (!columns.length) return [];
     const maxDays = Math.max(...columns.map((c) => c.daysBack));
+    const cums = columns.map(() => 0);
     const out = [];
     for (let off = maxDays; off >= 0; off--) {
       out.push({
         off,
-        cells: columns.map((c) => {
+        cells: columns.map((c, i) => {
           if (off > c.daysBack) return null;
           const date = addDays(c.anchor, -off);
-          return { date, weekday: weekdayOf(date), kg: c.daily[date] };
+          const kg = c.daily[date];
+          cums[i] += kg || 0;
+          return { date, weekday: weekdayOf(date), kg, cum: cums[i] };
         }),
       });
     }
@@ -147,14 +155,14 @@ export default function CompareSalesDaywise() {
         <tr>
           <th rowSpan={2} className="csd-count-col">Days<br />Before</th>
           {columns.map((c, i) => (
-            <th key={i} colSpan={3} className="csd-year-head csd-group-start">
+            <th key={i} colSpan={showCum ? 4 : 3} className="csd-year-head csd-group-start">
               {c.year} <span className="csd-anchor-note">(till {ddmmyyyy(c.anchor)})</span>
             </th>
           ))}
         </tr>
         <tr>
           {columns.map((_, i) => (
-            <WeekHead key={i} />
+            <WeekHead key={i} showCum={showCum} />
           ))}
         </tr>
       </thead>
@@ -164,9 +172,9 @@ export default function CompareSalesDaywise() {
             <td className="csd-count">{r.off}</td>
             {r.cells.map((cell, i) =>
               cell ? (
-                <CellGroup key={i} cell={cell} />
+                <CellGroup key={i} cell={cell} showCum={showCum} />
               ) : (
-                <EmptyGroup key={i} />
+                <EmptyGroup key={i} showCum={showCum} />
               )
             )}
           </tr>
@@ -174,7 +182,7 @@ export default function CompareSalesDaywise() {
         <tr className="csd-total-row">
           <td className="csd-count">Total</td>
           {columns.map((c, i) => (
-            <td key={i} colSpan={3} className="csd-group-start csd-sales">
+            <td key={i} colSpan={showCum ? 4 : 3} className="csd-group-start csd-sales">
               {totals[i].toFixed(3)} kg
             </td>
           ))}
@@ -182,6 +190,59 @@ export default function CompareSalesDaywise() {
       </tbody>
     </table>
   );
+
+  const viewPdf = () => {
+    const doc = new jsPDF({ orientation, unit: 'pt', format: 'a4' });
+    const sub = showCum ? ['Day', 'Date', 'Sales', 'Cum.'] : ['Day', 'Date', 'Sales'];
+    const head = [
+      [{ content: 'Days\nBefore', rowSpan: 2, styles: { valign: 'middle' } },
+       ...columns.map((c) => ({ content: `${c.year} (till ${ddmmyyyy(c.anchor)})`, colSpan: sub.length }))],
+      columns.flatMap(() => sub),
+    ];
+    const fmtKg = (v) => (v === undefined ? '\u2014' : v.toFixed(3));
+    const body = rows.map((r) => [
+      String(r.off),
+      ...r.cells.flatMap((cell) => cell
+        ? (showCum
+            ? [cell.weekday, ddmm(cell.date), fmtKg(cell.kg), cell.cum.toFixed(3)]
+            : [cell.weekday, ddmm(cell.date), fmtKg(cell.kg)])
+        : Array(sub.length).fill('')),
+    ]);
+    body.push(['Total', ...columns.flatMap((c, i) => {
+      const t = `${totals[i].toFixed(3)} kg`;
+      return showCum ? ['', '', t, ''] : ['', '', t];
+    })]);
+    const pageW = doc.internal.pageSize.getWidth();
+    doc.setFont('times', 'bold');
+    doc.setFontSize(15);
+    doc.setTextColor(0);
+    doc.text('Daywise Sales Comparison', pageW / 2, 38, { align: 'center' });
+    doc.setFont('times', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(70);
+    doc.text(`Net sales (kg) \u00b7 countdown to ${columns.map((c) => ddmmyyyy(c.anchor)).join(' / ')}`, pageW / 2, 52, { align: 'center' });
+    autoTable(doc, {
+      startY: 64,
+      head,
+      body,
+      theme: 'grid',
+      styles: { font: 'times', fontSize: fontPt, cellPadding: cellPad, halign: 'center', textColor: 0, lineColor: 0, lineWidth: 0.4 },
+      headStyles: { fillColor: 255, textColor: 0, fontStyle: 'bold', lineWidth: 0.6 },
+      didParseCell: (data) => {
+        if (data.section !== 'body') return;
+        const col = data.column.index;
+        if (col === 0) {
+          data.cell.styles.fontStyle = 'bold';
+        } else {
+          const within = (col - 1) % sub.length;
+          if (within === 0 || within === 2) data.cell.styles.fontStyle = 'bold';
+        }
+        if (data.row.index === rows.length - 1) data.cell.styles.fillColor = [244, 238, 222];
+        if (data.row.index === rows.length) data.cell.styles.fontStyle = 'bold';
+      },
+    });
+    window.open(doc.output('bloburl'), '_blank');
+  };
 
   const printOverlay = preview ? createPortal(
     <div className="csd-print-overlay fixed inset-0 z-[100] bg-white overflow-auto" data-testid="print-overlay">
@@ -211,7 +272,14 @@ export default function CompareSalesDaywise() {
           <span className="w-7 text-center font-mono" data-testid="spacing-value">{cellPad}</span>
           <button onClick={() => setCellPad((v) => Math.min(14, v + 1))} className="w-6 h-6 rounded bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center" data-testid="spacing-inc"><Plus className="h-3 w-3" /></button>
         </div>
+        <div className="flex items-center gap-1.5 text-xs">
+          <span className="text-zinc-400">Cumulative</span>
+          <Switch checked={showCum} onCheckedChange={setShowCum} data-testid="toolbar-cum-toggle" className="scale-75" />
+        </div>
         <div className="ml-auto flex items-center gap-2">
+          <Button size="sm" variant="secondary" className="h-7 text-xs" onClick={viewPdf} data-testid="view-pdf-btn">
+            <FileText className="h-3.5 w-3.5 mr-1.5" /> View PDF
+          </Button>
           <Button size="sm" className="h-7 text-xs" onClick={() => window.print()} data-testid="do-print-btn">
             <Printer className="h-3.5 w-3.5 mr-1.5" /> Print
           </Button>
@@ -253,6 +321,8 @@ export default function CompareSalesDaywise() {
         .csd-anchor-note { font-weight: 400; font-size: 0.78em; color: #444; }
         .csd-wd { font-weight: 700; }
         .csd-sales { font-weight: 700; font-variant-numeric: tabular-nums; }
+        .csd-cum { font-weight: 500; font-variant-numeric: tabular-nums; color: #222; }
+        .csd-screen-wrap .csd-cum { color: inherit; opacity: 0.85; }
         .csd-neg { color: #b00000; }
         .csd-day0 td { border-top: 2px solid #000; background: #f7f3e8; }
         .csd-total-row td { border-top: 2px solid #000; font-weight: 700; }
@@ -338,6 +408,10 @@ export default function CompareSalesDaywise() {
                 <Button variant="outline" size="sm" className="text-destructive" onClick={clearTable} data-testid="clear-table-btn">
                   <Eraser className="h-4 w-4 mr-1.5" /> Clear
                 </Button>
+                <div className="flex items-center gap-2 pl-2 self-center">
+                  <Switch checked={showCum} onCheckedChange={setShowCum} data-testid="cum-toggle" />
+                  <span className="text-xs text-muted-foreground">Cumulative column</span>
+                </div>
               </>
             )}
           </div>
@@ -359,28 +433,33 @@ export default function CompareSalesDaywise() {
   );
 }
 
-const WeekHead = () => (
+const WeekHead = ({ showCum }) => (
   <>
     <th className="csd-group-start">Day</th>
     <th>Date</th>
     <th>Sales (kg)</th>
+    {showCum && <th>Cum. (kg)</th>}
   </>
 );
 
-const CellGroup = ({ cell }) => (
+const CellGroup = ({ cell, showCum }) => (
   <>
     <td className="csd-wd csd-group-start">{cell.weekday}</td>
     <td>{ddmm(cell.date)}</td>
     <td className={`csd-sales ${cell.kg < 0 ? 'csd-neg' : ''}`}>
       {cell.kg === undefined ? '—' : cell.kg.toFixed(3)}
     </td>
+    {showCum && (
+      <td className={`csd-cum ${cell.cum < 0 ? 'csd-neg' : ''}`}>{cell.cum.toFixed(3)}</td>
+    )}
   </>
 );
 
-const EmptyGroup = () => (
+const EmptyGroup = ({ showCum }) => (
   <>
     <td className="csd-group-start" />
     <td />
     <td />
+    {showCum && <td />}
   </>
 );
