@@ -255,6 +255,13 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Bug found by tester & fixed**: showCum persisted-state race — mount save-effect with stale closure overwrote the loaded LS value. Fixed by replacing `loadedRef` (useRef) with `loaded` useState guarding the save effect.
 - **Tested**: iteration_54 (12/13) + iteration_55 (fix verified 100%; cum math exact: anchor 2026-02-12/10 days → total 622.454 kg).
 
+## Compare Sales Daywise — Shared Tables + 2025 Inflation Fix (Jun 2026 — session 10e, iteration_56)
+- **User bugs**: (1) tables were localStorage-only — not visible across admins/devices; (2) 2025 daily sales INFLATED vs actual.
+- **Inflation root cause & fix**: `/api/analytics/daily-sales` summed `transactions` + `historical_transactions`; production has overlapping years in both → double counting. Fixed: historical is now a fallback ONLY for years with zero sale txns in `transactions` (per-year `find_one` existence check), matching the Sales Report / monthly-summaries convention. Verified: 2024-02-01 = 0.882 (historical excluded), 2019 historical-only kept, year sums match Sales Report net_wt_kg (2026 exact 3487.48, 2025 ≈1060.153).
+- **Shared saved tables**: new Mongo collection `daywise_comparisons` {id, name, entries, created_by, created_at} + admin-only endpoints GET/POST `/api/daywise-comparisons`, DELETE `/api/daywise-comparisons/{id}` (validation: 1-6 entries, anchor YYYY-MM-DD, daysBack 0-365, name ≤60, auto-name "2026 vs 2025").
+- **Frontend rework** (`CompareSalesDaywise.jsx`): tabs row (one tab per saved table + "New Table" tab), optional table name, Make & Save posts to server; opening a tab always refetches fresh daily-sales (auto-refresh — server caches invalidate on data change); Refresh + Delete Table (confirm, deletes for all admins) buttons; print prefs stay device-local in LS key `compareSalesDaywise_print_v2`. Print preview / View PDF / cumulative unchanged.
+- **Tested**: iteration_56 — 100% backend (15/15) + 100% frontend (multi-tab, cross-session sharing via fresh browser context, delete flows, print regression). Test tables cleaned up.
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document
