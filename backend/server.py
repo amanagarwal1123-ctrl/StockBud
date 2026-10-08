@@ -33,6 +33,7 @@ from auth import (
     get_current_user, verify_password, get_password_hash,
     create_access_token, security
 )
+from pydantic import BaseModel
 from models import (
     Transaction, OpeningStock, PhysicalStock, MasterItem, ItemMapping,
     PurchaseLedger, User, LoginRequest, CreateUserRequest, Token,
@@ -5187,11 +5188,25 @@ async def get_daily_sales(
         }},
     ]
     daily = {}
-    for coll in (db.transactions, db.historical_transactions):
-        async for d in coll.aggregate(pipeline):
-            day = d["_id"]["d"]
-            sign = -1 if d["_id"]["t"] == "sale_return" else 1
-            daily[day] = daily.get(day, 0.0) + sign * (d["wt"] or 0)
+    async for d in db.transactions.aggregate(pipeline):
+        day = d["_id"]["d"]
+        sign = -1 if d["_id"]["t"] == "sale_return" else 1
+        daily[day] = daily.get(day, 0.0) + sign * (d["wt"] or 0)
+    # historical_transactions is only a fallback for years absent from the main
+    # collection — summing both double-counts overlapping years (inflated sales).
+    live_years = set()
+    for y in range(int(sd[:4]), int(ed[:4]) + 1):
+        if await db.transactions.find_one(
+                {"type": {"$in": ["sale", "sale_return"]},
+                 "date": {"$gte": f"{y}-01-01", "$lte": f"{y}-12-31 23:59:59"}},
+                {"_id": 1}):
+            live_years.add(str(y))
+    async for d in db.historical_transactions.aggregate(pipeline):
+        day = d["_id"]["d"]
+        if day[:4] in live_years:
+            continue
+        sign = -1 if d["_id"]["t"] == "sale_return" else 1
+        daily[day] = daily.get(day, 0.0) + sign * (d["wt"] or 0)
     result = {
         "start_date": sd,
         "end_date": ed,
@@ -5199,6 +5214,66 @@ async def get_daily_sales(
     }
     cache.set(cache_key, result)
     return result
+
+
+class DaywiseComparisonCreate(BaseModel):
+    name: Optional[str] = None
+    entries: List[Dict[str, Any]] = []
+
+
+def _validate_daywise_entries(entries):
+    if not entries or len(entries) > 6:
+        raise HTTPException(status_code=400, detail="Provide 1-6 year entries")
+    clean = []
+    for e in entries:
+        anchor = str(e.get("anchor", ""))[:10]
+        try:
+            datetime.strptime(anchor, '%Y-%m-%d')
+            days = int(e.get("daysBack"))
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="Each entry needs anchor (YYYY-MM-DD) and daysBack")
+        if days < 0 or days > 365:
+            raise HTTPException(status_code=400, detail="daysBack must be 0-365")
+        clean.append({"anchor": anchor, "daysBack": days})
+    return clean
+
+
+@api_router.get("/daywise-comparisons")
+async def list_daywise_comparisons(current_user: dict = Depends(get_current_user)):
+    """Saved daywise comparison tables — shared across all admins."""
+    if current_user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    docs = await db.daywise_comparisons.find({}, {"_id": 0}).sort("created_at", 1).to_list(100)
+    return {"comparisons": docs}
+
+
+@api_router.post("/daywise-comparisons")
+async def create_daywise_comparison(payload: DaywiseComparisonCreate, current_user: dict = Depends(get_current_user)):
+    if current_user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    entries = _validate_daywise_entries(payload.entries)
+    name = (payload.name or '').strip()[:60]
+    if not name:
+        name = ' vs '.join(e["anchor"][:4] for e in entries)
+    doc = {
+        "id": str(uuid.uuid4()),
+        "name": name,
+        "entries": entries,
+        "created_by": current_user.get('username', ''),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.daywise_comparisons.insert_one({**doc})
+    return doc
+
+
+@api_router.delete("/daywise-comparisons/{comp_id}")
+async def delete_daywise_comparison(comp_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    res = await db.daywise_comparisons.delete_one({"id": comp_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Comparison not found")
+    return {"status": "deleted"}
 
 
 @api_router.get("/analytics/sales-report")

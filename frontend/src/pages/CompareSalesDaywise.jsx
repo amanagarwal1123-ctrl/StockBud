@@ -8,11 +8,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
-import { CalendarRange, Plus, Trash2, Printer, X, Minus, Eraser, Table2, FileText } from 'lucide-react';
+import { CalendarRange, Plus, Trash2, Printer, X, Minus, Table2, FileText, RefreshCw } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
-const LS_KEY = 'compareSalesDaywise_v1';
+const PRINT_LS_KEY = 'compareSalesDaywise_print_v2';
 
 const pad2 = (n) => String(n).padStart(2, '0');
 const fmtYMD = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
@@ -31,42 +31,85 @@ const ddmmyyyy = (dateStr) => `${dateStr.slice(8, 10)}/${dateStr.slice(5, 7)}/${
 const defaultEntry = () => ({ anchor: todayStr(), daysBack: 15 });
 
 export default function CompareSalesDaywise() {
-  const [entries, setEntries] = useState([defaultEntry()]);
+  const [tables, setTables] = useState([]);
+  const [activeId, setActiveId] = useState(null); // comparison id or 'new'
   const [columns, setColumns] = useState([]);
+  const [entries, setEntries] = useState([defaultEntry()]);
+  const [tableName, setTableName] = useState('');
   const [loading, setLoading] = useState(false);
+  const [listLoading, setListLoading] = useState(true);
   const [preview, setPreview] = useState(false);
   const [fontPt, setFontPt] = useState(10);
   const [cellPad, setCellPad] = useState(4);
   const [orientation, setOrientation] = useState('portrait');
   const [showCum, setShowCum] = useState(true);
-  const [loaded, setLoaded] = useState(false);
+  const [loadedPrefs, setLoadedPrefs] = useState(false);
 
   useEffect(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
-      if (saved?.entries?.length) {
-        setEntries(saved.entries);
-        if (saved.print) {
-          setFontPt(saved.print.fontPt ?? 10);
-          setCellPad(saved.print.cellPad ?? 4);
-          setOrientation(saved.print.orientation ?? 'portrait');
-          setShowCum(saved.print.showCum ?? true);
-        }
-        if (saved.generated) buildTable(saved.entries, true);
+      const p = JSON.parse(localStorage.getItem(PRINT_LS_KEY) || 'null');
+      if (p) {
+        setFontPt(p.fontPt ?? 10);
+        setCellPad(p.cellPad ?? 4);
+        setOrientation(p.orientation ?? 'portrait');
+        setShowCum(p.showCum ?? true);
       }
-    } catch (e) { /* corrupt storage — start fresh */ }
-    setLoaded(true);
+    } catch (e) { /* start fresh */ }
+    setLoadedPrefs(true);
+    loadList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    if (!loaded) return;
-    const saved = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
-    localStorage.setItem(LS_KEY, JSON.stringify({
-      ...saved,
-      print: { fontPt, cellPad, orientation, showCum },
+    if (!loadedPrefs) return;
+    localStorage.setItem(PRINT_LS_KEY, JSON.stringify({ fontPt, cellPad, orientation, showCum }));
+  }, [fontPt, cellPad, orientation, showCum, loadedPrefs]);
+
+  const loadList = async () => {
+    setListLoading(true);
+    try {
+      const r = await axios.get(`${API}/daywise-comparisons`);
+      const list = r.data.comparisons || [];
+      setTables(list);
+      if (list.length) {
+        openTable(list[0]);
+      } else {
+        setActiveId('new');
+      }
+    } catch (e) {
+      toast.error('Failed to load saved tables');
+      setActiveId('new');
+    } finally {
+      setListLoading(false);
+    }
+  };
+
+  const fetchColumns = async (entryList) => {
+    const results = await Promise.all(entryList.map((e) =>
+      axios.get(`${API}/analytics/daily-sales?start_date=${addDays(e.anchor, -e.daysBack)}&end_date=${e.anchor}`)
+    ));
+    return entryList.map((e, i) => ({
+      ...e,
+      year: e.anchor.slice(0, 4),
+      daily: results[i].data.daily_net_kg || {},
     }));
-  }, [fontPt, cellPad, orientation, showCum, loaded]);
+  };
+
+  const openTable = async (table) => {
+    setActiveId(table.id);
+    setColumns([]);
+    setLoading(true);
+    try {
+      setColumns(await fetchColumns(table.entries));
+    } catch (e) {
+      if (e.response?.status === 503) toast.error('Server is busy — please try again in a few seconds.');
+      else toast.error('Failed to load sales data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const activeTable = tables.find((t) => t.id === activeId);
 
   const updateEntry = (i, field, value) => {
     setEntries((prev) => prev.map((e, idx) => (idx === i ? { ...e, [field]: value } : e)));
@@ -82,41 +125,48 @@ export default function CompareSalesDaywise() {
 
   const removeEntry = (i) => setEntries((prev) => prev.filter((_, idx) => idx !== i));
 
-  const buildTable = async (list, silent = false) => {
+  const makeTable = async () => {
     const clean = [];
-    for (const e of list) {
+    for (const e of entries) {
       const days = parseInt(e.daysBack, 10);
       if (!e.anchor || isNaN(days) || days < 0 || days > 365) {
-        if (!silent) toast.error('Each year needs a valid date and days back (0–365)');
+        toast.error('Each year needs a valid date and days back (0–365)');
         return;
       }
       clean.push({ anchor: e.anchor, daysBack: days });
     }
     setLoading(true);
     try {
-      const results = await Promise.all(clean.map((e) =>
-        axios.get(`${API}/analytics/daily-sales?start_date=${addDays(e.anchor, -e.daysBack)}&end_date=${e.anchor}`)
-      ));
-      setColumns(clean.map((e, i) => ({
-        ...e,
-        year: e.anchor.slice(0, 4),
-        daily: results[i].data.daily_net_kg || {},
-      })));
-      const prev = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
-      localStorage.setItem(LS_KEY, JSON.stringify({ ...prev, entries: clean, generated: true }));
-      if (!silent) toast.success('Comparison table ready');
+      const r = await axios.post(`${API}/daywise-comparisons`, { name: tableName.trim() || null, entries: clean });
+      const doc = r.data;
+      setTables((prev) => [...prev, doc]);
+      setEntries([defaultEntry()]);
+      setTableName('');
+      setActiveId(doc.id);
+      setColumns(await fetchColumns(doc.entries));
+      toast.success(`Table "${doc.name}" saved — visible to all admins`);
     } catch (e) {
       if (e.response?.status === 503) toast.error('Server is busy — please try again in a few seconds.');
-      else toast.error(e.response?.data?.detail || 'Failed to load daily sales');
+      else toast.error(e.response?.data?.detail || 'Failed to create table');
     } finally {
       setLoading(false);
     }
   };
 
-  const clearTable = () => {
-    localStorage.removeItem(LS_KEY);
-    setColumns([]);
-    setEntries([defaultEntry()]);
+  const deleteTable = async (table) => {
+    if (!window.confirm(`Delete table "${table.name}" for all admins?`)) return;
+    try {
+      await axios.delete(`${API}/daywise-comparisons/${table.id}`);
+      const remaining = tables.filter((t) => t.id !== table.id);
+      setTables(remaining);
+      toast.success('Table deleted');
+      if (activeId === table.id) {
+        if (remaining.length) openTable(remaining[0]);
+        else { setActiveId('new'); setColumns([]); }
+      }
+    } catch (e) {
+      toast.error('Failed to delete table');
+    }
   };
 
   const rows = useMemo(() => {
@@ -216,7 +266,7 @@ export default function CompareSalesDaywise() {
     doc.setFont('times', 'bold');
     doc.setFontSize(15);
     doc.setTextColor(0);
-    doc.text('Daywise Sales Comparison', pageW / 2, 38, { align: 'center' });
+    doc.text(activeTable?.name || 'Daywise Sales Comparison', pageW / 2, 38, { align: 'center' });
     doc.setFont('times', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(70);
@@ -292,7 +342,7 @@ export default function CompareSalesDaywise() {
         className="csd-print-area csd-doc mx-auto my-6 px-6"
         style={{ '--csd-font': `${fontPt}pt`, '--csd-pad': `${cellPad}px ${cellPad + 3}px`, maxWidth: orientation === 'landscape' ? '1100px' : '780px' }}
       >
-        <h1 className="csd-doc-title">Daywise Sales Comparison</h1>
+        <h1 className="csd-doc-title">{activeTable?.name || 'Daywise Sales Comparison'}</h1>
         <p className="csd-doc-sub">Net sales (kg) · countdown of days before {columns.map((c) => `${ddmmyyyy(c.anchor)}`).join(' / ')}</p>
         {renderGrid()}
       </div>
@@ -347,85 +397,133 @@ export default function CompareSalesDaywise() {
           <CalendarRange className="h-7 w-7 text-primary" /> Compare Sales Daywise
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Day-by-day net sales (kg) counting down to a chosen date (e.g., Diwali) of each year
+          Day-by-day net sales (kg) counting down to a chosen date (e.g., Diwali) — tables are saved and shared across all admins
         </p>
       </div>
 
-      <Card className="border-border/30 shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Years to Compare</CardTitle>
-          <CardDescription className="text-xs">
-            For each year pick the anchor date (day 0, e.g., Diwali) and how many days back to include
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {entries.map((e, i) => (
-            <div key={i} className="flex flex-wrap items-end gap-3" data-testid={`compare-entry-${i}`}>
-              <div>
-                <label className="text-xs text-muted-foreground block mb-1">Anchor date (day 0)</label>
-                <Input
-                  type="date"
-                  value={e.anchor}
-                  onChange={(ev) => updateEntry(i, 'anchor', ev.target.value)}
-                  className="h-9 w-44"
-                  data-testid={`compare-entry-date-${i}`}
-                />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground block mb-1">Days back</label>
-                <Input
-                  type="number"
-                  min="0"
-                  max="365"
-                  value={e.daysBack}
-                  onChange={(ev) => updateEntry(i, 'daysBack', ev.target.value)}
-                  className="h-9 w-28"
-                  data-testid={`compare-entry-days-${i}`}
-                />
-              </div>
-              <div className="text-xs text-muted-foreground pb-2.5 font-mono">
-                {e.anchor ? `${e.anchor.slice(0, 4)} · ${ddmm(addDays(e.anchor, -(parseInt(e.daysBack, 10) || 0)))} → ${ddmm(e.anchor)}` : ''}
-              </div>
-              {entries.length > 1 && (
-                <Button variant="ghost" size="sm" className="h-9 text-destructive" onClick={() => removeEntry(i)} data-testid={`remove-entry-${i}`}>
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
-          ))}
-          <div className="flex flex-wrap gap-2 pt-2">
-            <Button variant="outline" size="sm" onClick={addYear} disabled={loading || entries.length >= 6} data-testid="add-year-btn">
-              <Plus className="h-4 w-4 mr-1.5" /> Add Year
-            </Button>
-            <Button size="sm" onClick={() => buildTable(entries)} disabled={loading} data-testid="make-table-btn">
-              <Table2 className="h-4 w-4 mr-1.5" /> {loading ? 'Loading…' : 'Make Table'}
-            </Button>
-            {columns.length > 0 && (
-              <>
-                <Button variant="outline" size="sm" onClick={() => setPreview(true)} data-testid="print-preview-btn">
-                  <Printer className="h-4 w-4 mr-1.5" /> Print Preview
-                </Button>
-                <Button variant="outline" size="sm" className="text-destructive" onClick={clearTable} data-testid="clear-table-btn">
-                  <Eraser className="h-4 w-4 mr-1.5" /> Clear
-                </Button>
-                <div className="flex items-center gap-2 pl-2 self-center">
-                  <Switch checked={showCum} onCheckedChange={setShowCum} data-testid="cum-toggle" />
-                  <span className="text-xs text-muted-foreground">Cumulative column</span>
-                </div>
-              </>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+      {/* Tabs */}
+      <div className="flex flex-wrap items-center gap-2" data-testid="comparison-tabs">
+        {tables.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => openTable(t)}
+            className={`px-3.5 py-1.5 rounded-md text-sm border transition-colors ${activeId === t.id ? 'bg-primary text-primary-foreground border-primary font-semibold' : 'bg-card border-border/50 hover:border-primary/50'}`}
+            data-testid={`comparison-tab-${t.id}`}
+          >
+            {t.name}
+          </button>
+        ))}
+        <button
+          onClick={() => { setActiveId('new'); setColumns([]); }}
+          className={`px-3.5 py-1.5 rounded-md text-sm border transition-colors flex items-center gap-1.5 ${activeId === 'new' ? 'bg-primary text-primary-foreground border-primary font-semibold' : 'bg-card border-dashed border-border/60 hover:border-primary/50'}`}
+          data-testid="new-table-tab"
+        >
+          <Plus className="h-3.5 w-3.5" /> New Table
+        </button>
+        {listLoading && <span className="text-xs text-muted-foreground">Loading…</span>}
+      </div>
 
-      {columns.length > 0 && (
+      {activeId === 'new' && (
         <Card className="border-border/30 shadow-sm">
-          <CardContent className="p-3 sm:p-5 csd-screen-wrap overflow-x-auto">
-            <div className="csd-doc" style={{ '--csd-font': '13px', '--csd-pad': '4px 8px' }}>
-              {renderGrid()}
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">New Comparison Table</CardTitle>
+            <CardDescription className="text-xs">
+              For each year pick the anchor date (day 0, e.g., Diwali) and how many days back to include. Saved tables appear for every admin on every device.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Table name (optional)</label>
+              <Input
+                value={tableName}
+                onChange={(e) => setTableName(e.target.value)}
+                placeholder="e.g., Diwali 2026 vs 2025"
+                className="h-9 w-72"
+                maxLength={60}
+                data-testid="table-name-input"
+              />
+            </div>
+            {entries.map((e, i) => (
+              <div key={i} className="flex flex-wrap items-end gap-3" data-testid={`compare-entry-${i}`}>
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-1">Anchor date (day 0)</label>
+                  <Input
+                    type="date"
+                    value={e.anchor}
+                    onChange={(ev) => updateEntry(i, 'anchor', ev.target.value)}
+                    className="h-9 w-44"
+                    data-testid={`compare-entry-date-${i}`}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-1">Days back</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="365"
+                    value={e.daysBack}
+                    onChange={(ev) => updateEntry(i, 'daysBack', ev.target.value)}
+                    className="h-9 w-28"
+                    data-testid={`compare-entry-days-${i}`}
+                  />
+                </div>
+                <div className="text-xs text-muted-foreground pb-2.5 font-mono">
+                  {e.anchor ? `${e.anchor.slice(0, 4)} · ${ddmm(addDays(e.anchor, -(parseInt(e.daysBack, 10) || 0)))} → ${ddmm(e.anchor)}` : ''}
+                </div>
+                {entries.length > 1 && (
+                  <Button variant="ghost" size="sm" className="h-9 text-destructive" onClick={() => removeEntry(i)} data-testid={`remove-entry-${i}`}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            ))}
+            <div className="flex flex-wrap gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={addYear} disabled={loading || entries.length >= 6} data-testid="add-year-btn">
+                <Plus className="h-4 w-4 mr-1.5" /> Add Year
+              </Button>
+              <Button size="sm" onClick={makeTable} disabled={loading} data-testid="make-table-btn">
+                <Table2 className="h-4 w-4 mr-1.5" /> {loading ? 'Saving…' : 'Make & Save Table'}
+              </Button>
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {activeId !== 'new' && activeTable && (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => openTable(activeTable)} disabled={loading} data-testid="refresh-table-btn">
+              <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setPreview(true)} disabled={!columns.length} data-testid="print-preview-btn">
+              <Printer className="h-4 w-4 mr-1.5" /> Print Preview
+            </Button>
+            <Button variant="outline" size="sm" className="text-destructive" onClick={() => deleteTable(activeTable)} data-testid="delete-table-btn">
+              <Trash2 className="h-4 w-4 mr-1.5" /> Delete Table
+            </Button>
+            <div className="flex items-center gap-2 pl-2 self-center">
+              <Switch checked={showCum} onCheckedChange={setShowCum} data-testid="cum-toggle" />
+              <span className="text-xs text-muted-foreground">Cumulative column</span>
+            </div>
+            <span className="text-xs text-muted-foreground ml-auto">
+              Created by {activeTable.created_by} · live data, auto-refreshed
+            </span>
+          </div>
+
+          {loading && !columns.length ? (
+            <Card className="border-border/30 shadow-sm">
+              <CardContent className="p-8 text-center text-sm text-muted-foreground">Loading sales data…</CardContent>
+            </Card>
+          ) : columns.length > 0 ? (
+            <Card className="border-border/30 shadow-sm">
+              <CardContent className="p-3 sm:p-5 csd-screen-wrap overflow-x-auto">
+                <div className="csd-doc" style={{ '--csd-font': '13px', '--csd-pad': '4px 8px' }}>
+                  {renderGrid()}
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+        </>
       )}
 
       {printOverlay}
