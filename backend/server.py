@@ -3114,6 +3114,82 @@ async def get_stock_audit_uploads(limit: int = 20, current_user: dict = Depends(
     }
 
 
+@api_router.get("/stock-audit/daily-closing")
+async def get_stock_audit_daily_closing(
+    days: int = Query(30, ge=7, le=365),
+    current_user: dict = Depends(get_current_user),
+    _slot=Depends(heavy_queue_slot)
+):
+    """Datewise TOTAL closing stock (net kg, all items) — back-rolled from the
+    current operational total using the stock engine's sign rules and anchors."""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin only")
+    inv = await get_current_inventory_cached()
+    current_total_g = inv.get('total_net_wt') or 0.0
+    today = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
+    today_dt = datetime.strptime(today, '%Y-%m-%d')
+    start_dt = today_dt - timedelta(days=days - 1)
+    oed = await get_opening_effective_date()
+    anchor_clamped = False
+    if oed and oed[:10] >= start_dt.strftime('%Y-%m-%d'):
+        start_dt = min(datetime.strptime(oed[:10], '%Y-%m-%d') + timedelta(days=1), today_dt)
+        anchor_clamped = True
+    start = start_dt.strftime('%Y-%m-%d')
+    n_days = (today_dt - start_dt).days + 1
+
+    mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
+    groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
+    mapping_dict, _, _ = build_group_maps(groups, mappings)
+    bl_q = {'baseline_date': {'$gte': oed}} if oed else {}
+    baselines_raw = await db.inventory_baselines.find(
+        bl_q, {"_id": 0, "item_name": 1, "baseline_date": 1}).to_list(None)
+    bl_by_master = {}
+    for b in baselines_raw:
+        raw = (b.get('item_name') or '').strip()
+        mk = mapping_dict.get(raw, raw).strip().lower()
+        d = (b.get('baseline_date') or '')[:10]
+        if mk and (mk not in bl_by_master or d > bl_by_master[mk]):
+            bl_by_master[mk] = d
+
+    ADD_T = ('purchase', 'purchase_return', 'receive')
+    _raw_w = {"$sum": {"$convert": {"input": "$net_wt", "to": "double",
+                                    "onError": 0.0, "onNull": 0.0}}}
+    pipe = [
+        {"$match": {"date": {"$gte": start, "$lte": today + " 23:59:59"},
+                    "type": {"$in": list(ADD_T) + ['sale', 'sale_return', 'issue']}}},
+        {"$group": {"_id": {"i": "$item_name", "t": "$type", "d": {"$substr": ["$date", 0, 10]}},
+                    "w": _raw_w}},
+    ]
+    day_delta = defaultdict(float)
+    try:
+        async for d in db.transactions.aggregate(pipe, allowDiskUse=True, maxTimeMS=60000):
+            raw = d["_id"]["i"] or ''
+            if not raw or raw in ("SILVER ORNAMENTS",) or str(raw).isdigit():
+                continue
+            mk = mapping_dict.get(raw.strip(), raw.strip()).strip().lower()
+            day = d["_id"]["d"]
+            cutoff = bl_by_master.get(mk) or (oed[:10] if oed else None)
+            if cutoff and day <= cutoff:
+                continue
+            w = d["w"] or 0.0
+            day_delta[day] += w if d["_id"]["t"] in ADD_T else -w
+    except Exception as e:
+        logging.getLogger(__name__).error(f"daily-closing aggregation failed: {e}")
+        raise HTTPException(status_code=503, detail="Aggregation timed out — please retry in a moment.")
+
+    out = [{'date': today, 'closing_kg': round(current_total_g / 1000.0, 3)}]
+    cur = current_total_g
+    dt = today_dt
+    for _ in range(n_days - 1):
+        cur -= day_delta.get(dt.strftime('%Y-%m-%d'), 0.0)
+        dt -= timedelta(days=1)
+        out.append({'date': dt.strftime('%Y-%m-%d'), 'closing_kg': round(cur / 1000.0, 3)})
+    out.reverse()
+    return {'days': out, 'current_total_kg': round(current_total_g / 1000.0, 3),
+            'anchor_date': oed, 'start': start, 'end': today,
+            'anchor_clamped': anchor_clamped}
+
+
 async def _replace_physical_stock_for_date(records: list, verification_date: str):
     """Shared helper: merge parsed records by (item name + stamp), delete only the selected date's rows,
     insert the new merged rows. Returns (count, message)."""
@@ -5412,45 +5488,13 @@ async def delete_daywise_comparison(comp_id: str, current_user: dict = Depends(g
     return {"status": "deleted"}
 
 
-def _quarter_windows(d_from: str, d_to: str):
-    """Split [d_from, d_to] into ~3-month windows (keeps Mongo commands short)."""
-    wins = []
-    y, m = int(d_from[:4]), int(d_from[5:7])
-    a = d_from
-    while a <= d_to:
-        m2 = m + 3
-        y2, m2 = y + (m2 - 1) // 12, (m2 - 1) % 12 + 1
-        nxt = f"{y2:04d}-{m2:02d}-01"
-        b = (datetime.strptime(nxt, '%Y-%m-%d') - timedelta(days=1)).strftime('%Y-%m-%d')
-        if b > d_to:
-            b = d_to
-        wins.append((a, b))
-        a = nxt
-        y, m = y2, m2
-    return wins
-
-
 _DEAD_IN_T = ("purchase", "sale_return", "receive")
 _DEAD_OUT_T = ("sale", "purchase_return", "issue")
-_DEAD_METHOD = "31/12/2023 baseline opening + reconciled movements (zero-opening for new items)"
+_DEAD_METHOD = ("Current operational stock (item + mapped variants, positive net wt); "
+                "months-to-clear = avg daily closing stock / avg monthly net sales over the selected window")
 _DEAD_DATE_LO = "1900-01-01"
 _DEAD_DATE_HI = "2200-12-31 23:59:59"
 _DEAD_EPS_G = 0.001
-_DEAD_BASELINE_WINDOW_START = "2024-01-01"
-# abs(net_wt) coerced to double; malformed values count as 0 (never as events)
-_DEAD_ABS_W = {"$abs": {"$convert": {"input": "$net_wt", "to": "double",
-                                     "onError": 0.0, "onNull": 0.0}}}
-
-
-def _load_dead_baseline():
-    """Raw 31/12/2023 closing-stock entries (grams, SIGNED). Monkeypatched in tests."""
-    try:
-        with open(ROOT_DIR / 'data' / 'stock_sale_baseline_2023.json') as f:
-            doc = json.load(f)
-        return doc.get('items') or []
-    except Exception as e:
-        logging.getLogger(__name__).error(f"dead-items baseline load failed: {e}")
-        return []
 
 
 def _dead_norm(name):
@@ -5468,17 +5512,13 @@ def _dead_skip_name(name) -> bool:
     return not s or 'total' in s.lower() or bool(_NUMERIC_NAME_RE.fullmatch(s))
 
 
-async def _compute_dead_items(as_of: str):
-    """Analytical slow-stock estimate (Dead Items ONLY). Per consolidated item:
-    opening = SIGNED 31/12/2023 baseline when present (movements counted from
-    01/01/2024, observation window starts 01/01/2024); otherwise ZERO immediately
-    before the item's first recorded positive purchase (own window).
-    Live + historical movements are reconciled into ONE dataset: confirmed
-    duplicate lines (same item/type/day + matching refno|party identity + weight
-    in both collections) count once. Same item/type/day alone is NOT proof.
-    stock = opening + purchases + sale returns + receipts - sales - purchase returns - issues;
-    months-to-clear = stock / (net sales / (observed_days / 30.44)).
-    Does NOT touch operational stock, physical baselines or shared stock logic."""
+async def _compute_dead_items(as_of: str, window_days: int = 90):
+    """Dead/slow-mover estimate (Dead Items ONLY), v4 method per user spec:
+    stock = CURRENT operational stock (same engine as the Current Stock page),
+    consolidated per leader (item + all mapped variants), POSITIVE NET weight only;
+    months_to_clear = avg daily closing stock over the window / avg monthly net sales.
+    Daily closings are back-rolled from the operational stock using the stock
+    engine's sign rules and anchor/baseline cutoffs. Does NOT alter stock logic."""
     EXCLUDED = {_dead_norm(x) for x in (
         "SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA")}
     all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
@@ -5490,12 +5530,16 @@ async def _compute_dead_items(as_of: str):
     m2l_norm = {_dead_norm(k): v for k, v in m2l.items()}
     canon = {}
 
+    def _master_of(raw):
+        m = map_norm.get(_dead_norm(raw))
+        return m if m is not None else str(raw).strip()
+
     def _resolve(raw):
         """Case/whitespace-safe leader resolution (Dead Items only)."""
         master = map_norm.get(_dead_norm(raw))
         canonical = master is not None
         if master is None:
-            master = raw.strip()
+            master = str(raw).strip()
         ldr = m2l_norm.get(_dead_norm(master))
         if ldr is None:
             ldr = master
@@ -5515,238 +5559,167 @@ async def _compute_dead_items(as_of: str):
             if m != ldr:
                 variants.setdefault(_dead_norm(ldr), set()).add(m)
 
-    # 31/12/2023 baseline opening — consolidated through mappings/groups,
-    # preserving SIGNED net weights (NO absolute values on baseline quantities)
-    base_g = {}
-    for b in _load_dead_baseline():
-        name = b.get('item_name') or ''
-        if _dead_skip_name(name):
+    # 1) CURRENT operational stock per leader — engine source of truth
+    today_ist = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
+    inv_as_of = None if as_of >= today_ist else as_of + ' 23:59:59'
+    inv = await get_current_inventory_cached(as_of_date=inv_as_of)
+    stock_g = {}
+    for si in inv.get('stamp_items', []):
+        name = si.get('item_name') or ''
+        if not name:
             continue
-        bkey = _resolve(name)
-        if not bkey or bkey in EXCLUDED:
+        key = _resolve(name)
+        if not key or key in EXCLUDED:
             continue
-        try:
-            base_g[bkey] = base_g.get(bkey, 0.0) + float(b.get('net_wt') or 0.0)
-        except (TypeError, ValueError):
-            continue
-    base_g = {k: v for k, v in base_g.items() if abs(v) > _DEAD_EPS_G}
+        stock_g[key] = stock_g.get(key, 0.0) + (si.get('net_wt') or 0.0)
+    live = {k: v for k, v in stock_g.items() if v > _DEAD_EPS_G}
 
-    ALL_T = list(_DEAD_IN_T + _DEAD_OUT_T)
-    date_ok = {"$gte": _DEAD_DATE_LO, "$lte": _DEAD_DATE_HI}
-    starts, last_dates = [], []
-    for coll in (db.transactions, db.historical_transactions):
-        first = await coll.find_one({"type": {"$in": ALL_T}, "date": date_ok},
-                                    {"_id": 0, "date": 1}, sort=[("date", 1)])
-        if first and first.get('date'):
-            starts.append(first['date'][:10])
-        last = await coll.find_one({"type": {"$in": ALL_T}, "date": date_ok},
-                                   {"_id": 0, "date": 1}, sort=[("date", -1)])
-        if last and last.get('date'):
-            last_dates.append(last['date'][:10])
-    if not starts:
-        return {'rows': [], 'as_of': as_of, 'last_txn_date': None,
-                'history_start': None, 'method': _DEAD_METHOD}
-    hist_start = min(starts)
-    last_txn_date = max(last_dates)
-
-    acc = {}
-
-    def _acc(key):
-        s = acc.get(key)
-        if s is None:
-            s = acc[key] = {'w': {t: 0.0 for t in ALL_T}, 'first_purchase': None,
-                            'first_move': None, 'last_sale': None, 'sale_events': 0,
-                            'bal': 0.0, 'min_bal': 0.0, 'ambiguous': False, 'sales90': 0.0}
-        return s
-
-    # Baseline items exist even without any 2024+ movements (their opening IS the stock)
-    for bkey, g in base_g.items():
-        s = _acc(bkey)
-        s['bal'] = s['min_bal'] = g
-
-    def _blank(i):
-        return i.strip('|').strip() == ''
-
-    d90_from = (datetime.strptime(as_of, '%Y-%m-%d') - timedelta(days=89)).strftime('%Y-%m-%d')
-
-    # Per item/type/DAY so zero-weight rows can't invent events and daily
-    # balances can be replayed. Line identities (refno|party + weight) reconcile
-    # live vs historical per window: confirmed duplicates are counted once.
-    # Per-window structures are discarded at window end (memory bounded at scale).
-    for wa, wb in _quarter_windows(hist_start, min(as_of, last_txn_date) if last_txn_date else as_of):
-        pipe = [
-            {"$match": {"date": {"$gte": wa, "$lte": min(wb, as_of) + " 23:59:59"},
-                        "type": {"$in": ALL_T},
-                        "net_wt": {"$nin": [0, None]}}},
-            {"$group": {"_id": {"i": "$item_name", "t": "$type", "d": {"$substr": ["$date", 0, 10]}},
-                        "w": {"$sum": _DEAD_ABS_W},
-                        "n": {"$sum": {"$cond": [{"$gt": [_DEAD_ABS_W, 0]}, 1, 0]}},
-                        "lines": {"$push": {"$cond": [
-                            {"$gt": [_DEAD_ABS_W, 0]},
-                            {"i": {"$concat": [{"$toString": {"$ifNull": ["$refno", ""]}}, "|",
-                                               {"$toString": {"$ifNull": ["$party_name", ""]}}]},
-                             "w": _DEAD_ABS_W},
-                            None]}}}},
-        ]
-        wdaily = {}  # key -> {day: signed delta}, this window only
-        whids = {}   # key -> {(type, day): Counter of (identity, weight) lines} from historical
-        # historical first so main-collection lines can be reconciled against it
-        for coll, tag in ((db.historical_transactions, 'h'), (db.transactions, 't')):
-            try:
-                async for d in coll.aggregate(pipe, allowDiskUse=True, maxTimeMS=60000):
-                    raw = d["_id"]["i"] or ''
-                    if _dead_skip_name(raw):
-                        continue
-                    key = _resolve(raw)
-                    if not key or key in EXCLUDED:
-                        continue
-                    t = d["_id"]["t"]
-                    day = d["_id"]["d"]
-                    if key in base_g and day < _DEAD_BASELINE_WINDOW_START:
-                        continue  # already inside the 31/12/2023 baseline
-                    w = d["w"] or 0.0
-                    n = d.get("n") or 0
-                    if w <= 0:
-                        continue
-                    lines = Counter((l["i"], round(l["w"], 3))
-                                    for l in (d.get("lines") or []) if l)
-                    s = _acc(key)
-                    if tag == 'h':
-                        hk = whids.setdefault(key, {})
-                        hk[(t, day)] = hk.get((t, day), Counter()) + lines
-                    else:
-                        hl = whids.get(key, {}).get((t, day))
-                        if hl:
-                            # confirmed duplicates: same line identity AND weight in
-                            # both sources -> count once (historical copy stands)
-                            for lk, cnt in lines.items():
-                                if not _blank(lk[0]) and hl.get(lk):
-                                    k = min(cnt, hl[lk])
-                                    n -= k
-                                    w -= lk[1] * k
-                            # unprovable same-day overlap (no reliable line identity)
-                            if not s['ambiguous'] and (any(_blank(lk[0]) for lk in lines)
-                                                       or any(_blank(lk[0]) for lk in hl)):
-                                s['ambiguous'] = True
-                            if w <= _DEAD_EPS_G:
-                                continue  # fully duplicated group
-                    s['w'][t] += w
-                    kd = wdaily.setdefault(key, {})
-                    kd[day] = kd.get(day, 0.0) + (w if t in _DEAD_IN_T else -w)
-                    if day >= d90_from and t in ('sale', 'sale_return'):
-                        s['sales90'] += w if t == 'sale' else -w
-                    if t == 'purchase':
-                        if s['first_purchase'] is None or day < s['first_purchase']:
-                            s['first_purchase'] = day
-                    elif s['first_move'] is None or day < s['first_move']:
-                        s['first_move'] = day
-                    if t == 'sale':
-                        s['sale_events'] += max(int(n), 0)
-                        if day > (s['last_sale'] or ''):
-                            s['last_sale'] = day
-                    if str(raw).strip() != canon.get(key):
-                        variants.setdefault(key, set()).add(str(raw).strip())
-            except Exception as e:
-                logging.getLogger(__name__).error(f"dead-items window {wa}..{wb} failed: {e}")
-                raise HTTPException(status_code=503, detail="Dead items aggregation timed out — please retry in a moment.")
-        # fold this window's daily deltas into running balances, then discard
-        for key, days in wdaily.items():
-            s = acc[key]
-            bal, mn = s['bal'], s['min_bal']
-            for day in sorted(days):
-                bal += days[day]
-                if bal < mn:
-                    mn = bal
-            s['bal'], s['min_bal'] = bal, mn
-
+    # 2) Observation window (clamped to the opening-stock anchor)
     as_of_dt = datetime.strptime(as_of, '%Y-%m-%d')
+    win_start_dt = as_of_dt - timedelta(days=window_days - 1)
+    oed = await get_opening_effective_date()
+    anchor_clamped = False
+    if oed and oed[:10] >= win_start_dt.strftime('%Y-%m-%d'):
+        win_start_dt = min(datetime.strptime(oed[:10], '%Y-%m-%d') + timedelta(days=1), as_of_dt)
+        anchor_clamped = True
+    win_start = win_start_dt.strftime('%Y-%m-%d')
+    n_days = (as_of_dt - win_start_dt).days + 1
+
+    # Per-item baseline cutoffs — mirrors the stock engine (physical-stock anchors)
+    bl_q = {'baseline_date': {'$lte': as_of}}
+    if oed:
+        bl_q['baseline_date']['$gte'] = oed
+    baselines_raw = await db.inventory_baselines.find(
+        bl_q, {"_id": 0, "item_name": 1, "baseline_date": 1}).to_list(None)
+    bl_by_master = {}
+    for b in baselines_raw:
+        mk = _dead_norm(_master_of(b.get('item_name') or ''))
+        d = (b.get('baseline_date') or '')[:10]
+        if mk and (mk not in bl_by_master or d > bl_by_master[mk]):
+            bl_by_master[mk] = d
+
+    # 3) One pass over the window: daily deltas (engine sign rules) + sale metrics
+    _raw_w = {"$sum": {"$convert": {"input": "$net_wt", "to": "double",
+                                    "onError": 0.0, "onNull": 0.0}}}
+    pipe = [
+        {"$match": {"date": {"$gte": win_start, "$lte": as_of + " 23:59:59"},
+                    "type": {"$in": list(_DEAD_IN_T + _DEAD_OUT_T)}}},
+        {"$group": {"_id": {"i": "$item_name", "t": "$type", "d": {"$substr": ["$date", 0, 10]}},
+                    "w": _raw_w, "n": {"$sum": 1}}},
+    ]
+    deltas = {}       # leader -> {day: signed grams, engine sign rules}
+    sales_net = {}    # leader -> net sales grams (sale - sale_return)
+    sale_events = {}
+    last_sale = {}
+    try:
+        async for d in db.transactions.aggregate(pipe, allowDiskUse=True, maxTimeMS=60000):
+            raw = d["_id"]["i"] or ''
+            if not raw or str(raw).isdigit():
+                continue
+            key = _resolve(raw)
+            if not key or key in EXCLUDED:
+                continue
+            day = d["_id"]["d"]
+            cutoff = bl_by_master.get(_dead_norm(_master_of(raw))) or (oed[:10] if oed else None)
+            if cutoff and day <= cutoff:
+                continue  # baked into the stock anchor/baseline
+            t = d["_id"]["t"]
+            w = d["w"] or 0.0
+            kd = deltas.setdefault(key, {})
+            kd[day] = kd.get(day, 0.0) + (w if t in _DEAD_IN_T else -w)
+            if t == 'sale':
+                sales_net[key] = sales_net.get(key, 0.0) + abs(w)
+                sale_events[key] = sale_events.get(key, 0) + int(d.get("n") or 0)
+                if day > last_sale.get(key, ''):
+                    last_sale[key] = day
+            elif t == 'sale_return':
+                sales_net[key] = sales_net.get(key, 0.0) - abs(w)
+            if str(raw).strip() != canon.get(key):
+                variants.setdefault(key, set()).add(str(raw).strip())
+    except Exception as e:
+        logging.getLogger(__name__).error(f"dead-items window aggregation failed: {e}")
+        raise HTTPException(status_code=503, detail="Dead items aggregation timed out — please retry in a moment.")
+
+    # 4) First purchase per leader (full history, both collections; non-fatal)
+    first_purchase = {}
+    for coll in (db.transactions, db.historical_transactions):
+        try:
+            async for d in coll.aggregate(
+                    [{"$match": {"type": "purchase",
+                                 "date": {"$gte": _DEAD_DATE_LO, "$lte": _DEAD_DATE_HI}}},
+                     {"$group": {"_id": "$item_name", "d": {"$min": "$date"}}}],
+                    allowDiskUse=True, maxTimeMS=60000):
+                raw = d["_id"] or ''
+                if not raw or str(raw).isdigit():
+                    continue
+                key = _resolve(raw)
+                if key not in live:
+                    continue
+                day = (d.get("d") or '')[:10]
+                if day and (key not in first_purchase or day < first_purchase[key]):
+                    first_purchase[key] = day
+        except Exception as e:
+            logging.getLogger(__name__).error(f"dead-items first-purchase scan failed: {e}")
+
+    # 5) Back-roll daily closings from the operational stock, then score
     rows = []
-    for key, s in acc.items():
-        w = s['w']
-        opening_g = base_g.get(key, 0.0)
-        has_baseline = key in base_g
-        stock_g = opening_g + (w['purchase'] + w['sale_return'] + w['receive']) - \
-                  (w['sale'] + w['purchase_return'] + w['issue'])
-        net_sales_g = w['sale'] - w['sale_return']
-
-        # Negative daily closing balance / overlap flags were folded in per window
-        min_bal = s['min_bal']
-        ambiguous = s['ambiguous']
-
+    months_eff = n_days / 30.44
+    for key, stock in live.items():
+        kd = deltas.get(key, {})
+        cur = stock
+        total = cur
+        mn = cur
+        dt = as_of_dt
+        for _ in range(n_days - 1):
+            cur -= kd.get(dt.strftime('%Y-%m-%d'), 0.0)
+            dt -= timedelta(days=1)
+            total += cur
+            if cur < mn:
+                mn = cur
+        avg_closing_g = total / n_days
+        net_sales_g = sales_net.get(key, 0.0)
+        events = sale_events.get(key, 0)
         review = []
-        if has_baseline:
-            if opening_g < 0:
-                review.append('negative_baseline')
-        elif s['first_purchase'] is None:
-            review.append('no_purchase_anchor')
-        elif s['first_move'] and s['first_move'] < s['first_purchase']:
-            review.append('movement_before_first_purchase')
-        if stock_g < -_DEAD_EPS_G:
-            review.append('negative_reconstructed_stock')
-        elif min_bal < -_DEAD_EPS_G:
-            review.append('negative_intermediate_stock')
-        if ambiguous:
-            review.append('ambiguous_source_overlap')
-
-        if has_baseline:
-            window_start = _DEAD_BASELINE_WINDOW_START
-            basis = 'baseline_2023'
-        else:
-            window_start = s['first_purchase']
-            basis = 'first_purchase'
-        observed_days = None
-        months = None
-        if window_start:
-            observed_days = (as_of_dt - datetime.strptime(window_start, '%Y-%m-%d')).days + 1
-            if observed_days > 0:
-                months = observed_days / 30.44
-
-        if s['sale_events'] == 0:
-            status = 'never_sold'
-            score = None
+        if mn < -_DEAD_EPS_G:
+            review.append('negative_daily_closing')
+        avg_monthly_g = net_sales_g / months_eff if months_eff > 0 else 0.0
+        if events == 0:
+            status, score = 'no_recent_sales', None
         elif net_sales_g <= 0:
-            status = 'no_positive_net_sales'
-            score = None
-        elif months:
-            status = 'ok'
-            score = stock_g / (net_sales_g / months)
+            status, score = 'no_positive_net_sales', None
         else:
             status = 'ok'
-            score = None
+            score = avg_closing_g / avg_monthly_g if avg_monthly_g > _DEAD_EPS_G else None
         if review:
-            score = None  # unresolved history: no usable score ("Cannot calculate reliably")
-
+            score = None  # unresolved daily balances: no reliable score
+        fp = first_purchase.get(key)
+        provisional = bool(fp and (as_of_dt - datetime.strptime(fp, '%Y-%m-%d')).days + 1 < 30)
         disp = canon.get(key, key)
         rows.append({
             'item_name': disp,
             'stamp': stamp_lookup.get(key, 'Unassigned'),
             'merged_names': sorted(v for v in variants.get(key, set())
                                    if _dead_norm(v) != _dead_norm(disp))[:10],
-            'stock_net_kg': stock_g / 1000.0,
-            'opening_kg': opening_g / 1000.0,
-            'window_start': window_start,
-            'window_basis': basis,
-            'movements': {
-                'purchases_kg': w['purchase'] / 1000.0,
-                'sales_kg': w['sale'] / 1000.0,
-                'sale_returns_kg': w['sale_return'] / 1000.0,
-                'purchase_returns_kg': w['purchase_return'] / 1000.0,
-                'receipts_kg': w['receive'] / 1000.0,
-                'issues_kg': w['issue'] / 1000.0,
-            },
-            'first_purchase': s['first_purchase'],
-            'observed_days': observed_days,
+            'stock_net_kg': stock / 1000.0,
+            'avg_daily_closing_kg': avg_closing_g / 1000.0,
+            'min_daily_closing_kg': mn / 1000.0,
+            'first_purchase': fp,
+            'window_start': win_start,
+            'window_days': n_days,
             'total_net_sales_kg': net_sales_g / 1000.0,
-            'avg_monthly_sale_kg': (net_sales_g / months) / 1000.0 if (months and net_sales_g > 0) else None,
+            'avg_monthly_sale_kg': (avg_monthly_g / 1000.0) if net_sales_g > 0 else None,
             'months_to_clear': score,
-            'last_sale_date': s['last_sale'],
-            'sales_90d_kg': s['sales90'] / 1000.0,
+            'sale_events': events,
+            'last_sale_date': last_sale.get(key),
             'status': status,
-            'provisional': bool(observed_days is not None and observed_days < 30),
+            'provisional': provisional,
             'review_reasons': review,
         })
-    return {'rows': rows, 'as_of': as_of, 'last_txn_date': last_txn_date,
-            'history_start': hist_start, 'method': _DEAD_METHOD}
+    last_txn = await _dead_coverage_cutoff()
+    return {'rows': rows, 'as_of': as_of, 'last_txn_date': last_txn,
+            'history_start': win_start, 'window_start': win_start,
+            'window_days': n_days, 'anchor_clamped': anchor_clamped,
+            'method': _DEAD_METHOD}
 
 
 _DEAD_NEAR_ZERO_KG = 0.05
@@ -5803,28 +5776,7 @@ async def _dead_coverage_cutoff():
     return max(last_dates) if last_dates else None
 
 
-async def _current_stock_keys() -> set:
-    """Normalized leader keys with POSITIVE net weight in the CURRENT operational
-    stock (same source as the Current Stock page). Used to hide bygone items."""
-    inv = await get_current_inventory_cached()
-    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
-    mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
-    map_dict, m2l, _ = build_group_maps(all_groups, mappings)
-    map_norm = {_dead_norm(k): v for k, v in map_dict.items()}
-    m2l_norm = {_dead_norm(k): v for k, v in m2l.items()}
-    totals = {}
-    for si in inv.get('stamp_items', []):
-        raw = si.get('item_name') or ''
-        if not raw:
-            continue
-        master = map_norm.get(_dead_norm(raw), str(raw).strip())
-        leader = m2l_norm.get(_dead_norm(master), master)
-        k = _dead_norm(leader)
-        totals[k] = totals.get(k, 0.0) + (si.get('net_wt') or 0)
-    return {k for k, g in totals.items() if g > _DEAD_EPS_G}
-
-
-async def _dead_items_data(as_of: Optional[str]):
+async def _dead_items_data(as_of: Optional[str], window_days: int = 90):
     today_ist = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
     cutoff = await _dead_coverage_cutoff()
     explicit = bool(as_of)
@@ -5841,43 +5793,44 @@ async def _dead_items_data(as_of: Optional[str]):
         as_of_d = min(today_ist, cutoff) if cutoff else today_ist
     coverage = {'cutoff': cutoff, 'verified': False,
                 'source': 'last_transaction_fallback', 'explicit_as_of': explicit}
-    cache_key = f"dead-items:{as_of_d}"
+    cache_key = f"dead-items:{as_of_d}:{window_days}"
     data = _dead_cache.get(cache_key)
     if data is None:
-        data = await _compute_dead_items(as_of_d)
+        data = await _compute_dead_items(as_of_d, window_days)
         _dead_cache.set(cache_key, data)
     removed_docs = await db.dead_item_removals.find({}, {"_id": 0}).to_list(2000)
     removed_map = {r['item_name']: r for r in removed_docs}
     items, review, removed = _dead_split(data, removed_map)
-    # Only items present in CURRENT operational stock are listed — bygones are hidden
-    live_keys = await _current_stock_keys()
-    items = [r for r in items if _dead_norm(r['item_name']) in live_keys]
     return data, items, review, removed, coverage
 
 
 @api_router.get("/analytics/dead-items/summary")
 async def get_dead_items_summary(as_of: Optional[str] = Query(None),
+                                 window_days: int = Query(90, ge=7, le=180),
                                  current_user: dict = Depends(get_current_user),
                                  _slot=Depends(heavy_queue_slot)):
     """Dashboard count — same effective as-of, eligibility & provisional rules as the page."""
     if current_user.get('role') != 'admin':
         raise HTTPException(status_code=403, detail="Admin access required")
-    data, items, review, _removed, coverage = await _dead_items_data(as_of)
+    data, items, review, _removed, coverage = await _dead_items_data(as_of, window_days)
     return {'summary': _dead_summary(items, review), 'as_of': data['as_of'],
             'coverage': coverage}
 
 
 @api_router.get("/analytics/dead-items")
 async def get_dead_items(as_of: Optional[str] = Query(None),
+                         window_days: int = Query(90, ge=7, le=180),
                          current_user: dict = Depends(get_current_user),
                          _slot=Depends(heavy_queue_slot)):
     if current_user.get('role') != 'admin':
         raise HTTPException(status_code=403, detail="Admin access required")
-    data, items, review, removed, coverage = await _dead_items_data(as_of)
+    data, items, review, removed, coverage = await _dead_items_data(as_of, window_days)
     return {'items': items, 'review': review, 'removed': removed,
             'summary': _dead_summary(items, review),
             'as_of': data['as_of'], 'last_txn_date': data['last_txn_date'],
             'history_start': data['history_start'], 'method': data['method'],
+            'window_days': data.get('window_days'), 'window_start': data.get('window_start'),
+            'anchor_clamped': data.get('anchor_clamped', False),
             'coverage': coverage}
 
 

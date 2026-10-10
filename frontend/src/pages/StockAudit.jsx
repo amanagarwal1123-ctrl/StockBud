@@ -6,6 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { DailyClosingStock } from '../components/DailyClosingStock';
 import { formatDateTime } from '../utils/dateFormat';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -61,6 +63,17 @@ export default function StockAudit() {
         </Button>
       </div>
 
+      <Tabs defaultValue="uploads">
+        <TabsList data-testid="stock-audit-tabs">
+          <TabsTrigger value="uploads" data-testid="tab-upload-audit">Upload Audit</TabsTrigger>
+          <TabsTrigger value="daily-closing" data-testid="tab-daily-closing">Daily Closing Stock</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="daily-closing" className="mt-4">
+          <DailyClosingStock />
+        </TabsContent>
+
+        <TabsContent value="uploads" className="mt-4 space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="pb-2">
@@ -165,6 +178,8 @@ export default function StockAudit() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

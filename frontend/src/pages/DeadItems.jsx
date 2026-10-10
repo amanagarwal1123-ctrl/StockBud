@@ -6,6 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
 import { PackageX, ArrowUp, ArrowDown, RotateCcw, Trash2, ArchiveRestore, AlertTriangle, Sparkles, FileDown } from 'lucide-react';
@@ -16,23 +19,23 @@ const API = `${BACKEND_URL}/api`;
 
 const fmtDate = (d) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : '—');
 const INF = Number.POSITIVE_INFINITY;
+const WINDOW_OPTIONS = [30, 60, 90, 120, 180];
 
 const COLS = [
   { key: 'item_name', label: 'Item', align: 'left' },
-  { key: 'stock_net_kg', label: 'Stock (kg)', align: 'right' },
+  { key: 'stock_net_kg', label: 'Current Stock (kg)', align: 'right' },
+  { key: 'avg_daily_closing_kg', label: 'Avg Daily Closing (kg)', align: 'right' },
   { key: 'first_purchase', label: 'First Purchase', align: 'right' },
-  { key: 'observed_days', label: 'Days', align: 'right' },
   { key: 'total_net_sales_kg', label: 'Net Sales (kg)', align: 'right' },
   { key: 'avg_monthly_sale_kg', label: 'Avg Monthly (kg)', align: 'right' },
   { key: 'months_to_clear', label: 'Months to Clear', align: 'right' },
-  { key: 'sales_90d_kg', label: 'Last 90d (kg)', align: 'right' },
   { key: 'last_sale_date', label: 'Last Sale', align: 'right' },
 ];
 
 const StatusBadge = ({ r }) => {
   if (r.review_reasons?.length > 0 && r.months_to_clear === null)
     return <span className="text-[11px] text-amber-600 font-medium whitespace-nowrap">Cannot calculate reliably</span>;
-  if (r.status === 'never_sold') return <Badge variant="destructive" className="text-[10px]">Never sold</Badge>;
+  if (r.status === 'no_recent_sales') return <Badge variant="destructive" className="text-[10px]">No sales in window</Badge>;
   if (r.status === 'no_positive_net_sales') return <Badge variant="destructive" className="text-[10px] bg-orange-600">No positive net sales</Badge>;
   return <span className="font-bold tabular-nums">{r.months_to_clear?.toFixed(3)}</span>;
 };
@@ -43,18 +46,21 @@ export default function DeadItems() {
   const [error, setError] = useState(null);
   const [threshold, setThreshold] = useState(3);
   const [asOf, setAsOf] = useState('');
+  const [windowDays, setWindowDays] = useState(90);
   const [sort, setSort] = useState(null); // null = spec default ranking
   const [showRemoved, setShowRemoved] = useState(false);
 
   const reqSeq = useRef(0);
 
-  const fetchData = useCallback(async (asOfParam) => {
+  const fetchData = useCallback(async (asOfParam, winParam) => {
     const id = ++reqSeq.current;
     setLoading(true);
     setError(null);
     try {
-      const q = asOfParam ? `?as_of=${asOfParam}` : '';
-      const r = await axios.get(`${API}/analytics/dead-items${q}`);
+      const params = new URLSearchParams();
+      if (asOfParam) params.set('as_of', asOfParam);
+      params.set('window_days', winParam || 90);
+      const r = await axios.get(`${API}/analytics/dead-items?${params.toString()}`);
       if (id !== reqSeq.current) return; // stale response — a newer request won
       setData(r.data);
       setAsOf(r.data.as_of); // always reflect the backend's effective as-of
@@ -70,7 +76,7 @@ export default function DeadItems() {
     }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { fetchData(undefined, 90); }, [fetchData]);
 
   const th = (() => { const v = parseFloat(threshold); return isNaN(v) ? 3 : v; })();
 
@@ -115,7 +121,7 @@ export default function DeadItems() {
   const removeItem = async (name) => {
     try {
       await axios.post(`${API}/dead-items/remove`, { item_name: name });
-      fetchData(asOf);
+      fetchData(asOf, windowDays);
       toast.success(`"${name}" removed from dead items list`);
     } catch (e) { toast.error('Failed to remove item'); }
   };
@@ -123,7 +129,7 @@ export default function DeadItems() {
   const restoreItem = async (name) => {
     try {
       await axios.post(`${API}/dead-items/restore`, { item_name: name });
-      fetchData(asOf);
+      fetchData(asOf, windowDays);
       toast.success(`"${name}" restored`);
     } catch (e) { toast.error('Failed to restore item'); }
   };
@@ -135,29 +141,23 @@ export default function DeadItems() {
       Item: r.item_name,
       Stamp: r.stamp,
       'Merged Names': (r.merged_names || []).join(', '),
-      'Opening (kg)': n3(r.opening_kg),
-      'Window Start': r.window_start || '',
-      'Window Basis': r.window_basis || '',
-      'Stock (kg)': n3(r.stock_net_kg),
+      'Current Stock (kg)': n3(r.stock_net_kg),
+      'Avg Daily Closing (kg)': n3(r.avg_daily_closing_kg),
       'First Purchase': r.first_purchase || '',
-      'Observed Days': r.observed_days ?? '',
-      '+Purchases (kg)': n3(r.movements?.purchases_kg),
-      '-Sales (kg)': n3(r.movements?.sales_kg),
-      '+Sale Returns (kg)': n3(r.movements?.sale_returns_kg),
-      '-Purchase Returns (kg)': n3(r.movements?.purchase_returns_kg),
-      '+Receipts (kg)': n3(r.movements?.receipts_kg),
-      '-Issues (kg)': n3(r.movements?.issues_kg),
+      'Window Start': r.window_start || '',
+      'Window Days': r.window_days ?? '',
       'Net Sales (kg)': n3(r.total_net_sales_kg),
       'Avg Monthly (kg)': n3(r.avg_monthly_sale_kg),
       'Months to Clear': (r.review_reasons?.length > 0 && r.months_to_clear === null)
         ? 'Cannot calculate reliably' : n3(r.months_to_clear),
-      'Last 90d (kg)': n3(r.sales_90d_kg),
+      'Sale Entries': r.sale_events ?? '',
       'Last Sale': r.last_sale_date || '',
       Status: r.status,
     });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([
       { Info: 'As-of', Value: data.as_of },
+      { Info: 'Window (days)', Value: data.window_days ?? windowDays },
       { Info: 'Coverage (Unverified) through', Value: data.coverage?.cutoff || '' },
       { Info: 'Dead threshold (months to clear)', Value: th },
       { Info: 'Method', Value: data.method },
@@ -181,20 +181,14 @@ export default function DeadItems() {
         {r.merged_names?.length > 0 && (
           <div className="text-[11px] text-muted-foreground truncate max-w-[240px]">incl. {r.merged_names.join(', ')}</div>
         )}
-        {r.window_basis === 'baseline_2023' && (
-          <div className="text-[11px] text-muted-foreground" data-testid={`baseline-note-${r.item_name}`}>
-            opening {r.opening_kg?.toFixed(3)} kg · baseline 31/12/2023
-          </div>
-        )}
         {extra}
       </td>
       <td className="px-3 py-2 text-right font-semibold tabular-nums">{r.stock_net_kg.toFixed(3)}</td>
-      <td className="px-3 py-2 text-right text-xs whitespace-nowrap">{fmtDate(r.window_start || r.first_purchase)}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{r.observed_days ?? '—'}</td>
+      <td className="px-3 py-2 text-right tabular-nums">{r.avg_daily_closing_kg?.toFixed(3) ?? '—'}</td>
+      <td className="px-3 py-2 text-right text-xs whitespace-nowrap">{fmtDate(r.first_purchase)}</td>
       <td className="px-3 py-2 text-right tabular-nums">{r.total_net_sales_kg.toFixed(3)}</td>
       <td className="px-3 py-2 text-right tabular-nums">{r.avg_monthly_sale_kg === null ? '—' : r.avg_monthly_sale_kg.toFixed(3)}</td>
       <td className="px-3 py-2 text-right"><StatusBadge r={r} /></td>
-      <td className="px-3 py-2 text-right tabular-nums">{r.sales_90d_kg.toFixed(3)}</td>
       <td className="px-3 py-2 text-right text-xs whitespace-nowrap">{fmtDate(r.last_sale_date)}</td>
       <td className="px-3 py-2 text-right">
         <Button variant="ghost" size="sm" className="h-7 text-destructive" onClick={() => removeItem(r.item_name)}
@@ -229,14 +223,13 @@ export default function DeadItems() {
             <PackageX className="h-7 w-7 text-destructive" /> Dead Items
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {data?.method || 'First recorded purchase / zero-opening estimate'} — analytical stock, not operational stock.
-            Months to Clear: lower = faster-moving, higher = slower-moving.
+            Current stock (item + all mapped variants, same as the Current Stock page).
+            Months to Clear = avg daily closing stock ÷ avg monthly net sales over the selected window — lower is faster-moving.
           </p>
           {data?.coverage && (
             <p className="text-xs text-amber-600 mt-1" data-testid="coverage-note">
               Coverage: Unverified — data on record through {fmtDate(data.coverage.cutoff)}.
-              {data.coverage.cutoff && data.as_of > data.coverage.cutoff
-                ? ' As-of is beyond the last transaction; results assume no later activity.' : ''}
+              {data.anchor_clamped ? ` Window clamped to the opening-stock anchor (starts ${fmtDate(data.window_start)}).` : ''}
             </p>
           )}
         </div>
@@ -251,7 +244,20 @@ export default function DeadItems() {
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">As-of</span>
           <Input type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)}
-            onBlur={() => asOf && fetchData(asOf)} className="h-8 w-40" data-testid="as-of-input" />
+            onBlur={() => asOf && fetchData(asOf, windowDays)} className="h-8 w-40" data-testid="as-of-input" />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Window</span>
+          <Select value={String(windowDays)} onValueChange={(v) => { const n = parseInt(v, 10); setWindowDays(n); fetchData(asOf, n); }}>
+            <SelectTrigger className="h-8 w-28" data-testid="window-days-select">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {WINDOW_OPTIONS.map((d) => (
+                <SelectItem key={d} value={String(d)} data-testid={`window-option-${d}`}>{d} days</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">Dead if ≥</span>
@@ -269,12 +275,12 @@ export default function DeadItems() {
             )}
             {(data.review?.length ?? 0) > 0 && (
               <Badge variant="outline" className="border-amber-500 text-amber-600" data-testid="review-count-badge">
-                {data.review.length} need history review
+                {data.review.length} need review
               </Badge>
             )}
           </>
         )}
-        <Button variant="outline" size="sm" className="h-8" onClick={() => fetchData(asOf)} disabled={loading} data-testid="refresh-dead-items">
+        <Button variant="outline" size="sm" className="h-8" onClick={() => fetchData(asOf, windowDays)} disabled={loading} data-testid="refresh-dead-items">
           <RotateCcw className={`h-3.5 w-3.5 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </Button>
         <Button variant="outline" size="sm" className="h-8" onClick={exportExcel} disabled={!data || loading} data-testid="export-excel-btn">
@@ -286,7 +292,7 @@ export default function DeadItems() {
         <Card className="border-destructive/40">
           <CardContent className="p-6 text-center space-y-3" data-testid="dead-items-error">
             <p className="text-sm text-destructive font-medium">{error}</p>
-            <Button variant="outline" size="sm" onClick={() => fetchData(asOf)} data-testid="retry-dead-items">
+            <Button variant="outline" size="sm" onClick={() => fetchData(asOf, windowDays)} data-testid="retry-dead-items">
               <RotateCcw className="h-3.5 w-3.5 mr-1.5" /> Retry
             </Button>
           </CardContent>
@@ -297,14 +303,14 @@ export default function DeadItems() {
         <Card className="border-border/30 shadow-sm">
           <CardContent className="p-0 overflow-x-auto">
             {loading ? (
-              <div className="p-8 text-center text-sm text-muted-foreground">Reconstructing analytical stock from each item's first recorded purchase…</div>
+              <div className="p-8 text-center text-sm text-muted-foreground">Computing windowed closing-stock averages…</div>
             ) : (
               <table className="w-full text-sm" data-testid="dead-items-table">
                 {tableHead}
                 <tbody>
                   {deadRows.map((r) => renderRow(r))}
                   {deadRows.length === 0 && (
-                    <tr><td colSpan={10} className="p-8 text-center text-sm text-muted-foreground">No confirmed dead items at this threshold</td></tr>
+                    <tr><td colSpan={9} className="p-8 text-center text-sm text-muted-foreground">No confirmed dead items at this threshold</td></tr>
                   )}
                 </tbody>
               </table>
@@ -316,7 +322,7 @@ export default function DeadItems() {
       {!error && !loading && provisionalRows.length > 0 && (
         <div className="space-y-2" data-testid="provisional-section">
           <h2 className="text-base font-semibold flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-sky-500" /> New / Provisional (under 30 observed days)
+            <Sparkles className="h-4 w-4 text-sky-500" /> New / Provisional (first purchase under 30 days ago)
           </h2>
           <Card className="border-sky-500/30 shadow-sm">
             <CardContent className="p-0 overflow-x-auto">
@@ -332,13 +338,12 @@ export default function DeadItems() {
       {!error && !loading && (data?.review?.length ?? 0) > 0 && (
         <div className="space-y-2" data-testid="review-section">
           <h2 className="text-base font-semibold flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-amber-500" /> Needs History Review
+            <AlertTriangle className="h-4 w-4 text-amber-500" /> Needs Review
           </h2>
           <p className="text-xs text-muted-foreground">
-            These items have incomplete or ambiguous history (no purchase anchor, movements before first purchase,
-            negative baseline, negative reconstructed stock, or unresolved source overlap). Their opening balance and
-            movement totals are shown for reconciliation, but no reliable months-to-clear can be calculated, so they
-            are excluded from the dead ranking.
+            These items hit a negative daily closing balance inside the window (sales recorded ahead of
+            stock on some day), so no reliable months-to-clear can be calculated. They are excluded from
+            the dead ranking until the data is reconciled.
           </p>
           <Card className="border-amber-500/30 shadow-sm">
             <CardContent className="p-0 overflow-x-auto">
@@ -376,7 +381,7 @@ export default function DeadItems() {
                   <div>
                     <p className="text-sm font-medium">{r.item_name}</p>
                     <p className="text-[11px] text-muted-foreground">
-                      analytical stock {r.stock_net_kg?.toFixed(3)} kg · removed by {r.removed_by || '—'}
+                      current stock {r.stock_net_kg?.toFixed(3)} kg · removed by {r.removed_by || '—'}
                     </p>
                   </div>
                   <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => restoreItem(r.item_name)} data-testid={`restore-dead-${r.item_name}`}>
