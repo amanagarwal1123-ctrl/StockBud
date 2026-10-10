@@ -120,9 +120,10 @@ async def heavy_queue_slot():
         _heavy_gate.release()
 
 
-# ---- Stock-to-sale baseline (stock as on 21/12/2022, Sheet2 of FSTOCK22.xlsx) ----
+# ---- Stock-to-sale baseline (closing stock as on 31/12/2023, STOCK 31-12-2023.xlsx) ----
 # Used ONLY for stock:sale ratio reconstruction; no other stock logic touched.
-STOCK_SALE_BASELINE_DATE = '2022-12-21'
+# Complete sale/purchase/issue/receive transaction history exists from 01/01/2024.
+STOCK_SALE_BASELINE_DATE = '2023-12-31'
 _STOCK_ADD_T = ("purchase", "purchase_return", "receive")
 _STOCK_SUB_T = ("sale", "sale_return", "issue")
 
@@ -276,16 +277,27 @@ async def create_upload_indexes():
     # Performance index for party/date queries
     await db.transactions.create_index([("date", 1), ("type", 1), ("party_name", 1)])
 
-    # Seed the Dec'22 stock-to-sale baseline (used ONLY for stock:sale ratios)
+    # Seed/refresh the stock-to-sale baseline (used ONLY for stock:sale ratios).
+    # Version-aware: when the bundled baseline file changes (new baseline_date),
+    # the collection is wiped and re-seeded automatically (incl. production).
     try:
-        if await db.stock_sale_baseline.count_documents({}) == 0:
-            bl_path = ROOT_DIR / 'data' / 'stock_sale_baseline_2022.json'
-            if bl_path.exists():
-                payload = json.loads(bl_path.read_text())
+        bl_path = ROOT_DIR / 'data' / 'stock_sale_baseline_2023.json'
+        if bl_path.exists():
+            payload = json.loads(bl_path.read_text())
+            bl_date = payload.get('baseline_date')
+            meta = await db.stock_sale_baseline_meta.find_one({'key': 'meta'})
+            count = await db.stock_sale_baseline.count_documents({})
+            if count == 0 or not meta or meta.get('baseline_date') != bl_date:
                 docs = list(payload.get('items', []))
                 if docs:
+                    await db.stock_sale_baseline.delete_many({})
                     await db.stock_sale_baseline.insert_many(docs)
-                    logger.info(f"Seeded stock_sale_baseline: {len(docs)} items as on {payload.get('baseline_date')}")
+                    await db.stock_sale_baseline_meta.update_one(
+                        {'key': 'meta'},
+                        {'$set': {'key': 'meta', 'baseline_date': bl_date,
+                                  'items': len(docs), 'source': payload.get('source')}},
+                        upsert=True)
+                    logger.info(f"Seeded stock_sale_baseline: {len(docs)} items as on {bl_date}")
     except Exception as e:
         logger.error(f"stock_sale_baseline seed failed: {e}")
 
@@ -4396,10 +4408,12 @@ async def get_purchase_ledger(current_user: dict = Depends(get_current_user)):
 
 @api_router.get("/mappings/unmapped")
 async def get_unmapped_items(current_user: dict = Depends(get_current_user)):
-    """Get all unmapped items from transactions AND historical_transactions"""
+    """Get all unmapped items from transactions, historical_transactions AND the stock-to-sale baseline"""
     # Get item names from both collections
     trans_names = set(await db.transactions.distinct('item_name')) | set(
         await db.historical_transactions.distinct('item_name'))
+    # Baseline items (closing stock 31/12/2023) must also be mappable
+    trans_names |= set(await db.stock_sale_baseline.distinct('item_name'))
     
     # Get all master item names
     master = await db.master_items.find({}, {"_id": 0, "item_name": 1}).to_list(None)
