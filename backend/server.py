@@ -137,28 +137,45 @@ async def _live_txn_years(y_from: int, y_to: int):
     return years
 
 
+def _stock_sale_windows(upto_date: str):
+    """Per-quarter windows (each within one year) from the baseline to upto_date.
+    Keeps each Mongo aggregation command small so large prod datasets don't time out.
+    Returns (year, start, end, start_exclusive) tuples."""
+    wins = []
+    y0 = int(STOCK_SALE_BASELINE_DATE[:4])
+    y_end = int(upto_date[:4])
+    wins.append((str(y0), STOCK_SALE_BASELINE_DATE, min(f"{y0}-12-31", upto_date), True))
+    for y in range(y0 + 1, y_end + 1):
+        for qs, qe in (("01-01", "03-31"), ("04-01", "06-30"), ("07-01", "09-30"), ("10-01", "12-31")):
+            a = f"{y}-{qs}"
+            if a > upto_date:
+                break
+            wins.append((str(y), a, min(f"{y}-{qe}", upto_date), False))
+    return wins
+
+
 async def _stock_deltas_since_baseline(upto_date: str):
     """Signed net-weight delta (grams) per raw item name from the Dec'22 baseline
-    to upto_date. historical_transactions only fills years absent from transactions."""
-    pipe = [
-        {"$match": {"date": {"$gt": STOCK_SALE_BASELINE_DATE + ' 23:59:59',
-                             "$lte": upto_date + " 23:59:59"},
-                    "type": {"$in": list(_STOCK_ADD_T + _STOCK_SUB_T)}}},
-        {"$group": {"_id": {"i": "$item_name", "t": "$type", "y": {"$substr": ["$date", 0, 4]}},
-                    "w": {"$sum": "$net_wt"}}},
-    ]
+    to upto_date. historical_transactions only fills years absent from transactions.
+    Chunked per quarter to avoid Mongo command timeouts on large datasets."""
     live_years = await _live_txn_years(int(STOCK_SALE_BASELINE_DATE[:4]), int(upto_date[:4]))
     deltas = {}
-    async for d in db.transactions.aggregate(pipe):
-        raw = d["_id"]["i"] or ''
-        sign = 1 if d["_id"]["t"] in _STOCK_ADD_T else -1
-        deltas[raw] = deltas.get(raw, 0.0) + sign * (d["w"] or 0)
-    async for d in db.historical_transactions.aggregate(pipe):
-        if d["_id"]["y"] in live_years:
-            continue
-        raw = d["_id"]["i"] or ''
-        sign = 1 if d["_id"]["t"] in _STOCK_ADD_T else -1
-        deltas[raw] = deltas.get(raw, 0.0) + sign * (d["w"] or 0)
+    for y, a, b, excl in _stock_sale_windows(upto_date):
+        date_match = {"$gt": a + ' 23:59:59'} if excl else {"$gte": a}
+        date_match["$lte"] = b + " 23:59:59"
+        pipe = [
+            {"$match": {"date": date_match, "type": {"$in": list(_STOCK_ADD_T + _STOCK_SUB_T)}}},
+            {"$group": {"_id": {"i": "$item_name", "t": "$type"}, "w": {"$sum": "$net_wt"}}},
+        ]
+        coll = db.transactions if y in live_years else db.historical_transactions
+        try:
+            async for d in coll.aggregate(pipe, allowDiskUse=True, maxTimeMS=60000):
+                raw = d["_id"]["i"] or ''
+                sign = 1 if d["_id"]["t"] in _STOCK_ADD_T else -1
+                deltas[raw] = deltas.get(raw, 0.0) + sign * (d["w"] or 0)
+        except Exception as e:
+            logging.getLogger(__name__).error(f"stock delta window {a}..{b} failed: {e}")
+            raise HTTPException(status_code=503, detail="Stock aggregation timed out — please retry in a moment.")
     return deltas
 
 
@@ -5370,38 +5387,39 @@ async def get_dead_items(current_user: dict = Depends(get_current_user), _slot=D
             d['net_g'] += si.get('net_wt', 0) or 0
             d['gr_g'] += si.get('gr_wt', 0) or 0
 
-        # All-years sales since the baseline (historical fills missing years only)
-        pipe = [
-            {"$match": {"date": {"$gt": STOCK_SALE_BASELINE_DATE + ' 23:59:59'},
-                        "type": {"$in": ["sale", "sale_return"]}}},
-            {"$group": {"_id": {"i": "$item_name", "t": "$type", "y": {"$substr": ["$date", 0, 4]}},
-                        "w": {"$sum": {"$abs": {"$ifNull": ["$net_wt", 0]}}},
-                        "last": {"$max": "$date"}}},
-        ]
+        # All-years sales since the baseline, chunked per quarter so large prod
+        # datasets don't hit Mongo command timeouts (historical fills missing years)
         today_s = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
         live_years = await _live_txn_years(int(STOCK_SALE_BASELINE_DATE[:4]), int(today_s[:4]))
         sold_by_leader = {}
         last_sale = {}
-
-        async def _consume(coll, skip_years):
-            async for d in coll.aggregate(pipe):
-                if skip_years is not None and d["_id"]["y"] in skip_years:
-                    continue
-                raw = d["_id"]["i"] or ''
-                if not raw or raw.isdigit():
-                    continue
-                ldr = _resolve(raw)
-                if not ldr or ldr in EXCLUDED:
-                    continue
-                sign = -1 if d["_id"]["t"] == 'sale_return' else 1
-                sold_by_leader[ldr] = sold_by_leader.get(ldr, 0.0) + sign * (d["w"] or 0)
-                if d["_id"]["t"] == 'sale':
-                    dt10 = (d.get("last") or '')[:10]
-                    if dt10 and dt10 > last_sale.get(ldr, ''):
-                        last_sale[ldr] = dt10
-
-        await _consume(db.transactions, None)
-        await _consume(db.historical_transactions, live_years)
+        for y, a, b, excl in _stock_sale_windows(today_s):
+            date_match = {"$gt": a + ' 23:59:59'} if excl else {"$gte": a}
+            date_match["$lte"] = b + " 23:59:59"
+            pipe = [
+                {"$match": {"date": date_match, "type": {"$in": ["sale", "sale_return"]}}},
+                {"$group": {"_id": {"i": "$item_name", "t": "$type"},
+                            "w": {"$sum": {"$abs": {"$ifNull": ["$net_wt", 0]}}},
+                            "last": {"$max": "$date"}}},
+            ]
+            coll = db.transactions if y in live_years else db.historical_transactions
+            try:
+                async for d in coll.aggregate(pipe, allowDiskUse=True, maxTimeMS=60000):
+                    raw = d["_id"]["i"] or ''
+                    if not raw or raw.isdigit():
+                        continue
+                    ldr = _resolve(raw)
+                    if not ldr or ldr in EXCLUDED:
+                        continue
+                    sign = -1 if d["_id"]["t"] == 'sale_return' else 1
+                    sold_by_leader[ldr] = sold_by_leader.get(ldr, 0.0) + sign * (d["w"] or 0)
+                    if d["_id"]["t"] == 'sale':
+                        dt10 = (d.get("last") or '')[:10]
+                        if dt10 and dt10 > last_sale.get(ldr, ''):
+                            last_sale[ldr] = dt10
+            except Exception as e:
+                logging.getLogger(__name__).error(f"dead-items sales window {a}..{b} failed: {e}")
+                raise HTTPException(status_code=503, detail="Sales aggregation timed out — please retry in a moment.")
 
         months_span = max((datetime.strptime(today_s, '%Y-%m-%d') -
                            datetime.strptime(STOCK_SALE_BASELINE_DATE, '%Y-%m-%d')).days / 30.44, 1.0)
