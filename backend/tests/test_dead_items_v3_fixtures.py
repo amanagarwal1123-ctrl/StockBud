@@ -87,15 +87,39 @@ MAIN = [
 
     _t('DiV3 Mixed Item', 'purchase', '2026-01-01', 5000),
     _t('DIV3  MIXED ITEM ', 'sale', '2026-01-15', 1000),
+
+    # T1 baseline item: opening 10 kg + p5 - s4 + sr1 = 12 kg; pre-2024 row must be ignored
+    _t('DIV4-BASE', 'purchase', '2023-06-01', 7000),
+    _t('DIV4-BASE', 'purchase', '2024-02-01', 5000),
+    _t('DIV4-BASE', 'sale', '2024-03-01', 4000),
+    _t('DIV4-BASE', 'sale_return', '2024-04-01', 1000),
+    # T1b negative consolidated baseline stays in review (not forced to zero)
+    _t('DIV4-NEG-BASE', 'purchase', '2024-05-01', 1000),
+    # T2 ten-day-old item: p10 s8 -> stock 2, avg monthly 24.352, score ~0.082, provisional
+    _t('DIV4-TENDAY', 'purchase', '2026-02-19', 10000),
+    _t('DIV4-TENDAY', 'sale', '2026-02-20', 8000),
+    # T3 purchase duplicated across both collections (same line identity+weight), sale once
+    _t('DIV4-DEDUP', 'purchase', '2026-01-05', 20000, refno='D1', party='PD'),
+    _t('DIV4-DEDUP', 'sale', '2026-01-10', 5000),
+    # T3b separate legitimate historical movement preserved
+    _t('DIV4-HIST-KEEP', 'sale', '2026-01-20', 1000),
 ]
 
 HIST = [
     _t('DIV3-CROSS-SRC', 'sale', '2026-01-20', 2000, refno='H1', party='PB'),
     _t('DIV3-DUP-DISTINCT', 'purchase', '2026-01-05', 7000, refno='R2', party='P2'),
     _t('DIV3-DUP-BLANK', 'purchase', '2026-01-05', 5000),
+    _t('DIV4-DEDUP', 'purchase', '2026-01-05', 20000, refno='D1', party='PD'),
+    _t('DIV4-HIST-KEEP', 'purchase', '2026-01-03', 3000, refno='K1', party='PK'),
 ]
 
 MAPPINGS = [{'transaction_name': 'DIV3 ALIAS', 'master_name': 'DIV3-LEADER'}]
+
+# SIGNED grams, whitespace variant exercises normalized baseline consolidation
+TEST_BASELINE = [
+    {'item_name': ' div4-base ', 'net_wt': 10000.0},
+    {'item_name': 'DIV4-NEG-BASE', 'net_wt': -2000.0},
+]
 
 
 def run(coro):
@@ -118,7 +142,9 @@ def results():
         await tdb.historical_transactions.insert_many([dict(d) for d in HIST])
         await tdb.item_mappings.insert_many([dict(m) for m in MAPPINGS])
         orig = server.db
+        orig_bl = server._load_dead_baseline
         server.db = tdb
+        server._load_dead_baseline = lambda: TEST_BASELINE
         try:
             server._dead_cache.invalidate()
             data = await server._compute_dead_items(AS_OF)
@@ -128,6 +154,7 @@ def results():
             ddata, _di, _dr, _drm, coverage = await server._dead_items_data(None)
         finally:
             server.db = orig
+            server._load_dead_baseline = orig_bl
             server._dead_cache.invalidate()
         client.close()
         return {'data': data, 'items': items, 'review': review,
@@ -229,7 +256,7 @@ def test_f7b_tiny_review_row_stays_visible(results):
 
 
 def test_f8_blank_date_ignored_history_kept(results):
-    assert results['data']['history_start'] == '2025-10-01'
+    assert results['data']['history_start'] == '2023-06-01'
     assert _row(_all(results), 'DIV3-BAD-DATE') is None
 
 
@@ -259,15 +286,16 @@ def test_f11_unmapped_case_variants_merge(results):
 
 def test_summary_partitions_provisional_first(results):
     s = results['summary']
-    # provisional: NEW-UNSOLD + RETURNED-NEW
+    # provisional: NEW-UNSOLD + RETURNED-NEW (TENDAY scores 0.082 < 3 -> healthy)
     assert s['provisional_dead'] == 2
     # no_net (non-provisional never-sold): ZERO-ANCHOR, DUP-DISTINCT, ZERO-PRE
     assert s['no_net_sales'] == 3
-    # confirmed (score >= 3): CROSS-SRC, LEADER, ZERO-SALE, NORMAL-DEAD, MIXED
-    assert s['confirmed_dead'] == 5
-    assert s['dead_total'] == 8, 'provisional items must not inflate dead_total'
-    # review: NEG-INTER, DUP-BLANK, REVIEW-TINY
-    assert s['needs_review'] == 3
+    # confirmed (score >= 3): CROSS-SRC, LEADER, ZERO-SALE, NORMAL-DEAD, MIXED,
+    # DIV4-BASE, DIV4-DEDUP, DIV4-HIST-KEEP
+    assert s['confirmed_dead'] == 8
+    assert s['dead_total'] == 11, 'provisional items must not inflate dead_total'
+    # review: NEG-INTER, DUP-BLANK, REVIEW-TINY, DIV4-NEG-BASE
+    assert s['needs_review'] == 4
 
 
 def test_default_as_of_uses_coverage_cutoff(results):
@@ -278,3 +306,63 @@ def test_default_as_of_uses_coverage_cutoff(results):
     assert cov['verified'] is False
     assert cov['source'] == 'last_transaction_fallback'
     assert cov['explicit_as_of'] is False
+
+
+# --- Codex round-2 fixtures: baseline opening + source reconciliation ---
+
+def test_t1_baseline_opening_and_window(results):
+    r = _row(results['items'], 'DIV4-BASE')
+    assert r is not None
+    # opening 10 + p5 - s4 + sr1 = 12; pre-2024 purchase (7 kg) must NOT be counted
+    assert abs(r['stock_net_kg'] - 12.0) < 1e-9
+    assert abs(r['total_net_sales_kg'] - 3.0) < 1e-9
+    assert abs(r['opening_kg'] - 10.0) < 1e-9
+    assert r['window_start'] == '2024-01-01'
+    assert r['window_basis'] == 'baseline_2023'
+    days = (datetime(2026, 2, 28) - datetime(2024, 1, 1)).days + 1
+    assert r['observed_days'] == days
+    assert r['review_reasons'] == []
+    assert abs(r['movements']['purchases_kg'] - 5.0) < 1e-9
+    assert abs(r['movements']['sales_kg'] - 4.0) < 1e-9
+    assert abs(r['movements']['sale_returns_kg'] - 1.0) < 1e-9
+
+
+def test_t1b_negative_baseline_stays_in_review(results):
+    r = _row(results['review'], 'DIV4-NEG-BASE')
+    assert r is not None, 'negative consolidated baseline must be Needs History Review'
+    assert 'negative_baseline' in r['review_reasons']
+    assert r['months_to_clear'] is None, 'review rows expose no usable score'
+    assert abs(r['opening_kg'] - (-2.0)) < 1e-9
+    assert abs(r['stock_net_kg'] - (-1.0)) < 1e-9
+
+
+def test_t2_ten_day_item_provisional_with_score(results):
+    r = _row(results['items'], 'DIV4-TENDAY')
+    assert r is not None
+    assert abs(r['stock_net_kg'] - 2.0) < 1e-9
+    assert r['observed_days'] == 10 and r['provisional'] is True
+    assert abs(r['avg_monthly_sale_kg'] - 24.352) < 0.001
+    assert abs(r['months_to_clear'] - 0.082) < 0.001
+
+
+def test_t3_confirmed_duplicate_counted_once(results):
+    r = _row(results['items'], 'DIV4-DEDUP')
+    assert r is not None, 'confirmed duplicate must be reconciled, not flagged to review'
+    # purchase 20 duplicated across both collections -> once; sale 5 once
+    assert abs(r['stock_net_kg'] - 15.0) < 1e-9
+    assert abs(r['total_net_sales_kg'] - 5.0) < 1e-9
+    assert r['review_reasons'] == []
+
+
+def test_t3b_legitimate_historical_movement_preserved(results):
+    r = _row(results['items'], 'DIV4-HIST-KEEP')
+    assert r is not None
+    assert abs(r['stock_net_kg'] - 2.0) < 1e-9
+    assert abs(r['total_net_sales_kg'] - 1.0) < 1e-9
+    assert r['first_purchase'] == '2026-01-03'
+    assert r['review_reasons'] == []
+
+
+def test_review_rows_have_no_usable_score(results):
+    for r in results['review']:
+        assert r['months_to_clear'] is None, f"{r['item_name']} review row leaked a score"

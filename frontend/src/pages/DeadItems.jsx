@@ -30,6 +30,8 @@ const COLS = [
 ];
 
 const StatusBadge = ({ r }) => {
+  if (r.review_reasons?.length > 0 && r.months_to_clear === null)
+    return <span className="text-[11px] text-amber-600 font-medium whitespace-nowrap">Cannot calculate reliably</span>;
   if (r.status === 'never_sold') return <Badge variant="destructive" className="text-[10px]">Never sold</Badge>;
   if (r.status === 'no_positive_net_sales') return <Badge variant="destructive" className="text-[10px] bg-orange-600">No positive net sales</Badge>;
   return <span className="font-bold tabular-nums">{r.months_to_clear?.toFixed(3)}</span>;
@@ -133,12 +135,22 @@ export default function DeadItems() {
       Item: r.item_name,
       Stamp: r.stamp,
       'Merged Names': (r.merged_names || []).join(', '),
+      'Opening (kg)': n3(r.opening_kg),
+      'Window Start': r.window_start || '',
+      'Window Basis': r.window_basis || '',
       'Stock (kg)': n3(r.stock_net_kg),
       'First Purchase': r.first_purchase || '',
       'Observed Days': r.observed_days ?? '',
+      '+Purchases (kg)': n3(r.movements?.purchases_kg),
+      '-Sales (kg)': n3(r.movements?.sales_kg),
+      '+Sale Returns (kg)': n3(r.movements?.sale_returns_kg),
+      '-Purchase Returns (kg)': n3(r.movements?.purchase_returns_kg),
+      '+Receipts (kg)': n3(r.movements?.receipts_kg),
+      '-Issues (kg)': n3(r.movements?.issues_kg),
       'Net Sales (kg)': n3(r.total_net_sales_kg),
       'Avg Monthly (kg)': n3(r.avg_monthly_sale_kg),
-      'Months to Clear': n3(r.months_to_clear),
+      'Months to Clear': (r.review_reasons?.length > 0 && r.months_to_clear === null)
+        ? 'Cannot calculate reliably' : n3(r.months_to_clear),
       'Last 90d (kg)': n3(r.sales_90d_kg),
       'Last Sale': r.last_sale_date || '',
       Status: r.status,
@@ -169,10 +181,15 @@ export default function DeadItems() {
         {r.merged_names?.length > 0 && (
           <div className="text-[11px] text-muted-foreground truncate max-w-[240px]">incl. {r.merged_names.join(', ')}</div>
         )}
+        {r.window_basis === 'baseline_2023' && (
+          <div className="text-[11px] text-muted-foreground" data-testid={`baseline-note-${r.item_name}`}>
+            opening {r.opening_kg?.toFixed(3)} kg · baseline 31/12/2023
+          </div>
+        )}
         {extra}
       </td>
       <td className="px-3 py-2 text-right font-semibold tabular-nums">{r.stock_net_kg.toFixed(3)}</td>
-      <td className="px-3 py-2 text-right text-xs whitespace-nowrap">{fmtDate(r.first_purchase)}</td>
+      <td className="px-3 py-2 text-right text-xs whitespace-nowrap">{fmtDate(r.window_start || r.first_purchase)}</td>
       <td className="px-3 py-2 text-right tabular-nums">{r.observed_days ?? '—'}</td>
       <td className="px-3 py-2 text-right tabular-nums">{r.total_net_sales_kg.toFixed(3)}</td>
       <td className="px-3 py-2 text-right tabular-nums">{r.avg_monthly_sale_kg === null ? '—' : r.avg_monthly_sale_kg.toFixed(3)}</td>
@@ -319,7 +336,9 @@ export default function DeadItems() {
           </h2>
           <p className="text-xs text-muted-foreground">
             These items have incomplete or ambiguous history (no purchase anchor, movements before first purchase,
-            negative reconstructed stock, or overlapping sources). Their numbers are shown but excluded from the dead ranking.
+            negative baseline, negative reconstructed stock, or unresolved source overlap). Their opening balance and
+            movement totals are shown for reconciliation, but no reliable months-to-clear can be calculated, so they
+            are excluded from the dead ranking.
           </p>
           <Card className="border-amber-500/30 shadow-sm">
             <CardContent className="p-0 overflow-x-auto">

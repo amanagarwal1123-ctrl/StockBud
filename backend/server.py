@@ -11,7 +11,7 @@ from io import BytesIO
 import json
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from collections import defaultdict
+from collections import defaultdict, Counter
 import re
 import gc
 import math
@@ -5405,13 +5405,25 @@ def _quarter_windows(d_from: str, d_to: str):
 
 _DEAD_IN_T = ("purchase", "sale_return", "receive")
 _DEAD_OUT_T = ("sale", "purchase_return", "issue")
-_DEAD_METHOD = "First recorded purchase / zero-opening estimate"
+_DEAD_METHOD = "31/12/2023 baseline opening + reconciled movements (zero-opening for new items)"
 _DEAD_DATE_LO = "1900-01-01"
 _DEAD_DATE_HI = "2200-12-31 23:59:59"
 _DEAD_EPS_G = 0.001
+_DEAD_BASELINE_WINDOW_START = "2024-01-01"
 # abs(net_wt) coerced to double; malformed values count as 0 (never as events)
 _DEAD_ABS_W = {"$abs": {"$convert": {"input": "$net_wt", "to": "double",
                                      "onError": 0.0, "onNull": 0.0}}}
+
+
+def _load_dead_baseline():
+    """Raw 31/12/2023 closing-stock entries (grams, SIGNED). Monkeypatched in tests."""
+    try:
+        with open(ROOT_DIR / 'data' / 'stock_sale_baseline_2023.json') as f:
+            doc = json.load(f)
+        return doc.get('items') or []
+    except Exception as e:
+        logging.getLogger(__name__).error(f"dead-items baseline load failed: {e}")
+        return []
 
 
 def _dead_norm(name):
@@ -5421,10 +5433,15 @@ def _dead_norm(name):
 
 async def _compute_dead_items(as_of: str):
     """Analytical slow-stock estimate (Dead Items ONLY). Per consolidated item:
-    opening = ZERO immediately before its first recorded positive purchase;
-    remaining stock = purchases + sale returns + receipts - sales - purchase returns - issues;
+    opening = SIGNED 31/12/2023 baseline when present (movements counted from
+    01/01/2024, observation window starts 01/01/2024); otherwise ZERO immediately
+    before the item's first recorded positive purchase (own window).
+    Live + historical movements are reconciled into ONE dataset: confirmed
+    duplicate lines (same item/type/day + matching refno|party identity + weight
+    in both collections) count once. Same item/type/day alone is NOT proof.
+    stock = opening + purchases + sale returns + receipts - sales - purchase returns - issues;
     months-to-clear = stock / (net sales / (observed_days / 30.44)).
-    Does NOT read operational stock, physical baselines or stock_sale_baseline."""
+    Does NOT touch operational stock, physical baselines or shared stock logic."""
     EXCLUDED = {_dead_norm(x) for x in (
         "SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA")}
     all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
@@ -5461,6 +5478,22 @@ async def _compute_dead_items(as_of: str):
             if m != ldr:
                 variants.setdefault(_dead_norm(ldr), set()).add(m)
 
+    # 31/12/2023 baseline opening — consolidated through mappings/groups,
+    # preserving SIGNED net weights (NO absolute values on baseline quantities)
+    base_g = {}
+    for b in _load_dead_baseline():
+        name = b.get('item_name') or ''
+        if not name or str(name).isdigit():
+            continue
+        bkey = _resolve(name)
+        if not bkey or bkey in EXCLUDED:
+            continue
+        try:
+            base_g[bkey] = base_g.get(bkey, 0.0) + float(b.get('net_wt') or 0.0)
+        except (TypeError, ValueError):
+            continue
+    base_g = {k: v for k, v in base_g.items() if abs(v) > _DEAD_EPS_G}
+
     ALL_T = list(_DEAD_IN_T + _DEAD_OUT_T)
     date_ok = {"$gte": _DEAD_DATE_LO, "$lte": _DEAD_DATE_HI}
     starts, last_dates = [], []
@@ -5486,17 +5519,23 @@ async def _compute_dead_items(as_of: str):
         if s is None:
             s = acc[key] = {'w': {t: 0.0 for t in ALL_T}, 'first_purchase': None,
                             'first_move': None, 'last_sale': None, 'sale_events': 0,
-                            'bal': 0.0, 'min_bal': 0.0, 'ambiguous': False}
+                            'bal': 0.0, 'min_bal': 0.0, 'ambiguous': False, 'sales90': 0.0}
         return s
+
+    # Baseline items exist even without any 2024+ movements (their opening IS the stock)
+    for bkey, g in base_g.items():
+        s = _acc(bkey)
+        s['bal'] = s['min_bal'] = g
 
     def _blank(i):
         return i.strip('|').strip() == ''
 
+    d90_from = (datetime.strptime(as_of, '%Y-%m-%d') - timedelta(days=89)).strftime('%Y-%m-%d')
+
     # Per item/type/DAY so zero-weight rows can't invent events and daily
-    # balances can be replayed. Daily deltas and identity sets live only for the
-    # current quarter window (a given day always falls in exactly one window),
-    # keeping memory bounded at production scale (>500k docs): balances fold
-    # into running bal/min_bal at each window end, identity sets are discarded.
+    # balances can be replayed. Line identities (refno|party + weight) reconcile
+    # live vs historical per window: confirmed duplicates are counted once.
+    # Per-window structures are discarded at window end (memory bounded at scale).
     for wa, wb in _quarter_windows(hist_start, min(as_of, last_txn_date) if last_txn_date else as_of):
         pipe = [
             {"$match": {"date": {"$gte": wa, "$lte": min(wb, as_of) + " 23:59:59"},
@@ -5505,15 +5544,16 @@ async def _compute_dead_items(as_of: str):
             {"$group": {"_id": {"i": "$item_name", "t": "$type", "d": {"$substr": ["$date", 0, 10]}},
                         "w": {"$sum": _DEAD_ABS_W},
                         "n": {"$sum": {"$cond": [{"$gt": [_DEAD_ABS_W, 0]}, 1, 0]}},
-                        "ids": {"$addToSet": {"$cond": [
+                        "lines": {"$push": {"$cond": [
                             {"$gt": [_DEAD_ABS_W, 0]},
-                            {"$concat": [{"$toString": {"$ifNull": ["$refno", ""]}}, "|",
-                                         {"$toString": {"$ifNull": ["$party_name", ""]}}]},
+                            {"i": {"$concat": [{"$toString": {"$ifNull": ["$refno", ""]}}, "|",
+                                               {"$toString": {"$ifNull": ["$party_name", ""]}}]},
+                             "w": _DEAD_ABS_W},
                             None]}}}},
         ]
         wdaily = {}  # key -> {day: signed delta}, this window only
-        whids = {}   # key -> {(type, day): historical identity set}, this window only
-        # historical first so main-collection rows can be identity-checked against it
+        whids = {}   # key -> {(type, day): Counter of (identity, weight) lines} from historical
+        # historical first so main-collection lines can be reconciled against it
         for coll, tag in ((db.historical_transactions, 'h'), (db.transactions, 't')):
             try:
                 async for d in coll.aggregate(pipe, allowDiskUse=True, maxTimeMS=60000):
@@ -5525,29 +5565,46 @@ async def _compute_dead_items(as_of: str):
                         continue
                     t = d["_id"]["t"]
                     day = d["_id"]["d"]
+                    if key in base_g and day < _DEAD_BASELINE_WINDOW_START:
+                        continue  # already inside the 31/12/2023 baseline
                     w = d["w"] or 0.0
+                    n = d.get("n") or 0
                     if w <= 0:
                         continue
+                    lines = Counter((l["i"], round(l["w"], 3))
+                                    for l in (d.get("lines") or []) if l)
                     s = _acc(key)
+                    if tag == 'h':
+                        hk = whids.setdefault(key, {})
+                        hk[(t, day)] = hk.get((t, day), Counter()) + lines
+                    else:
+                        hl = whids.get(key, {}).get((t, day))
+                        if hl:
+                            # confirmed duplicates: same line identity AND weight in
+                            # both sources -> count once (historical copy stands)
+                            for lk, cnt in lines.items():
+                                if not _blank(lk[0]) and hl.get(lk):
+                                    k = min(cnt, hl[lk])
+                                    n -= k
+                                    w -= lk[1] * k
+                            # unprovable same-day overlap (no reliable line identity)
+                            if not s['ambiguous'] and (any(_blank(lk[0]) for lk in lines)
+                                                       or any(_blank(lk[0]) for lk in hl)):
+                                s['ambiguous'] = True
+                            if w <= _DEAD_EPS_G:
+                                continue  # fully duplicated group
                     s['w'][t] += w
                     kd = wdaily.setdefault(key, {})
                     kd[day] = kd.get(day, 0.0) + (w if t in _DEAD_IN_T else -w)
-                    ids = {i for i in (d.get("ids") or []) if i is not None}
-                    if tag == 'h':
-                        whids.setdefault(key, {}).setdefault((t, day), set()).update(ids)
-                    elif not s['ambiguous']:
-                        hids = whids.get(key, {}).get((t, day))
-                        # possible overlap only on same item+type+day in BOTH sources
-                        # AND identities match or are unavailable
-                        if hids is not None and ((hids & ids) or any(map(_blank, hids | ids))):
-                            s['ambiguous'] = True
+                    if day >= d90_from and t in ('sale', 'sale_return'):
+                        s['sales90'] += w if t == 'sale' else -w
                     if t == 'purchase':
                         if s['first_purchase'] is None or day < s['first_purchase']:
                             s['first_purchase'] = day
                     elif s['first_move'] is None or day < s['first_move']:
                         s['first_move'] = day
                     if t == 'sale':
-                        s['sale_events'] += d.get("n") or 0
+                        s['sale_events'] += max(int(n), 0)
                         if day > (s['last_sale'] or ''):
                             s['last_sale'] = day
                     if str(raw).strip() != canon.get(key):
@@ -5565,32 +5622,13 @@ async def _compute_dead_items(as_of: str):
                     mn = bal
             s['bal'], s['min_bal'] = bal, mn
 
-    # Net sales in the last 90 days ending at as_of (recent-stoppage signal)
-    d90_from = (datetime.strptime(as_of, '%Y-%m-%d') - timedelta(days=89)).strftime('%Y-%m-%d')
-    sales90 = {}
-    pipe90 = [
-        {"$match": {"date": {"$gte": d90_from, "$lte": as_of + " 23:59:59"},
-                    "type": {"$in": ["sale", "sale_return"]},
-                    "net_wt": {"$nin": [0, None]}}},
-        {"$group": {"_id": {"i": "$item_name", "t": "$type"},
-                    "w": {"$sum": _DEAD_ABS_W}}},
-    ]
-    for coll in (db.transactions, db.historical_transactions):
-        async for d in coll.aggregate(pipe90, allowDiskUse=True, maxTimeMS=60000):
-            raw = d["_id"]["i"] or ''
-            if not raw or str(raw).isdigit():
-                continue
-            key = _resolve(raw)
-            if not key or key in EXCLUDED:
-                continue
-            sign = -1 if d["_id"]["t"] == 'sale_return' else 1
-            sales90[key] = sales90.get(key, 0.0) + sign * (d["w"] or 0)
-
     as_of_dt = datetime.strptime(as_of, '%Y-%m-%d')
     rows = []
     for key, s in acc.items():
         w = s['w']
-        stock_g = (w['purchase'] + w['sale_return'] + w['receive']) - \
+        opening_g = base_g.get(key, 0.0)
+        has_baseline = key in base_g
+        stock_g = opening_g + (w['purchase'] + w['sale_return'] + w['receive']) - \
                   (w['sale'] + w['purchase_return'] + w['issue'])
         net_sales_g = w['sale'] - w['sale_return']
 
@@ -5599,7 +5637,10 @@ async def _compute_dead_items(as_of: str):
         ambiguous = s['ambiguous']
 
         review = []
-        if s['first_purchase'] is None:
+        if has_baseline:
+            if opening_g < 0:
+                review.append('negative_baseline')
+        elif s['first_purchase'] is None:
             review.append('no_purchase_anchor')
         elif s['first_move'] and s['first_move'] < s['first_purchase']:
             review.append('movement_before_first_purchase')
@@ -5610,10 +5651,16 @@ async def _compute_dead_items(as_of: str):
         if ambiguous:
             review.append('ambiguous_source_overlap')
 
+        if has_baseline:
+            window_start = _DEAD_BASELINE_WINDOW_START
+            basis = 'baseline_2023'
+        else:
+            window_start = s['first_purchase']
+            basis = 'first_purchase'
         observed_days = None
         months = None
-        if s['first_purchase']:
-            observed_days = (as_of_dt - datetime.strptime(s['first_purchase'], '%Y-%m-%d')).days + 1
+        if window_start:
+            observed_days = (as_of_dt - datetime.strptime(window_start, '%Y-%m-%d')).days + 1
             if observed_days > 0:
                 months = observed_days / 30.44
 
@@ -5629,6 +5676,8 @@ async def _compute_dead_items(as_of: str):
         else:
             status = 'ok'
             score = None
+        if review:
+            score = None  # unresolved history: no usable score ("Cannot calculate reliably")
 
         disp = canon.get(key, key)
         rows.append({
@@ -5637,13 +5686,24 @@ async def _compute_dead_items(as_of: str):
             'merged_names': sorted(v for v in variants.get(key, set())
                                    if _dead_norm(v) != _dead_norm(disp))[:10],
             'stock_net_kg': stock_g / 1000.0,
+            'opening_kg': opening_g / 1000.0,
+            'window_start': window_start,
+            'window_basis': basis,
+            'movements': {
+                'purchases_kg': w['purchase'] / 1000.0,
+                'sales_kg': w['sale'] / 1000.0,
+                'sale_returns_kg': w['sale_return'] / 1000.0,
+                'purchase_returns_kg': w['purchase_return'] / 1000.0,
+                'receipts_kg': w['receive'] / 1000.0,
+                'issues_kg': w['issue'] / 1000.0,
+            },
             'first_purchase': s['first_purchase'],
             'observed_days': observed_days,
             'total_net_sales_kg': net_sales_g / 1000.0,
             'avg_monthly_sale_kg': (net_sales_g / months) / 1000.0 if (months and net_sales_g > 0) else None,
             'months_to_clear': score,
             'last_sale_date': s['last_sale'],
-            'sales_90d_kg': sales90.get(key, 0.0) / 1000.0,
+            'sales_90d_kg': s['sales90'] / 1000.0,
             'status': status,
             'provisional': bool(observed_days is not None and observed_days < 30),
             'review_reasons': review,
