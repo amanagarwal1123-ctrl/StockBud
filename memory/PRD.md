@@ -270,6 +270,12 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Tested**: iteration_57 — 100% backend (10/10 incl. seed idempotency across restart, anchor value check, remove/restore, 403/400/404) + 100% frontend (nav, threshold, sorting, remove/restore flow, sales report regression).
 - Server clock note: pod date is 2026-10-10.
 
+## Production Dead-Items 500 Fix — Chunked Aggregations (Oct 2026 — session 10g, iteration_58)
+- **Prod RCA (deployer)**: GET /api/analytics/dead-items 500'd live — single Mongo aggregation over 552,889 txn docs hit NetworkTimeout. Preview (small data) was fine.
+- **Fix**: `_stock_sale_windows()` splits the baseline→today range into per-quarter, single-year windows; both the dead-items sales aggregation and `_stock_deltas_since_baseline` (sales-report ratio) now run one short command per window with `allowDiskUse=True, maxTimeMS=60000`; any window failure raises graceful 503 "timed out — please retry" (never cached partial results). Window year decides transactions vs historical collection (live-year preference preserved).
+- **Verified**: chunked output byte-identical to pre-chunk output in preview (dead-items 85 rows, BS-053 86.01/313.567). iteration_58 — 100% backend + frontend.
+- **NEEDS REDEPLOY** to resolve the live "Failed to load dead items" error.
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document

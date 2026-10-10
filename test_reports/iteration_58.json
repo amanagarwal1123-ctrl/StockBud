@@ -1,0 +1,25 @@
+{
+  "summary": "Focused regression for the chunked aggregation rewrite. All 4 backend assertions pass and the Dead Items UI loads correctly. Numeric outputs are identical to pre-chunk baseline.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_results": {
+    "test_dead_items_shape_and_spot_check": "PASS - 85 items, months_span=45.6, 6 null-ratio, no stock<0.05, SIKKI KADA 80 ratio=562.32 stock=2.058",
+    "test_sales_report_2025_baseline": "PASS - BS-053 avg_stock_kg=313.567 ratio=86.01 (baseline anchoring intact)",
+    "test_sales_report_2026": "PASS - SIKKI KADA 80 present with non-null ratio",
+    "test_remove_restore_kanha_set": "PASS - KANHA SET removed appears in removed[], restore clears it; cache bypass works",
+    "frontend_dead_items_page": "PASS - /dead-items loads 78 rows (default ratio>=3 filter) after admin login; SIKKI KADA 80 shows 562.32 matching backend"
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_chunked_aggregation_regression.py",
+    "/app/test_reports/pytest/iter58.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": ["/app/backend/tests/test_chunked_aggregation_regression.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin/admin123",
+  "seed_data_creation": "None - test uses existing prod-like data; KANHA SET remove/restore roundtripped (removed list left empty)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Chunked aggregation (dead-items + sales-report _stock_deltas_since_baseline) performance rewrite verified numerically identical to pre-chunk baseline. Dead-items response cached 5min; remove/restore invalidates cache. iteration_57 holds full feature coverage."
+}
