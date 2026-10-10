@@ -32,12 +32,25 @@ export default function Dashboard() {
   const [sessionDetail, setSessionDetail] = useState(null);
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [yearSummary, setYearSummary] = useState(null);
+  const [deadSummary, setDeadSummary] = useState(null);
+  const [deadSummaryError, setDeadSummaryError] = useState(false);
+
+  const fetchDeadSummary = async () => {
+    setDeadSummaryError(false);
+    try {
+      const r = await axios.get(`${API}/analytics/dead-items/summary`);
+      setDeadSummary(r.data.summary);
+    } catch (e) {
+      setDeadSummaryError(true);
+    }
+  };
 
   useEffect(() => {
     fetchStats();
     fetchStampHistory();
     fetchReconSessions();
     fetchYearSummary(currentYear);
+    fetchDeadSummary();
 
     const onFocus = () => {
       fetchStats();
@@ -322,8 +335,29 @@ export default function Dashboard() {
                 <PackageX className="h-4 w-4 text-destructive" />
               </div>
               <div>
-                <p className="text-sm font-semibold">Dead Items</p>
-                <p className="text-xs text-muted-foreground">Stock not turning over — stock vs all-years sales ratio</p>
+                <p className="text-sm font-semibold flex items-center gap-2">
+                  Dead Items
+                  {deadSummary && (
+                    <Badge variant="destructive" className="text-[10px]" data-testid="dead-dashboard-count">
+                      {deadSummary.dead_total} dead
+                    </Badge>
+                  )}
+                  {deadSummary?.provisional_dead > 0 && (
+                    <Badge variant="outline" className="text-[10px] border-sky-500 text-sky-600">
+                      {deadSummary.provisional_dead} new
+                    </Badge>
+                  )}
+                  {deadSummaryError && (
+                    <button
+                      onClick={(e) => { e.preventDefault(); fetchDeadSummary(); }}
+                      className="text-[10px] text-amber-600 underline"
+                      data-testid="dead-dashboard-retry"
+                    >
+                      count unavailable — retry
+                    </button>
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground">Slow-moving stock — months to clear at observed sales pace</p>
               </div>
             </div>
             <ArrowUpRight className="h-4 w-4 text-muted-foreground group-hover:text-destructive transition-colors" />

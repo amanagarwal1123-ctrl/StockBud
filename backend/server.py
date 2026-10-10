@@ -83,6 +83,7 @@ class InventoryCache:
 
 _report_cache = InventoryCache(ttl_seconds=300)
 _daily_sales_cache = InventoryCache(ttl_seconds=86400)  # past-year daywise sales (rarely change)
+_dead_cache = InventoryCache(ttl_seconds=600)  # dead-items analytical estimate
 
 
 class _LinkedInventoryCache(InventoryCache):
@@ -91,6 +92,7 @@ class _LinkedInventoryCache(InventoryCache):
         super().invalidate(key)
         _report_cache.invalidate()
         _daily_sales_cache.invalidate()
+        _dead_cache.invalidate()
 
 
 _inv_cache = _LinkedInventoryCache(ttl_seconds=30)
@@ -2935,6 +2937,7 @@ async def create_new_item_from_unmapped(
     
     await db.opening_stock.insert_one(new_stock)
     
+    _dead_cache.invalidate()
     return {'success': True, 'message': f'New item "{transaction_name}" created with stamp: {stamp}'}
 
 
@@ -4466,6 +4469,7 @@ async def create_mapping(transaction_name: str, master_name: str, current_user: 
         )
         await db.item_mappings.insert_one(mapping.model_dump())
     
+    _dead_cache.invalidate()
     return {"success": True, "message": f"Mapped '{transaction_name}' → '{master_name}'"}
 
 @api_router.post("/stamp-verification/save")
@@ -4601,6 +4605,7 @@ async def delete_mapping(transaction_name: str, current_user: dict = Depends(get
     result = await db.item_mappings.delete_one({"transaction_name": transaction_name})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Mapping not found")
+    _dead_cache.invalidate()
     return {"success": True, "message": "Mapping deleted"}
 
 @api_router.get("/master-items")
@@ -5362,61 +5367,89 @@ async def delete_daywise_comparison(comp_id: str, current_user: dict = Depends(g
     return {"status": "deleted"}
 
 
-@api_router.get("/analytics/dead-items")
-async def get_dead_items(current_user: dict = Depends(get_current_user), _slot=Depends(heavy_queue_slot)):
-    """Dead stock analysis: current stock (mapped items & groups merged) vs average
-    monthly sales since the Dec'22 baseline. Ratio = months of stock cover."""
-    if current_user.get('role') != 'admin':
-        raise HTTPException(status_code=403, detail="Admin access required")
+def _quarter_windows(d_from: str, d_to: str):
+    """Split [d_from, d_to] into ~3-month windows (keeps Mongo commands short)."""
+    wins = []
+    y, m = int(d_from[:4]), int(d_from[5:7])
+    a = d_from
+    while a <= d_to:
+        m2 = m + 3
+        y2, m2 = y + (m2 - 1) // 12, (m2 - 1) % 12 + 1
+        nxt = f"{y2:04d}-{m2:02d}-01"
+        b = (datetime.strptime(nxt, '%Y-%m-%d') - timedelta(days=1)).strftime('%Y-%m-%d')
+        if b > d_to:
+            b = d_to
+        wins.append((a, b))
+        a = nxt
+        y, m = y2, m2
+    return wins
 
-    cached = _report_cache.get('dead-items')
-    if cached is None:
-        EXCLUDED = {"SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"}
-        all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
-        mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
-        master_list = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(None)
-        stamp_lookup = {m['item_name']: (m.get('stamp') or 'Unassigned') for m in master_list}
-        map_dict, m2l, group_members = build_group_maps(all_groups, mappings)
 
-        def _resolve(name):
-            return resolve_to_leader(name, map_dict, m2l)
+_DEAD_IN_T = ("purchase", "sale_return", "receive")
+_DEAD_OUT_T = ("sale", "purchase_return", "issue")
+_DEAD_METHOD = "First recorded purchase / zero-opening estimate"
 
-        variants = {}
-        for raw, master in map_dict.items():
-            ldr = m2l.get(master, master)
-            variants.setdefault(ldr, set()).add(raw)
-        for ldr, members in group_members.items():
-            for m in members:
-                if m != ldr:
-                    variants.setdefault(ldr, set()).add(m)
 
-        # Current stock per leader (same figures as Current Stock page), grams
-        inv = await get_current_inventory_cached()
-        stock_by_leader = {}
-        for si in inv.get('stamp_items', []):
-            ldr = _resolve(si.get('item_name', '') or '')
-            if not ldr or ldr in EXCLUDED:
-                continue
-            d = stock_by_leader.setdefault(ldr, {'net_g': 0.0, 'gr_g': 0.0})
-            d['net_g'] += si.get('net_wt', 0) or 0
-            d['gr_g'] += si.get('gr_wt', 0) or 0
+async def _compute_dead_items(as_of: str):
+    """Analytical slow-stock estimate (Dead Items ONLY). Per consolidated item:
+    opening = ZERO immediately before its first recorded positive purchase;
+    remaining stock = purchases + sale returns + receipts - sales - purchase returns - issues;
+    months-to-clear = stock / (net sales / (observed_days / 30.44)).
+    Does NOT read operational stock, physical baselines or stock_sale_baseline."""
+    EXCLUDED = {"SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"}
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
+    mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
+    master_list = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(None)
+    stamp_lookup = {m['item_name']: (m.get('stamp') or 'Unassigned') for m in master_list}
+    map_dict, m2l, group_members = build_group_maps(all_groups, mappings)
 
-        # All-years sales since the baseline, chunked per quarter so large prod
-        # datasets don't hit Mongo command timeouts (historical fills missing years)
-        today_s = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
-        live_years = await _live_txn_years(int(STOCK_SALE_BASELINE_DATE[:4]), int(today_s[:4]))
-        sold_by_leader = {}
-        last_sale = {}
-        for y, a, b, excl in _stock_sale_windows(today_s):
-            date_match = {"$gt": a + ' 23:59:59'} if excl else {"$gte": a}
-            date_match["$lte"] = b + " 23:59:59"
-            pipe = [
-                {"$match": {"date": date_match, "type": {"$in": ["sale", "sale_return"]}}},
-                {"$group": {"_id": {"i": "$item_name", "t": "$type"},
-                            "w": {"$sum": {"$abs": {"$ifNull": ["$net_wt", 0]}}},
-                            "last": {"$max": "$date"}}},
-            ]
-            coll = db.transactions if y in live_years else db.historical_transactions
+    def _resolve(name):
+        return resolve_to_leader(name, map_dict, m2l)
+
+    variants = {}
+    for raw, master in map_dict.items():
+        ldr = m2l.get(master, master)
+        variants.setdefault(ldr, set()).add(raw)
+    for ldr, members in group_members.items():
+        for m in members:
+            if m != ldr:
+                variants.setdefault(ldr, set()).add(m)
+
+    ALL_T = list(_DEAD_IN_T + _DEAD_OUT_T)
+    starts, last_dates = [], []
+    for coll in (db.transactions, db.historical_transactions):
+        first = await coll.find_one({"type": {"$in": ALL_T}}, {"_id": 0, "date": 1}, sort=[("date", 1)])
+        if first and first.get('date'):
+            starts.append(first['date'][:10])
+        last = await coll.find_one({"type": {"$in": ALL_T}}, {"_id": 0, "date": 1}, sort=[("date", -1)])
+        if last and last.get('date'):
+            last_dates.append(last['date'][:10])
+    if not starts:
+        return {'rows': [], 'as_of': as_of, 'last_txn_date': None,
+                'history_start': None, 'method': _DEAD_METHOD}
+    hist_start = min(starts)
+    last_txn_date = max(last_dates)
+
+    acc = {}
+
+    def _acc(ldr):
+        s = acc.get(ldr)
+        if s is None:
+            s = acc[ldr] = {'w': {t: 0.0 for t in ALL_T}, 'first_purchase': None,
+                            'first_move': None, 'last_sale': None, 'sale_events': 0,
+                            'months_t': set(), 'months_h': set()}
+        return s
+
+    for wa, wb in _quarter_windows(hist_start, min(as_of, last_txn_date) if last_txn_date else as_of):
+        pipe = [
+            {"$match": {"date": {"$gte": wa, "$lte": min(wb, as_of) + " 23:59:59"},
+                        "type": {"$in": ALL_T}}},
+            {"$group": {"_id": {"i": "$item_name", "t": "$type", "m": {"$substr": ["$date", 0, 7]}},
+                        "w": {"$sum": {"$abs": {"$ifNull": ["$net_wt", 0]}}},
+                        "mind": {"$min": "$date"}, "maxd": {"$max": "$date"},
+                        "n": {"$sum": 1}}},
+        ]
+        for coll, tag in ((db.transactions, 't'), (db.historical_transactions, 'h')):
             try:
                 async for d in coll.aggregate(pipe, allowDiskUse=True, maxTimeMS=60000):
                     raw = d["_id"]["i"] or ''
@@ -5425,54 +5458,181 @@ async def get_dead_items(current_user: dict = Depends(get_current_user), _slot=D
                     ldr = _resolve(raw)
                     if not ldr or ldr in EXCLUDED:
                         continue
-                    sign = -1 if d["_id"]["t"] == 'sale_return' else 1
-                    sold_by_leader[ldr] = sold_by_leader.get(ldr, 0.0) + sign * (d["w"] or 0)
-                    if d["_id"]["t"] == 'sale':
-                        dt10 = (d.get("last") or '')[:10]
-                        if dt10 and dt10 > last_sale.get(ldr, ''):
-                            last_sale[ldr] = dt10
+                    t = d["_id"]["t"]
+                    w = d["w"] or 0.0
+                    s = _acc(ldr)
+                    s['w'][t] += w
+                    s[f'months_{tag}'].add(d["_id"]["m"])
+                    mind = (d.get("mind") or '')[:10]
+                    maxd = (d.get("maxd") or '')[:10]
+                    if t == 'purchase' and w > 0 and mind:
+                        if s['first_purchase'] is None or mind < s['first_purchase']:
+                            s['first_purchase'] = mind
+                    elif mind and (s['first_move'] is None or mind < s['first_move']):
+                        s['first_move'] = mind
+                    if t == 'sale' and w > 0:
+                        s['sale_events'] += d.get("n") or 0
+                        if maxd and maxd > (s['last_sale'] or ''):
+                            s['last_sale'] = maxd
             except Exception as e:
-                logging.getLogger(__name__).error(f"dead-items sales window {a}..{b} failed: {e}")
-                raise HTTPException(status_code=503, detail="Sales aggregation timed out — please retry in a moment.")
+                logging.getLogger(__name__).error(f"dead-items window {wa}..{wb} failed: {e}")
+                raise HTTPException(status_code=503, detail="Dead items aggregation timed out — please retry in a moment.")
 
-        months_span = max((datetime.strptime(today_s, '%Y-%m-%d') -
-                           datetime.strptime(STOCK_SALE_BASELINE_DATE, '%Y-%m-%d')).days / 30.44, 1.0)
-
-        rows = []
-        for ldr, st in stock_by_leader.items():
-            net_kg = st['net_g'] / 1000.0
-            if net_kg < 0.05:  # zero / near-zero (and negative) stock auto-excluded
+    # Net sales in the last 90 days ending at as_of (recent-stoppage signal)
+    d90_from = (datetime.strptime(as_of, '%Y-%m-%d') - timedelta(days=89)).strftime('%Y-%m-%d')
+    sales90 = {}
+    pipe90 = [
+        {"$match": {"date": {"$gte": d90_from, "$lte": as_of + " 23:59:59"},
+                    "type": {"$in": ["sale", "sale_return"]}}},
+        {"$group": {"_id": {"i": "$item_name", "t": "$type"},
+                    "w": {"$sum": {"$abs": {"$ifNull": ["$net_wt", 0]}}}}},
+    ]
+    for coll in (db.transactions, db.historical_transactions):
+        async for d in coll.aggregate(pipe90, allowDiskUse=True, maxTimeMS=60000):
+            raw = d["_id"]["i"] or ''
+            if not raw or raw.isdigit():
                 continue
-            sold_g = sold_by_leader.get(ldr, 0.0)
-            monthly_g = sold_g / months_span
-            ratio = round(st['net_g'] / monthly_g, 2) if monthly_g > 1 else None
-            rows.append({
-                'item_name': ldr,
-                'stamp': stamp_lookup.get(ldr, 'Unassigned'),
-                'merged_names': sorted(variants.get(ldr, set()))[:10],
-                'stock_net_kg': round(net_kg, 3),
-                'stock_gr_kg': round(st['gr_g'] / 1000.0, 3),
-                'sold_net_kg': round(sold_g / 1000.0, 3),
-                'avg_monthly_sale_kg': round(monthly_g / 1000.0, 3),
-                'stock_sale_ratio': ratio,  # months of stock cover; None = never sold
-                'last_sale_date': last_sale.get(ldr),
-            })
-        cached = {'rows': rows, 'baseline_date': STOCK_SALE_BASELINE_DATE,
-                  'months_span': round(months_span, 1), 'as_of': today_s}
-        _report_cache.set('dead-items', cached)
+            ldr = _resolve(raw)
+            if not ldr or ldr in EXCLUDED:
+                continue
+            sign = -1 if d["_id"]["t"] == 'sale_return' else 1
+            sales90[ldr] = sales90.get(ldr, 0.0) + sign * (d["w"] or 0)
 
+    as_of_dt = datetime.strptime(as_of, '%Y-%m-%d')
+    rows = []
+    for ldr, s in acc.items():
+        w = s['w']
+        stock_g = (w['purchase'] + w['sale_return'] + w['receive']) - \
+                  (w['sale'] + w['purchase_return'] + w['issue'])
+        net_sales_g = w['sale'] - w['sale_return']
+
+        review = []
+        if s['first_purchase'] is None:
+            review.append('no_purchase_anchor')
+        elif s['first_move'] and s['first_move'] < s['first_purchase']:
+            review.append('movement_before_first_purchase')
+        if stock_g < 0:
+            review.append('negative_reconstructed_stock')
+        if s['months_t'] & s['months_h']:
+            review.append('ambiguous_source_overlap')
+
+        observed_days = None
+        months = None
+        if s['first_purchase']:
+            observed_days = (as_of_dt - datetime.strptime(s['first_purchase'], '%Y-%m-%d')).days + 1
+            if observed_days > 0:
+                months = observed_days / 30.44
+
+        if s['sale_events'] == 0:
+            status = 'never_sold'
+            score = None
+        elif net_sales_g <= 0:
+            status = 'no_positive_net_sales'
+            score = None
+        elif months:
+            status = 'ok'
+            score = stock_g / (net_sales_g / months)
+        else:
+            status = 'ok'
+            score = None
+
+        rows.append({
+            'item_name': ldr,
+            'stamp': stamp_lookup.get(ldr, 'Unassigned'),
+            'merged_names': sorted(variants.get(ldr, set()))[:10],
+            'stock_net_kg': round(stock_g / 1000.0, 3),
+            'first_purchase': s['first_purchase'],
+            'observed_days': observed_days,
+            'total_net_sales_kg': round(net_sales_g / 1000.0, 3),
+            'avg_monthly_sale_kg': round((net_sales_g / months) / 1000.0, 3) if (months and net_sales_g > 0) else None,
+            'months_to_clear': round(score, 3) if score is not None else None,
+            'last_sale_date': s['last_sale'],
+            'sales_90d_kg': round(sales90.get(ldr, 0.0) / 1000.0, 3),
+            'status': status,
+            'provisional': bool(observed_days is not None and observed_days < 30),
+            'review_reasons': review,
+        })
+    return {'rows': rows, 'as_of': as_of, 'last_txn_date': last_txn_date,
+            'history_start': hist_start, 'method': _DEAD_METHOD}
+
+
+_DEAD_NEAR_ZERO_KG = 0.05
+_DEAD_DEFAULT_THRESHOLD = 3.0
+
+
+def _dead_split(data, removed_map):
+    """Split computed rows into eligible items / review / removed. Same rules
+    feed the page and the dashboard count."""
+    items, review, removed = [], [], []
+    for r in data['rows']:
+        if r['item_name'] in removed_map:
+            rm = removed_map[r['item_name']]
+            removed.append({**r, 'removed_by': rm.get('removed_by'), 'removed_at': rm.get('removed_at')})
+        elif r['review_reasons']:
+            if abs(r['stock_net_kg']) >= _DEAD_NEAR_ZERO_KG:
+                review.append(r)
+        elif r['stock_net_kg'] >= _DEAD_NEAR_ZERO_KG:
+            items.append(r)
+    return items, review, removed
+
+
+def _dead_summary(items, review, threshold=_DEAD_DEFAULT_THRESHOLD):
+    confirmed = provisional = no_net = 0
+    for r in items:
+        if r['status'] != 'ok':
+            no_net += 1
+        elif r['months_to_clear'] is not None and r['months_to_clear'] >= threshold:
+            if r['provisional']:
+                provisional += 1
+            else:
+                confirmed += 1
+    return {'threshold': threshold, 'confirmed_dead': confirmed,
+            'provisional_dead': provisional, 'no_net_sales': no_net,
+            'needs_review': len(review), 'dead_total': confirmed + no_net}
+
+
+async def _dead_items_data(as_of: Optional[str]):
+    today_ist = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
+    as_of_d = (as_of or today_ist)[:10]
+    try:
+        datetime.strptime(as_of_d, '%Y-%m-%d')
+    except ValueError:
+        raise HTTPException(status_code=400, detail="as_of must be YYYY-MM-DD")
+    if as_of_d > today_ist:
+        as_of_d = today_ist
+    cache_key = f"dead-items:{as_of_d}"
+    data = _dead_cache.get(cache_key)
+    if data is None:
+        data = await _compute_dead_items(as_of_d)
+        _dead_cache.set(cache_key, data)
     removed_docs = await db.dead_item_removals.find({}, {"_id": 0}).to_list(2000)
     removed_map = {r['item_name']: r for r in removed_docs}
-    items, removed = [], []
-    for r in cached['rows']:
-        if r['item_name'] in removed_map:
-            removed.append({**r,
-                            'removed_by': removed_map[r['item_name']].get('removed_by'),
-                            'removed_at': removed_map[r['item_name']].get('removed_at')})
-        else:
-            items.append(r)
-    return {'items': items, 'removed': removed, 'baseline_date': cached['baseline_date'],
-            'months_span': cached['months_span'], 'as_of': cached['as_of']}
+    items, review, removed = _dead_split(data, removed_map)
+    return data, items, review, removed
+
+
+@api_router.get("/analytics/dead-items/summary")
+async def get_dead_items_summary(as_of: Optional[str] = Query(None),
+                                 current_user: dict = Depends(get_current_user),
+                                 _slot=Depends(heavy_queue_slot)):
+    """Dashboard count — same eligibility & provisional rules as the page."""
+    if current_user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    data, items, review, _removed = await _dead_items_data(as_of)
+    return {'summary': _dead_summary(items, review), 'as_of': data['as_of']}
+
+
+@api_router.get("/analytics/dead-items")
+async def get_dead_items(as_of: Optional[str] = Query(None),
+                         current_user: dict = Depends(get_current_user),
+                         _slot=Depends(heavy_queue_slot)):
+    if current_user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    data, items, review, removed = await _dead_items_data(as_of)
+    return {'items': items, 'review': review, 'removed': removed,
+            'summary': _dead_summary(items, review),
+            'as_of': data['as_of'], 'last_txn_date': data['last_txn_date'],
+            'history_start': data['history_start'], 'method': data['method']}
 
 
 class DeadItemAction(BaseModel):
@@ -7832,6 +7992,7 @@ async def save_item_group(group: ItemGroup, current_user: dict = Depends(get_cur
                   'updated_at': datetime.now(timezone.utc).isoformat()}},
         upsert=True
     )
+    _dead_cache.invalidate()
     return {"success": True, "message": f"Group '{group.group_name}' saved with {len(group.members)} members"}
 
 
@@ -7840,6 +8001,7 @@ async def delete_item_group(group_name: str, current_user: dict = Depends(get_cu
     if current_user['role'] != 'admin':
         raise HTTPException(status_code=403, detail="Admin only")
     await db.item_groups.delete_one({'group_name': group_name})
+    _dead_cache.invalidate()
     return {"success": True}
 
 

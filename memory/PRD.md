@@ -283,6 +283,18 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Verified**: RH-60 BICCHIYA 2025 avg_stock = 888.466 kg (exact baseline anchor), dead-items months_span 33.3, re-seed idempotency across restart, unmapped incl '.CHAIN -058'. iteration_59 — 100% backend + frontend.
 - **NEEDS REDEPLOY**; after deploy user should map the new unmapped baseline names in production Item Mapping.
 
+## Dead Items v2 — First-Purchase / Zero-Opening Analytical Rebuild (Oct 2026 — session 10i, Codex-spec)
+- **Spec-driven rewrite (commit 513edbd)**. Scope strictly Dead Items calc + page + dashboard count. Operational stock, baselines (Dec'23 untouched & NOT used here), Sales Report, profit all unchanged — verified read-only before/after (inventory + profit byte-identical).
+- **Method** ("First recorded purchase / zero-opening estimate"), per consolidated leader (mappings+groups resolved before dates/sums):
+  - Observation starts at item's earliest positive-quantity PURCHASE across transactions + historical (full history, `_live_txn_years` NOT used here).
+  - Analytical stock = purchases + sale_returns + receipts − sales − purchase_returns − issues (magnitudes $abs-normalized once — both return sign representations behave identically).
+  - D = days first-purchase→as_of inclusive; M = D/30.44 (no 1-month minimum, no caps, no 1g cutoff); months_to_clear = stock/(net_sales/M); net_sales = sale − sale_return. LOWER = faster.
+  - Statuses: `never_sold` (zero positive sale events) vs `no_positive_net_sales` (sales fully returned) — both null score (no Infinity). `provisional` flag when D < 30 (score still computed/shown). `review_reasons`: no_purchase_anchor, movement_before_first_purchase, negative_reconstructed_stock, ambiguous_source_overlap (same item+month in both collections).
+- **Backend** (`server.py`): `_quarter_windows`, `_compute_dead_items(as_of)` (quarter-chunked aggregations grouped by item+type+month, maxTimeMS 60s, 503 on timeout), `_dead_split`/`_dead_summary` (shared eligibility: near-zero <0.05kg, EXCLUDED, removals), explicit `as_of` param (clamped to today, in cache key), last-90-day net sales column, `last_txn_date` coverage flag. `GET /analytics/dead-items` returns {items(all eligible incl. healthy for client threshold), review, removed, summary@3}; `GET /analytics/dead-items/summary` for dashboard. New `_dead_cache` (600s TTL) invalidated by _LinkedInventoryCache + mapping/group mutations (create/delete mapping, create-new-item, save/delete item-group now call `_dead_cache.invalidate()`).
+- **Frontend**: DeadItems.jsx rewritten — as-of date input, spec default ranking (no-net-sales first, then score desc; ties oldest last sale → largest stock; sortable headers optional), three sections (confirmed dead / New-provisional / Needs History Review with reason badges), coverage-unverified note, error card + Retry (NEVER "0 dead" on failure). Dashboard card shows `{dead_total} dead` + `{provisional} new` badges from /summary; error → "count unavailable — retry" button.
+- **§8 tests (no testing-agent campaign, per spec)**: synthetic preview-only data (preview Mongo = localhost, isolated; cleaned up after): A(10kg buy 01/10, 8kg sale 05/10, as_of 10/10) → days 10, stock 2, monthly 24.352, score 0.082 provisional ✓; B(1kg sale) → stock 9, score 2.957 provisional ✓; alias consolidation once (merged_names, no alias row) ✓; +1000/−1000 sale_return identical ✓; never_sold vs no_positive_net_sales distinct ✓; before/after inventory+profit identical ✓.
+- Preview shows needs_review=281 (expected: preview history partial). NOT deployed (per spec — Codex will review first).
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document
