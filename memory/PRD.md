@@ -276,6 +276,13 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - **Verified**: chunked output byte-identical to pre-chunk output in preview (dead-items 85 rows, BS-053 86.01/313.567). iteration_58 — 100% backend + frontend.
 - **NEEDS REDEPLOY** to resolve the live "Failed to load dead items" error.
 
+## Baseline Swap → 31/12/2023 + Unmapped Baseline Items (Oct 2026 — session 10h, iteration_59)
+- **User**: old Dec'22 baseline still gave "random big numbers" because their complete txn history (sale/purchase/issue/receive) only starts 01/01/2024. Uploaded STOCK 31-12-2023.xlsx (closing stock, kg, same item may have multiple stamp rows → SUMMED).
+- **Done**: `/app/backend/data/stock_sale_baseline_2023.json` (894 items, grams, negatives kept as-is, 16,321.3 kg net; old 2022 JSON deleted). `STOCK_SALE_BASELINE_DATE='2023-12-31'`. Startup seed is now VERSION-AWARE via `stock_sale_baseline_meta` {baseline_date} — on deploy, production auto-wipes + re-seeds when the bundled baseline_date changes; idempotent otherwise. Boundary: a 2024 report's opening = baseline exactly; periods starting ≤2023 → ratio null.
+- **Unmapped**: `/api/mappings/unmapped` now unions `stock_sale_baseline.distinct('item_name')` — baseline items absent from master/mappings appear in the Item Mapping list (user will map them in production).
+- **Verified**: RH-60 BICCHIYA 2025 avg_stock = 888.466 kg (exact baseline anchor), dead-items months_span 33.3, re-seed idempotency across restart, unmapped incl '.CHAIN -058'. iteration_59 — 100% backend + frontend.
+- **NEEDS REDEPLOY**; after deploy user should map the new unmapped baseline names in production Item Mapping.
+
 ## Backlog
 - P1: Refactor server.py into proper FastAPI structure
 - P1: PySpark/Databricks technical handoff document

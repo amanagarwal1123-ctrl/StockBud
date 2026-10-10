@@ -1,0 +1,29 @@
+{
+  "summary": "Focused regression for STOCK 31-12-2023 baseline swap. All 5 backend tests pass; both frontend pages render correctly with the new baseline.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_results": {
+    "test_baseline_mongo_shape": "PASS - stock_sale_baseline=894 docs, meta={baseline_date:'2023-12-31', items:894}",
+    "idempotent_reseed": "PASS - sudo supervisorctl restart backend produced NO new 'Seeded stock_sale_baseline' log line (last seed logged at 10:40:52 before restart at 10:43+); count stays 894",
+    "test_sales_report_2025_rh60_bicchiya": "PASS - avg_stock_kg=888.466 exact, stock_sale_ratio≈213 (anchored to new baseline, no preview deltas)",
+    "test_sales_report_pre_baseline_period": "PASS - 2023-01-01..2023-12-31 returns 200 with all stock_sale_ratio=null",
+    "test_dead_items": "PASS - baseline_date='2023-12-31', months_span≈33.3, 85 rows, ratio == stock_net_kg/avg_monthly_sale_kg within 2% rounding tolerance",
+    "test_unmapped_includes_baseline_only": "PASS - unmapped_items contains '.CHAIN -058' AND '84-46-001'; count=751",
+    "frontend_dead_items_page": "PASS - /dead-items loads, subtitle 'Current stock ... since 31/12/2023 baseline', 74 rows visible with default ratio>=3 filter",
+    "frontend_item_mapping": "PASS - /item-mapping shows '751 unmapped items' banner; '.CHAIN -058' and '84-46-001' render as unmapped cards",
+    "frontend_mapping_management": "PASS - /mapping-management loads 'All Mappings (216)' table"
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_baseline_2023_regression.py",
+    "/app/test_reports/pytest/iter59.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": ["/app/backend/tests/test_baseline_2023_regression.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin/admin123",
+  "seed_data_creation": "None - verified existing seeded baseline (894 items from STOCK 31-12-2023.xlsx)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Baseline is 2023-12-31 with 894 items. RH-60 BICCHIYA baseline anchor is 888.466 kg (ratio ~213 for 2025 full year). Dead items months_span=33.3 (clock=2026-10-10). Unmapped count=751 due to subset master in preview (EXPECTED). dead-items and sales-report cached 5min; restart backend to clear. Dead items response key is 'stock_sale_ratio' (not 'ratio'); items list key is 'items'. Idempotent re-seed confirmed via meta match in server.py (~line 288)."
+}
