@@ -30,6 +30,7 @@ import ActivityLog from './pages/ActivityLog';
 import ItemBufferManagement from './pages/ItemBufferManagement';
 import OrderManagement from './pages/OrderManagement';
 import DataVisualization from './pages/DataVisualization';
+import DataHealth from './pages/DataHealth';
 import SeasonalAnalysis from './pages/SeasonalAnalysis';
 import StampAssignments from './pages/StampAssignments';
 import StampDetail from './pages/StampDetail';
@@ -118,6 +119,7 @@ function App() {
                       <Route path="/year-comparison" element={<YearComparison />} />
                       <Route path="/compare-sales-daywise" element={<CompareSalesDaywise />} />
                       <Route path="/dead-items" element={<DeadItems />} />
+                      <Route path="/data-health" element={<DataHealth />} />
                       <Route path="/seasonal-analysis" element={<SeasonalAnalysis />} />
                       <Route path="/stamp-assignments" element={<StampAssignments />} />
                       <Route path="/stamp/:stampName" element={<StampDetail />} />

@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Upload, Package, Users, TrendingUp, History, RotateCcw, Power, Tag, Scale, Link2, GitBranch, Receipt, LogOut, User, CheckCircle2, Activity, Box, BarChart3, ShoppingCart, Layers, UserCog, ChevronDown, ChevronRight, FileUp, Combine, FileText, Truck } from 'lucide-react';
+import { LayoutDashboard, Upload, Package, Users, TrendingUp, History, RotateCcw, Power, Tag, Scale, Link2, GitBranch, Receipt, LogOut, User, CheckCircle2, Activity, Box, BarChart3, ShoppingCart, Layers, UserCog, ChevronDown, ChevronRight, FileUp, Combine, FileText, Truck, HeartPulse } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -80,6 +80,7 @@ export default function Layout({ children }) {
         { name: 'Historical Upload', href: '/historical-upload', icon: FileUp, roles: ['admin'] },
         { name: 'Current Stock', href: '/current-stock', icon: Package, roles: ['admin'] },
         { name: 'Stock Audit', href: '/stock-audit', icon: Scale, roles: ['admin'] },
+        { name: 'Data Health', href: '/data-health', icon: HeartPulse, roles: ['admin'] },
         { name: 'Item Mapping', href: '/item-mapping', icon: Link2, roles: ['admin'] },
         { name: 'Manage Mappings', href: '/mapping-management', icon: GitBranch, roles: ['admin'] },
         { name: 'Purchase Rates', href: '/purchase-rates', icon: Receipt, roles: ['admin'] },

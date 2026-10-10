@@ -1394,8 +1394,33 @@ async def initialize_admin():
         "username": "admin"
     }
 
+_GUARD_MAX_NET_G = 500_000.0  # 500 kg — no genuine single row approaches this
+
+
+async def _upload_guard(coll_name: str, documents: list) -> list:
+    """Hold absurd-weight rows for admin confirmation (Data Health page) instead of
+    letting them silently enter stock. Returns only the sane rows."""
+    clean, held = [], []
+    for d in documents:
+        try:
+            w = abs(float(d.get('net_wt') or 0))
+        except (TypeError, ValueError):
+            w = 0.0
+        (held if w >= _GUARD_MAX_NET_G else clean).append(d)
+    if held:
+        now = datetime.now(timezone.utc).isoformat()
+        await db.quarantined_transactions.insert_many([
+            {**d, 'source_collection': coll_name, 'quarantine_reason': 'upload_guard_overweight',
+             'quarantined_by': 'upload_guard', 'quarantined_at': now} for d in held])
+        logging.getLogger(__name__).warning(
+            f"upload guard held {len(held)} overweight row(s) (>= {_GUARD_MAX_NET_G/1000:.0f} kg) from {coll_name}")
+    return clean
+
+
 async def batch_insert(collection, documents: list):
     """Insert documents in batches to handle large datasets"""
+    if collection.name in ('transactions', 'historical_transactions'):
+        documents = await _upload_guard(collection.name, documents)
     total = 0
     for i in range(0, len(documents), BATCH_INSERT_SIZE):
         batch = documents[i:i + BATCH_INSERT_SIZE]
@@ -5818,6 +5843,90 @@ async def get_dead_items(as_of: Optional[str] = Query(None),
             'as_of': data['as_of'], 'last_txn_date': data['last_txn_date'],
             'history_start': data['history_start'], 'method': data['method'],
             'coverage': coverage}
+
+
+# ==================== DATA HEALTH (admin diagnostics + reversible quarantine) ====================
+_HEALTH_PROJ = {"_id": 0, "id": 1, "item_name": 1, "type": 1, "date": 1, "party_name": 1,
+                "net_wt": 1, "gr_wt": 1, "batch_id": 1, "upload_date": 1, "refno": 1}
+
+
+@api_router.get("/admin/data-health")
+async def get_data_health(threshold_kg: float = Query(500.0, ge=1),
+                          current_user: dict = Depends(get_current_user),
+                          _slot=Depends(heavy_queue_slot)):
+    """Scan live data for absurd-weight rows and numeric-name junk rows; report the
+    opening-stock anchor status and the quarantine. Read-only."""
+    if current_user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    th_g = threshold_kg * 1000.0
+    overweight, numeric = [], []
+    ow_count = num_count = 0
+    for coll, src in ((db.transactions, 'transactions'), (db.historical_transactions, 'historical_transactions')):
+        q = {"$or": [{"net_wt": {"$gte": th_g}}, {"net_wt": {"$lte": -th_g}}]}
+        ow_count += await coll.count_documents(q)
+        async for d in coll.find(q, _HEALTH_PROJ).sort("net_wt", -1).limit(200):
+            overweight.append({**d, 'source_collection': src})
+        qn = {"item_name": {"$regex": r"^\d+(\.\d+)?$"}}
+        num_count += await coll.count_documents(qn)
+        async for d in coll.find(qn, _HEALTH_PROJ).limit(100):
+            numeric.append({**d, 'source_collection': src})
+    quarantined = await db.quarantined_transactions.find({}, {"_id": 0}).sort("quarantined_at", -1).to_list(500)
+
+    oed = await get_opening_effective_date()
+    opening_total, opening_count = 0.0, 0
+    async for d in db.opening_stock.aggregate([{"$group": {"_id": None, "w": {"$sum": {"$ifNull": ["$net_wt", 0]}}, "n": {"$sum": 1}}}]):
+        opening_total, opening_count = d.get("w") or 0.0, d.get("n") or 0
+    txn_after = txn_excluded = None
+    if oed:
+        txn_after = await db.transactions.count_documents({"date": {"$gt": oed}})
+        txn_excluded = await db.transactions.count_documents({"date": {"$lte": oed}})
+    return {'anchor': {'opening_stock_effective_date': oed,
+                       'opening_items': opening_count,
+                       'opening_total_kg': opening_total / 1000.0,
+                       'transactions_counted_after_anchor': txn_after,
+                       'transactions_excluded_by_anchor': txn_excluded},
+            'overweight': {'threshold_kg': threshold_kg, 'count': ow_count, 'rows': overweight},
+            'numeric_names': {'count': num_count, 'rows': numeric},
+            'quarantined': quarantined}
+
+
+@api_router.post("/admin/data-health/quarantine/{txn_id}")
+async def quarantine_transaction(txn_id: str, current_user: dict = Depends(get_current_user)):
+    """Move one transaction out of live data into quarantine (reversible)."""
+    if current_user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    for coll, src in ((db.transactions, 'transactions'), (db.historical_transactions, 'historical_transactions')):
+        doc = await coll.find_one({"id": txn_id}, {"_id": 0})
+        if doc:
+            await db.quarantined_transactions.insert_one({
+                **doc, 'source_collection': src, 'quarantine_reason': 'manual_data_health',
+                'quarantined_by': current_user.get('username'),
+                'quarantined_at': datetime.now(timezone.utc).isoformat()})
+            await coll.delete_one({"id": txn_id})
+            _inv_cache.invalidate()
+            _dead_cache.invalidate()
+            return {'success': True,
+                    'message': f"Removed {doc.get('item_name')} ({(doc.get('net_wt') or 0)/1000:.3f} kg) from {src}; stock recalculated."}
+    raise HTTPException(status_code=404, detail="Transaction not found (it may already be quarantined)")
+
+
+@api_router.post("/admin/data-health/restore/{txn_id}")
+async def restore_quarantined_transaction(txn_id: str, current_user: dict = Depends(get_current_user)):
+    """Put a quarantined/held row back into live data (approve)."""
+    if current_user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    doc = await db.quarantined_transactions.find_one({"id": txn_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Not found in quarantine")
+    src = doc.pop('source_collection', 'transactions')
+    for k in ('quarantine_reason', 'quarantined_by', 'quarantined_at'):
+        doc.pop(k, None)
+    target = db.historical_transactions if src == 'historical_transactions' else db.transactions
+    await target.insert_one(doc)
+    await db.quarantined_transactions.delete_one({"id": txn_id})
+    _inv_cache.invalidate()
+    _dead_cache.invalidate()
+    return {'success': True, 'message': f"Restored {doc.get('item_name')} to {src}; stock recalculated."}
 
 
 class DeadItemAction(BaseModel):
