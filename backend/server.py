@@ -5388,6 +5388,17 @@ def _quarter_windows(d_from: str, d_to: str):
 _DEAD_IN_T = ("purchase", "sale_return", "receive")
 _DEAD_OUT_T = ("sale", "purchase_return", "issue")
 _DEAD_METHOD = "First recorded purchase / zero-opening estimate"
+_DEAD_DATE_LO = "1900-01-01"
+_DEAD_DATE_HI = "2200-12-31 23:59:59"
+_DEAD_EPS_G = 0.001
+# abs(net_wt) coerced to double; malformed values count as 0 (never as events)
+_DEAD_ABS_W = {"$abs": {"$convert": {"input": "$net_wt", "to": "double",
+                                     "onError": 0.0, "onNull": 0.0}}}
+
+
+def _dead_norm(name):
+    """Case/whitespace-insensitive key (Dead Items only)."""
+    return ' '.join(str(name).split()).upper()
 
 
 async def _compute_dead_items(as_of: str):
@@ -5396,32 +5407,52 @@ async def _compute_dead_items(as_of: str):
     remaining stock = purchases + sale returns + receipts - sales - purchase returns - issues;
     months-to-clear = stock / (net sales / (observed_days / 30.44)).
     Does NOT read operational stock, physical baselines or stock_sale_baseline."""
-    EXCLUDED = {"SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"}
+    EXCLUDED = {_dead_norm(x) for x in (
+        "SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA")}
     all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
     mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
     master_list = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(None)
-    stamp_lookup = {m['item_name']: (m.get('stamp') or 'Unassigned') for m in master_list}
+    stamp_lookup = {_dead_norm(m['item_name']): (m.get('stamp') or 'Unassigned') for m in master_list}
     map_dict, m2l, group_members = build_group_maps(all_groups, mappings)
+    map_norm = {_dead_norm(k): v for k, v in map_dict.items()}
+    m2l_norm = {_dead_norm(k): v for k, v in m2l.items()}
+    canon = {}
 
-    def _resolve(name):
-        return resolve_to_leader(name, map_dict, m2l)
+    def _resolve(raw):
+        """Case/whitespace-safe leader resolution (Dead Items only)."""
+        master = map_norm.get(_dead_norm(raw))
+        canonical = master is not None
+        if master is None:
+            master = raw.strip()
+        ldr = m2l_norm.get(_dead_norm(master))
+        if ldr is None:
+            ldr = master
+        else:
+            canonical = True
+        key = _dead_norm(ldr)
+        if key and (canonical or key not in canon):
+            canon[key] = ldr
+        return key
 
     variants = {}
     for raw, master in map_dict.items():
         ldr = m2l.get(master, master)
-        variants.setdefault(ldr, set()).add(raw)
+        variants.setdefault(_dead_norm(ldr), set()).add(raw)
     for ldr, members in group_members.items():
         for m in members:
             if m != ldr:
-                variants.setdefault(ldr, set()).add(m)
+                variants.setdefault(_dead_norm(ldr), set()).add(m)
 
     ALL_T = list(_DEAD_IN_T + _DEAD_OUT_T)
+    date_ok = {"$gte": _DEAD_DATE_LO, "$lte": _DEAD_DATE_HI}
     starts, last_dates = [], []
     for coll in (db.transactions, db.historical_transactions):
-        first = await coll.find_one({"type": {"$in": ALL_T}}, {"_id": 0, "date": 1}, sort=[("date", 1)])
+        first = await coll.find_one({"type": {"$in": ALL_T}, "date": date_ok},
+                                    {"_id": 0, "date": 1}, sort=[("date", 1)])
         if first and first.get('date'):
             starts.append(first['date'][:10])
-        last = await coll.find_one({"type": {"$in": ALL_T}}, {"_id": 0, "date": 1}, sort=[("date", -1)])
+        last = await coll.find_one({"type": {"$in": ALL_T}, "date": date_ok},
+                                   {"_id": 0, "date": 1}, sort=[("date", -1)])
         if last and last.get('date'):
             last_dates.append(last['date'][:10])
     if not starts:
@@ -5432,48 +5463,60 @@ async def _compute_dead_items(as_of: str):
 
     acc = {}
 
-    def _acc(ldr):
-        s = acc.get(ldr)
+    def _acc(key):
+        s = acc.get(key)
         if s is None:
-            s = acc[ldr] = {'w': {t: 0.0 for t in ALL_T}, 'first_purchase': None,
+            s = acc[key] = {'w': {t: 0.0 for t in ALL_T}, 'first_purchase': None,
                             'first_move': None, 'last_sale': None, 'sale_events': 0,
-                            'months_t': set(), 'months_h': set()}
+                            'daily': {}, 'ids_t': {}, 'ids_h': {}}
         return s
 
+    # Per item/type/DAY so zero-weight rows can't invent events and daily
+    # balances can be replayed. 'ids' = refno|party identity of positive rows.
     for wa, wb in _quarter_windows(hist_start, min(as_of, last_txn_date) if last_txn_date else as_of):
         pipe = [
             {"$match": {"date": {"$gte": wa, "$lte": min(wb, as_of) + " 23:59:59"},
-                        "type": {"$in": ALL_T}}},
-            {"$group": {"_id": {"i": "$item_name", "t": "$type", "m": {"$substr": ["$date", 0, 7]}},
-                        "w": {"$sum": {"$abs": {"$ifNull": ["$net_wt", 0]}}},
-                        "mind": {"$min": "$date"}, "maxd": {"$max": "$date"},
-                        "n": {"$sum": 1}}},
+                        "type": {"$in": ALL_T},
+                        "net_wt": {"$nin": [0, None]}}},
+            {"$group": {"_id": {"i": "$item_name", "t": "$type", "d": {"$substr": ["$date", 0, 10]}},
+                        "w": {"$sum": _DEAD_ABS_W},
+                        "n": {"$sum": {"$cond": [{"$gt": [_DEAD_ABS_W, 0]}, 1, 0]}},
+                        "ids": {"$addToSet": {"$cond": [
+                            {"$gt": [_DEAD_ABS_W, 0]},
+                            {"$concat": [{"$toString": {"$ifNull": ["$refno", ""]}}, "|",
+                                         {"$toString": {"$ifNull": ["$party_name", ""]}}]},
+                            None]}}}},
         ]
         for coll, tag in ((db.transactions, 't'), (db.historical_transactions, 'h')):
             try:
                 async for d in coll.aggregate(pipe, allowDiskUse=True, maxTimeMS=60000):
                     raw = d["_id"]["i"] or ''
-                    if not raw or raw.isdigit():
+                    if not raw or str(raw).isdigit():
                         continue
-                    ldr = _resolve(raw)
-                    if not ldr or ldr in EXCLUDED:
+                    key = _resolve(raw)
+                    if not key or key in EXCLUDED:
                         continue
                     t = d["_id"]["t"]
+                    day = d["_id"]["d"]
                     w = d["w"] or 0.0
-                    s = _acc(ldr)
+                    if w <= 0:
+                        continue
+                    s = _acc(key)
                     s['w'][t] += w
-                    s[f'months_{tag}'].add(d["_id"]["m"])
-                    mind = (d.get("mind") or '')[:10]
-                    maxd = (d.get("maxd") or '')[:10]
-                    if t == 'purchase' and w > 0 and mind:
-                        if s['first_purchase'] is None or mind < s['first_purchase']:
-                            s['first_purchase'] = mind
-                    elif mind and (s['first_move'] is None or mind < s['first_move']):
-                        s['first_move'] = mind
-                    if t == 'sale' and w > 0:
+                    s['daily'][day] = s['daily'].get(day, 0.0) + (w if t in _DEAD_IN_T else -w)
+                    s[f'ids_{tag}'].setdefault((t, day), set()).update(
+                        i for i in (d.get("ids") or []) if i is not None)
+                    if t == 'purchase':
+                        if s['first_purchase'] is None or day < s['first_purchase']:
+                            s['first_purchase'] = day
+                    elif s['first_move'] is None or day < s['first_move']:
+                        s['first_move'] = day
+                    if t == 'sale':
                         s['sale_events'] += d.get("n") or 0
-                        if maxd and maxd > (s['last_sale'] or ''):
-                            s['last_sale'] = maxd
+                        if day > (s['last_sale'] or ''):
+                            s['last_sale'] = day
+                    if str(raw).strip() != canon.get(key):
+                        variants.setdefault(key, set()).add(str(raw).strip())
             except Exception as e:
                 logging.getLogger(__name__).error(f"dead-items window {wa}..{wb} failed: {e}")
                 raise HTTPException(status_code=503, detail="Dead items aggregation timed out — please retry in a moment.")
@@ -5483,37 +5526,56 @@ async def _compute_dead_items(as_of: str):
     sales90 = {}
     pipe90 = [
         {"$match": {"date": {"$gte": d90_from, "$lte": as_of + " 23:59:59"},
-                    "type": {"$in": ["sale", "sale_return"]}}},
+                    "type": {"$in": ["sale", "sale_return"]},
+                    "net_wt": {"$nin": [0, None]}}},
         {"$group": {"_id": {"i": "$item_name", "t": "$type"},
-                    "w": {"$sum": {"$abs": {"$ifNull": ["$net_wt", 0]}}}}},
+                    "w": {"$sum": _DEAD_ABS_W}}},
     ]
     for coll in (db.transactions, db.historical_transactions):
         async for d in coll.aggregate(pipe90, allowDiskUse=True, maxTimeMS=60000):
             raw = d["_id"]["i"] or ''
-            if not raw or raw.isdigit():
+            if not raw or str(raw).isdigit():
                 continue
-            ldr = _resolve(raw)
-            if not ldr or ldr in EXCLUDED:
+            key = _resolve(raw)
+            if not key or key in EXCLUDED:
                 continue
             sign = -1 if d["_id"]["t"] == 'sale_return' else 1
-            sales90[ldr] = sales90.get(ldr, 0.0) + sign * (d["w"] or 0)
+            sales90[key] = sales90.get(key, 0.0) + sign * (d["w"] or 0)
 
     as_of_dt = datetime.strptime(as_of, '%Y-%m-%d')
     rows = []
-    for ldr, s in acc.items():
+    for key, s in acc.items():
         w = s['w']
         stock_g = (w['purchase'] + w['sale_return'] + w['receive']) - \
                   (w['sale'] + w['purchase_return'] + w['issue'])
         net_sales_g = w['sale'] - w['sale_return']
+
+        # Replay daily closing balances from zero opening
+        bal = min_bal = 0.0
+        for day in sorted(s['daily']):
+            bal += s['daily'][day]
+            if bal < min_bal:
+                min_bal = bal
+
+        # Possible overlap only when same item+type+day exists in BOTH sources
+        # AND identities match or are unavailable (distinct vouchers = distinct events)
+        ambiguous = False
+        for k in set(s['ids_t']) & set(s['ids_h']):
+            a, b = s['ids_t'][k], s['ids_h'][k]
+            if (a & b) or any(i.strip('|').strip() == '' for i in a | b):
+                ambiguous = True
+                break
 
         review = []
         if s['first_purchase'] is None:
             review.append('no_purchase_anchor')
         elif s['first_move'] and s['first_move'] < s['first_purchase']:
             review.append('movement_before_first_purchase')
-        if stock_g < 0:
+        if stock_g < -_DEAD_EPS_G:
             review.append('negative_reconstructed_stock')
-        if s['months_t'] & s['months_h']:
+        elif min_bal < -_DEAD_EPS_G:
+            review.append('negative_intermediate_stock')
+        if ambiguous:
             review.append('ambiguous_source_overlap')
 
         observed_days = None
@@ -5536,18 +5598,20 @@ async def _compute_dead_items(as_of: str):
             status = 'ok'
             score = None
 
+        disp = canon.get(key, key)
         rows.append({
-            'item_name': ldr,
-            'stamp': stamp_lookup.get(ldr, 'Unassigned'),
-            'merged_names': sorted(variants.get(ldr, set()))[:10],
-            'stock_net_kg': round(stock_g / 1000.0, 3),
+            'item_name': disp,
+            'stamp': stamp_lookup.get(key, 'Unassigned'),
+            'merged_names': sorted(v for v in variants.get(key, set())
+                                   if _dead_norm(v) != _dead_norm(disp))[:10],
+            'stock_net_kg': stock_g / 1000.0,
             'first_purchase': s['first_purchase'],
             'observed_days': observed_days,
-            'total_net_sales_kg': round(net_sales_g / 1000.0, 3),
-            'avg_monthly_sale_kg': round((net_sales_g / months) / 1000.0, 3) if (months and net_sales_g > 0) else None,
-            'months_to_clear': round(score, 3) if score is not None else None,
+            'total_net_sales_kg': net_sales_g / 1000.0,
+            'avg_monthly_sale_kg': (net_sales_g / months) / 1000.0 if (months and net_sales_g > 0) else None,
+            'months_to_clear': score,
             'last_sale_date': s['last_sale'],
-            'sales_90d_kg': round(sales90.get(ldr, 0.0) / 1000.0, 3),
+            'sales_90d_kg': sales90.get(key, 0.0) / 1000.0,
             'status': status,
             'provisional': bool(observed_days is not None and observed_days < 30),
             'review_reasons': review,
@@ -5562,44 +5626,71 @@ _DEAD_DEFAULT_THRESHOLD = 3.0
 
 def _dead_split(data, removed_map):
     """Split computed rows into eligible items / review / removed. Same rules
-    feed the page and the dashboard count."""
+    feed the page and the dashboard count. Classification uses UNROUNDED values;
+    review rows stay visible regardless of the near-zero stock filter."""
     items, review, removed = [], [], []
     for r in data['rows']:
         if r['item_name'] in removed_map:
             rm = removed_map[r['item_name']]
             removed.append({**r, 'removed_by': rm.get('removed_by'), 'removed_at': rm.get('removed_at')})
         elif r['review_reasons']:
-            if abs(r['stock_net_kg']) >= _DEAD_NEAR_ZERO_KG:
-                review.append(r)
+            review.append(r)
         elif r['stock_net_kg'] >= _DEAD_NEAR_ZERO_KG:
             items.append(r)
     return items, review, removed
 
 
 def _dead_summary(items, review, threshold=_DEAD_DEFAULT_THRESHOLD):
+    """Provisional/confirmed are partitioned FIRST: a new (<30 observed days)
+    unsold or fully-returned item never enters confirmed dead totals."""
     confirmed = provisional = no_net = 0
     for r in items:
-        if r['status'] != 'ok':
+        qualifies = r['status'] != 'ok' or (
+            r['months_to_clear'] is not None and r['months_to_clear'] >= threshold)
+        if not qualifies:
+            continue
+        if r['provisional']:
+            provisional += 1
+        elif r['status'] != 'ok':
             no_net += 1
-        elif r['months_to_clear'] is not None and r['months_to_clear'] >= threshold:
-            if r['provisional']:
-                provisional += 1
-            else:
-                confirmed += 1
+        else:
+            confirmed += 1
     return {'threshold': threshold, 'confirmed_dead': confirmed,
             'provisional_dead': provisional, 'no_net_sales': no_net,
             'needs_review': len(review), 'dead_total': confirmed + no_net}
 
 
+async def _dead_coverage_cutoff():
+    """Date through which data is on record. No import-coverage metadata exists,
+    so this falls back to the last valid-dated transaction — always Unverified."""
+    ALL_T = list(_DEAD_IN_T + _DEAD_OUT_T)
+    date_ok = {"$gte": _DEAD_DATE_LO, "$lte": _DEAD_DATE_HI}
+    last_dates = []
+    for coll in (db.transactions, db.historical_transactions):
+        last = await coll.find_one({"type": {"$in": ALL_T}, "date": date_ok},
+                                   {"_id": 0, "date": 1}, sort=[("date", -1)])
+        if last and last.get('date'):
+            last_dates.append(last['date'][:10])
+    return max(last_dates) if last_dates else None
+
+
 async def _dead_items_data(as_of: Optional[str]):
     today_ist = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
-    as_of_d = (as_of or today_ist)[:10]
-    try:
-        datetime.strptime(as_of_d, '%Y-%m-%d')
-    except ValueError:
-        raise HTTPException(status_code=400, detail="as_of must be YYYY-MM-DD")
-    if as_of_d > today_ist:
-        as_of_d = today_ist
+    cutoff = await _dead_coverage_cutoff()
+    explicit = bool(as_of)
+    if explicit:
+        as_of_d = as_of[:10]
+        try:
+            datetime.strptime(as_of_d, '%Y-%m-%d')
+        except ValueError:
+            raise HTTPException(status_code=400, detail="as_of must be YYYY-MM-DD")
+        if as_of_d > today_ist:
+            as_of_d = today_ist
+    else:
+        # Default = conservative coverage cutoff, never a date past known data
+        as_of_d = min(today_ist, cutoff) if cutoff else today_ist
+    coverage = {'cutoff': cutoff, 'verified': False,
+                'source': 'last_transaction_fallback', 'explicit_as_of': explicit}
     cache_key = f"dead-items:{as_of_d}"
     data = _dead_cache.get(cache_key)
     if data is None:
@@ -5608,18 +5699,19 @@ async def _dead_items_data(as_of: Optional[str]):
     removed_docs = await db.dead_item_removals.find({}, {"_id": 0}).to_list(2000)
     removed_map = {r['item_name']: r for r in removed_docs}
     items, review, removed = _dead_split(data, removed_map)
-    return data, items, review, removed
+    return data, items, review, removed, coverage
 
 
 @api_router.get("/analytics/dead-items/summary")
 async def get_dead_items_summary(as_of: Optional[str] = Query(None),
                                  current_user: dict = Depends(get_current_user),
                                  _slot=Depends(heavy_queue_slot)):
-    """Dashboard count — same eligibility & provisional rules as the page."""
+    """Dashboard count — same effective as-of, eligibility & provisional rules as the page."""
     if current_user.get('role') != 'admin':
         raise HTTPException(status_code=403, detail="Admin access required")
-    data, items, review, _removed = await _dead_items_data(as_of)
-    return {'summary': _dead_summary(items, review), 'as_of': data['as_of']}
+    data, items, review, _removed, coverage = await _dead_items_data(as_of)
+    return {'summary': _dead_summary(items, review), 'as_of': data['as_of'],
+            'coverage': coverage}
 
 
 @api_router.get("/analytics/dead-items")
@@ -5628,11 +5720,12 @@ async def get_dead_items(as_of: Optional[str] = Query(None),
                          _slot=Depends(heavy_queue_slot)):
     if current_user.get('role') != 'admin':
         raise HTTPException(status_code=403, detail="Admin access required")
-    data, items, review, removed = await _dead_items_data(as_of)
+    data, items, review, removed, coverage = await _dead_items_data(as_of)
     return {'items': items, 'review': review, 'removed': removed,
             'summary': _dead_summary(items, review),
             'as_of': data['as_of'], 'last_txn_date': data['last_txn_date'],
-            'history_start': data['history_start'], 'method': data['method']}
+            'history_start': data['history_start'], 'method': data['method'],
+            'coverage': coverage}
 
 
 class DeadItemAction(BaseModel):

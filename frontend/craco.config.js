@@ -103,4 +103,16 @@ webpackConfig.devServer = (devServerConfig) => {
   return devServerConfig;
 };
 
+webpackConfig.jest = {
+  configure: (jestConfig) => {
+    jestConfig.moduleNameMapper = {
+      "^@/(.*)$": "<rootDir>/src/$1",
+      "^axios$": "axios/dist/node/axios.cjs",
+      ...(jestConfig.moduleNameMapper || {}),
+    };
+    jestConfig.transformIgnorePatterns = ["node_modules/(?!(lucide-react|sonner)/)"];
+    return jestConfig;
+  },
+};
+
 module.exports = webpackConfig;

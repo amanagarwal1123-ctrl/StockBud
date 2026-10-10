@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
@@ -43,22 +43,27 @@ export default function DeadItems() {
   const [sort, setSort] = useState(null); // null = spec default ranking
   const [showRemoved, setShowRemoved] = useState(false);
 
+  const reqSeq = useRef(0);
+
   const fetchData = useCallback(async (asOfParam) => {
+    const id = ++reqSeq.current;
     setLoading(true);
     setError(null);
     try {
       const q = asOfParam ? `?as_of=${asOfParam}` : '';
       const r = await axios.get(`${API}/analytics/dead-items${q}`);
+      if (id !== reqSeq.current) return; // stale response — a newer request won
       setData(r.data);
-      if (!asOfParam) setAsOf(r.data.as_of);
+      setAsOf(r.data.as_of); // always reflect the backend's effective as-of
     } catch (e) {
+      if (id !== reqSeq.current) return;
       const msg = e.response?.status === 503
         ? 'Server is busy — please retry in a few seconds.'
         : (e.response?.data?.detail || 'Failed to load dead items');
       setError(msg);
       setData(null);
     } finally {
-      setLoading(false);
+      if (id === reqSeq.current) setLoading(false);
     }
   }, []);
 
@@ -66,37 +71,38 @@ export default function DeadItems() {
 
   const th = (() => { const v = parseFloat(threshold); return isNaN(v) ? 3 : v; })();
 
-  const rank = (rows) => {
-    const noSales = rows.filter((r) => r.status !== 'ok');
-    const scored = rows.filter((r) => r.status === 'ok');
-    const tie = (a, b) =>
-      String(a.last_sale_date || '0000').localeCompare(String(b.last_sale_date || '0000')) ||
-      (b.stock_net_kg - a.stock_net_kg);
-    noSales.sort(tie);
-    scored.sort((a, b) => (b.months_to_clear - a.months_to_clear) || tie(a, b));
-    return [...noSales, ...scored];
-  };
-
   const { deadRows, provisionalRows } = useMemo(() => {
     if (!data) return { deadRows: [], provisionalRows: [] };
-    const eligible = data.items.filter((r) =>
-      r.status !== 'ok' || (r.months_to_clear !== null && r.months_to_clear >= th));
-    let dead = rank(eligible.filter((r) => !r.provisional));
-    const prov = rank(eligible.filter((r) => r.provisional));
-    if (sort) {
+    const rank = (rows) => {
+      const noSales = rows.filter((r) => r.status !== 'ok');
+      const scored = rows.filter((r) => r.status === 'ok');
+      const tie = (a, b) =>
+        String(a.last_sale_date || '0000').localeCompare(String(b.last_sale_date || '0000')) ||
+        (b.stock_net_kg - a.stock_net_kg);
+      noSales.sort(tie);
+      scored.sort((a, b) => (b.months_to_clear - a.months_to_clear) || tie(a, b));
+      return [...noSales, ...scored];
+    };
+    const applySort = (rows) => {
+      if (!sort) return rows;
       const dir = sort.dir === 'asc' ? 1 : -1;
       const val = (r) => {
         const v = r[sort.key];
         if (sort.key === 'months_to_clear') return v === null ? INF : v;
         return v === null || v === undefined ? '' : v;
       };
-      dead = [...dead].sort((a, b) => {
+      return [...rows].sort((a, b) => {
         const va = val(a); const vb = val(b);
         if (typeof va === 'string' || typeof vb === 'string') return String(va).localeCompare(String(vb)) * dir;
         return (va - vb) * dir;
       });
-    }
-    return { deadRows: dead, provisionalRows: prov };
+    };
+    const eligible = data.items.filter((r) =>
+      r.status !== 'ok' || (r.months_to_clear !== null && r.months_to_clear >= th));
+    return {
+      deadRows: applySort(rank(eligible.filter((r) => !r.provisional))),
+      provisionalRows: applySort(rank(eligible.filter((r) => r.provisional))),
+    };
   }, [data, th, sort]);
 
   const toggleSort = (key) => {
@@ -175,9 +181,11 @@ export default function DeadItems() {
             {data?.method || 'First recorded purchase / zero-opening estimate'} — analytical stock, not operational stock.
             Months to Clear: lower = faster-moving, higher = slower-moving.
           </p>
-          {data && data.last_txn_date && data.as_of > data.last_txn_date && (
+          {data?.coverage && (
             <p className="text-xs text-amber-600 mt-1" data-testid="coverage-note">
-              Coverage unverified after {fmtDate(data.last_txn_date)} (last transaction on record).
+              Coverage: Unverified — data on record through {fmtDate(data.coverage.cutoff)}.
+              {data.coverage.cutoff && data.as_of > data.coverage.cutoff
+                ? ' As-of is beyond the last transaction; results assume no later activity.' : ''}
             </p>
           )}
         </div>
