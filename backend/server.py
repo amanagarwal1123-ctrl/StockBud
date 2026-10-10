@@ -120,6 +120,48 @@ async def heavy_queue_slot():
         _heavy_gate.release()
 
 
+# ---- Stock-to-sale baseline (stock as on 21/12/2022, Sheet2 of FSTOCK22.xlsx) ----
+# Used ONLY for stock:sale ratio reconstruction; no other stock logic touched.
+STOCK_SALE_BASELINE_DATE = '2022-12-21'
+_STOCK_ADD_T = ("purchase", "purchase_return", "receive")
+_STOCK_SUB_T = ("sale", "sale_return", "issue")
+
+
+async def _live_txn_years(y_from: int, y_to: int):
+    """Years that have data in the main transactions collection."""
+    years = set()
+    for y in range(y_from, y_to + 1):
+        if await db.transactions.find_one(
+                {"date": {"$gte": f"{y}-01-01", "$lte": f"{y}-12-31 23:59:59"}}, {"_id": 1}):
+            years.add(str(y))
+    return years
+
+
+async def _stock_deltas_since_baseline(upto_date: str):
+    """Signed net-weight delta (grams) per raw item name from the Dec'22 baseline
+    to upto_date. historical_transactions only fills years absent from transactions."""
+    pipe = [
+        {"$match": {"date": {"$gt": STOCK_SALE_BASELINE_DATE + ' 23:59:59',
+                             "$lte": upto_date + " 23:59:59"},
+                    "type": {"$in": list(_STOCK_ADD_T + _STOCK_SUB_T)}}},
+        {"$group": {"_id": {"i": "$item_name", "t": "$type", "y": {"$substr": ["$date", 0, 4]}},
+                    "w": {"$sum": "$net_wt"}}},
+    ]
+    live_years = await _live_txn_years(int(STOCK_SALE_BASELINE_DATE[:4]), int(upto_date[:4]))
+    deltas = {}
+    async for d in db.transactions.aggregate(pipe):
+        raw = d["_id"]["i"] or ''
+        sign = 1 if d["_id"]["t"] in _STOCK_ADD_T else -1
+        deltas[raw] = deltas.get(raw, 0.0) + sign * (d["w"] or 0)
+    async for d in db.historical_transactions.aggregate(pipe):
+        if d["_id"]["y"] in live_years:
+            continue
+        raw = d["_id"]["i"] or ''
+        sign = 1 if d["_id"]["t"] in _STOCK_ADD_T else -1
+        deltas[raw] = deltas.get(raw, 0.0) + sign * (d["w"] or 0)
+    return deltas
+
+
 async def get_current_inventory_cached(as_of_date: str = None):
     """Cached + deduplicated inventory computation. Concurrent requests for the
     same as_of_date share a single computation (protects small-memory pods)."""
@@ -216,6 +258,19 @@ async def create_upload_indexes():
     await db.monthly_summaries.create_index([("year", 1), ("summary_type", 1), ("name", 1)])
     # Performance index for party/date queries
     await db.transactions.create_index([("date", 1), ("type", 1), ("party_name", 1)])
+
+    # Seed the Dec'22 stock-to-sale baseline (used ONLY for stock:sale ratios)
+    try:
+        if await db.stock_sale_baseline.count_documents({}) == 0:
+            bl_path = ROOT_DIR / 'data' / 'stock_sale_baseline_2022.json'
+            if bl_path.exists():
+                payload = json.loads(bl_path.read_text())
+                docs = list(payload.get('items', []))
+                if docs:
+                    await db.stock_sale_baseline.insert_many(docs)
+                    logger.info(f"Seeded stock_sale_baseline: {len(docs)} items as on {payload.get('baseline_date')}")
+    except Exception as e:
+        logger.error(f"stock_sale_baseline seed failed: {e}")
 
     # Recover 'processing' upload sessions from a previous run: resume from stored chunks
     # if attempts remain, otherwise roll back partial writes and mark as failed.
@@ -5276,6 +5331,147 @@ async def delete_daywise_comparison(comp_id: str, current_user: dict = Depends(g
     return {"status": "deleted"}
 
 
+@api_router.get("/analytics/dead-items")
+async def get_dead_items(current_user: dict = Depends(get_current_user), _slot=Depends(heavy_queue_slot)):
+    """Dead stock analysis: current stock (mapped items & groups merged) vs average
+    monthly sales since the Dec'22 baseline. Ratio = months of stock cover."""
+    if current_user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    cached = _report_cache.get('dead-items')
+    if cached is None:
+        EXCLUDED = {"SILVER ORNAMENTS", "COURIER", "EMERALD MURTI", "FRAME NEW", "NAJARIA"}
+        all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
+        mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
+        master_list = await db.master_items.find({}, {"_id": 0, "item_name": 1, "stamp": 1}).to_list(None)
+        stamp_lookup = {m['item_name']: (m.get('stamp') or 'Unassigned') for m in master_list}
+        map_dict, m2l, group_members = build_group_maps(all_groups, mappings)
+
+        def _resolve(name):
+            return resolve_to_leader(name, map_dict, m2l)
+
+        variants = {}
+        for raw, master in map_dict.items():
+            ldr = m2l.get(master, master)
+            variants.setdefault(ldr, set()).add(raw)
+        for ldr, members in group_members.items():
+            for m in members:
+                if m != ldr:
+                    variants.setdefault(ldr, set()).add(m)
+
+        # Current stock per leader (same figures as Current Stock page), grams
+        inv = await get_current_inventory_cached()
+        stock_by_leader = {}
+        for si in inv.get('stamp_items', []):
+            ldr = _resolve(si.get('item_name', '') or '')
+            if not ldr or ldr in EXCLUDED:
+                continue
+            d = stock_by_leader.setdefault(ldr, {'net_g': 0.0, 'gr_g': 0.0})
+            d['net_g'] += si.get('net_wt', 0) or 0
+            d['gr_g'] += si.get('gr_wt', 0) or 0
+
+        # All-years sales since the baseline (historical fills missing years only)
+        pipe = [
+            {"$match": {"date": {"$gt": STOCK_SALE_BASELINE_DATE + ' 23:59:59'},
+                        "type": {"$in": ["sale", "sale_return"]}}},
+            {"$group": {"_id": {"i": "$item_name", "t": "$type", "y": {"$substr": ["$date", 0, 4]}},
+                        "w": {"$sum": {"$abs": {"$ifNull": ["$net_wt", 0]}}},
+                        "last": {"$max": "$date"}}},
+        ]
+        today_s = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
+        live_years = await _live_txn_years(int(STOCK_SALE_BASELINE_DATE[:4]), int(today_s[:4]))
+        sold_by_leader = {}
+        last_sale = {}
+
+        async def _consume(coll, skip_years):
+            async for d in coll.aggregate(pipe):
+                if skip_years is not None and d["_id"]["y"] in skip_years:
+                    continue
+                raw = d["_id"]["i"] or ''
+                if not raw or raw.isdigit():
+                    continue
+                ldr = _resolve(raw)
+                if not ldr or ldr in EXCLUDED:
+                    continue
+                sign = -1 if d["_id"]["t"] == 'sale_return' else 1
+                sold_by_leader[ldr] = sold_by_leader.get(ldr, 0.0) + sign * (d["w"] or 0)
+                if d["_id"]["t"] == 'sale':
+                    dt10 = (d.get("last") or '')[:10]
+                    if dt10 and dt10 > last_sale.get(ldr, ''):
+                        last_sale[ldr] = dt10
+
+        await _consume(db.transactions, None)
+        await _consume(db.historical_transactions, live_years)
+
+        months_span = max((datetime.strptime(today_s, '%Y-%m-%d') -
+                           datetime.strptime(STOCK_SALE_BASELINE_DATE, '%Y-%m-%d')).days / 30.44, 1.0)
+
+        rows = []
+        for ldr, st in stock_by_leader.items():
+            net_kg = st['net_g'] / 1000.0
+            if net_kg < 0.05:  # zero / near-zero (and negative) stock auto-excluded
+                continue
+            sold_g = sold_by_leader.get(ldr, 0.0)
+            monthly_g = sold_g / months_span
+            ratio = round(st['net_g'] / monthly_g, 2) if monthly_g > 1 else None
+            rows.append({
+                'item_name': ldr,
+                'stamp': stamp_lookup.get(ldr, 'Unassigned'),
+                'merged_names': sorted(variants.get(ldr, set()))[:10],
+                'stock_net_kg': round(net_kg, 3),
+                'stock_gr_kg': round(st['gr_g'] / 1000.0, 3),
+                'sold_net_kg': round(sold_g / 1000.0, 3),
+                'avg_monthly_sale_kg': round(monthly_g / 1000.0, 3),
+                'stock_sale_ratio': ratio,  # months of stock cover; None = never sold
+                'last_sale_date': last_sale.get(ldr),
+            })
+        cached = {'rows': rows, 'baseline_date': STOCK_SALE_BASELINE_DATE,
+                  'months_span': round(months_span, 1), 'as_of': today_s}
+        _report_cache.set('dead-items', cached)
+
+    removed_docs = await db.dead_item_removals.find({}, {"_id": 0}).to_list(2000)
+    removed_map = {r['item_name']: r for r in removed_docs}
+    items, removed = [], []
+    for r in cached['rows']:
+        if r['item_name'] in removed_map:
+            removed.append({**r,
+                            'removed_by': removed_map[r['item_name']].get('removed_by'),
+                            'removed_at': removed_map[r['item_name']].get('removed_at')})
+        else:
+            items.append(r)
+    return {'items': items, 'removed': removed, 'baseline_date': cached['baseline_date'],
+            'months_span': cached['months_span'], 'as_of': cached['as_of']}
+
+
+class DeadItemAction(BaseModel):
+    item_name: str
+
+
+@api_router.post("/dead-items/remove")
+async def remove_dead_item(payload: DeadItemAction, current_user: dict = Depends(get_current_user)):
+    if current_user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    name = payload.item_name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="item_name required")
+    await db.dead_item_removals.update_one(
+        {'item_name': name},
+        {'$set': {'item_name': name, 'removed_by': current_user.get('username', ''),
+                  'removed_at': datetime.now(timezone.utc).isoformat()}},
+        upsert=True)
+    return {'status': 'removed', 'item_name': name}
+
+
+@api_router.post("/dead-items/restore")
+async def restore_dead_item(payload: DeadItemAction, current_user: dict = Depends(get_current_user)):
+    if current_user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    res = await db.dead_item_removals.delete_one({'item_name': payload.item_name.strip()})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Item not in removed list")
+    return {'status': 'restored', 'item_name': payload.item_name.strip()}
+
+
 @api_router.get("/analytics/sales-report")
 async def get_sales_report(
     year: Optional[int] = Query(None),
@@ -5452,29 +5648,40 @@ async def _compute_sales_report(sd: str, ed: str, year: Optional[int], month: in
     months_equiv = max(n_days / 30.44, 0.033)
     
     prev_day = (sd_dt - timedelta(days=1)).strftime('%Y-%m-%d')
-    inv = await get_current_inventory_cached(as_of_date=prev_day)
     opening_by_leader = _dd(float)
-    for si in inv.get('stamp_items', []):
-        ldr = _resolve(si.get('item_name', '') or '')
-        if ldr and ldr not in EXCLUDED:
-            opening_by_leader[ldr] += si.get('net_wt', 0) or 0
+    if prev_day >= STOCK_SALE_BASELINE_DATE:
+        # Anchor: user-provided stock snapshot as on 21/12/2022 + all deltas since.
+        async for b in db.stock_sale_baseline.find({}, {"_id": 0, "item_name": 1, "net_wt": 1}):
+            ldr = _resolve(b.get('item_name', '') or '')
+            if ldr and ldr not in EXCLUDED:
+                opening_by_leader[ldr] += b.get('net_wt', 0) or 0
+        for raw, w in (await _stock_deltas_since_baseline(prev_day)).items():
+            if not raw or raw.isdigit():
+                continue
+            ldr = _resolve(raw)
+            if ldr and ldr not in EXCLUDED:
+                opening_by_leader[ldr] += w
     
-    ADD_T = ("purchase", "purchase_return", "receive")
-    SUB_T = ("sale", "sale_return", "issue")
+    ADD_T = _STOCK_ADD_T
+    SUB_T = _STOCK_SUB_T
     delta_by_leader = _dd(lambda: _dd(float))
-    async for t in db.transactions.find(
-            {'date': {'$gte': sd, '$lte': ed_eff + ' 23:59:59'},
-             'type': {'$in': list(ADD_T + SUB_T)}},
-            {"_id": 0, "date": 1, "type": 1, "item_name": 1, "net_wt": 1}):
-        raw = t.get('item_name', '') or ''
-        if not raw or raw.isdigit():
-            continue
-        ldr = _resolve(raw)
-        if ldr in EXCLUDED:
-            continue
-        dkey = (t.get('date') or '')[:10]
-        w = t.get('net_wt', 0) or 0
-        delta_by_leader[ldr][dkey] += w if t['type'] in ADD_T else -w
+    live_years_p = await _live_txn_years(int(sd[:4]), int(ed_eff[:4]))
+    for coll, skip_years in ((db.transactions, None), (db.historical_transactions, live_years_p)):
+        async for t in coll.find(
+                {'date': {'$gte': sd, '$lte': ed_eff + ' 23:59:59'},
+                 'type': {'$in': list(ADD_T + SUB_T)}},
+                {"_id": 0, "date": 1, "type": 1, "item_name": 1, "net_wt": 1}):
+            if skip_years is not None and (t.get('date') or '')[:4] in skip_years:
+                continue
+            raw = t.get('item_name', '') or ''
+            if not raw or raw.isdigit():
+                continue
+            ldr = _resolve(raw)
+            if ldr in EXCLUDED:
+                continue
+            dkey = (t.get('date') or '')[:10]
+            w = t.get('net_wt', 0) or 0
+            delta_by_leader[ldr][dkey] += w if t['type'] in ADD_T else -w
     
     date_seq = [(sd_dt + timedelta(days=k)).strftime('%Y-%m-%d') for k in range(n_days)]
     avg_stock_by_leader = {}

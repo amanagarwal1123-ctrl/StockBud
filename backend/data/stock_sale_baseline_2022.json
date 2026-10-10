@@ -1,0 +1,1797 @@
+{
+ "baseline_date": "2022-12-21",
+ "source": "FSTOCK22.xlsx Sheet2",
+ "unit": "grams",
+ "items": [
+  {
+   "item_name": "RAKHI 92.5 PCS RATE",
+   "gr_wt": 16557.0,
+   "net_wt": 16557.0
+  },
+  {
+   "item_name": "PEN ND",
+   "gr_wt": 446.0,
+   "net_wt": 436.0
+  },
+  {
+   "item_name": "PEN",
+   "gr_wt": 4918.0,
+   "net_wt": 4918.0
+  },
+  {
+   "item_name": "NOTE",
+   "gr_wt": 28065.0,
+   "net_wt": 28065.0
+  },
+  {
+   "item_name": "NOSE PIN 92.5",
+   "gr_wt": 11228.0,
+   "net_wt": 11228.0
+  },
+  {
+   "item_name": "NAJARIA",
+   "gr_wt": 831.0,
+   "net_wt": 831.0
+  },
+  {
+   "item_name": "MANGALSUTRA PC",
+   "gr_wt": 3614.0,
+   "net_wt": 3614.0
+  },
+  {
+   "item_name": "MALA RUDRAKSH-193",
+   "gr_wt": 2801.0,
+   "net_wt": 2231.0
+  },
+  {
+   "item_name": "MALA CRISTAL",
+   "gr_wt": 611.0,
+   "net_wt": 463.0
+  },
+  {
+   "item_name": "FREM",
+   "gr_wt": 134.0,
+   "net_wt": 129.0
+  },
+  {
+   "item_name": "AMROLD MURTI",
+   "gr_wt": 3715.0,
+   "net_wt": 3715.0
+  },
+  {
+   "item_name": "ZEE PAYAL-272",
+   "gr_wt": 114162.0,
+   "net_wt": 101235.9
+  },
+  {
+   "item_name": "VS-70 PAYAL-270",
+   "gr_wt": 258644.0,
+   "net_wt": 235798.0
+  },
+  {
+   "item_name": "TULSI 70 CHOTI",
+   "gr_wt": 5999.0,
+   "net_wt": 4516.5
+  },
+  {
+   "item_name": "TULSI 70 BELT",
+   "gr_wt": 87188.0,
+   "net_wt": 67575.5
+  },
+  {
+   "item_name": "TULSI 70 -264",
+   "gr_wt": 91749.0,
+   "net_wt": 70210.1
+  },
+  {
+   "item_name": "TAVIZ -263",
+   "gr_wt": 16060.0,
+   "net_wt": 14597.0
+  },
+  {
+   "item_name": "TAR 10-261",
+   "gr_wt": 5380.0,
+   "net_wt": 5330.0
+  },
+  {
+   "item_name": "TAGDI KUNDA",
+   "gr_wt": 1586.0,
+   "net_wt": 1440.0
+  },
+  {
+   "item_name": "SUS BICCHIYA-260",
+   "gr_wt": 2000.0,
+   "net_wt": 1690.13
+  },
+  {
+   "item_name": "SS-40 PAYAL",
+   "gr_wt": 39684.0,
+   "net_wt": 24962.65
+  },
+  {
+   "item_name": "SRJ-258",
+   "gr_wt": 204457.0,
+   "net_wt": 162607.0
+  },
+  {
+   "item_name": "SNT-LX",
+   "gr_wt": 25463.0,
+   "net_wt": 18727.7
+  },
+  {
+   "item_name": "SNT-60",
+   "gr_wt": 938.0,
+   "net_wt": 938.0
+  },
+  {
+   "item_name": "SNT-40 PREMIUM",
+   "gr_wt": 14611.0,
+   "net_wt": 10331.2
+  },
+  {
+   "item_name": "SNT 40-256",
+   "gr_wt": 96284.0,
+   "net_wt": 74031.9
+  },
+  {
+   "item_name": "SLG-70 TAGDI",
+   "gr_wt": 24197.0,
+   "net_wt": 19161.6
+  },
+  {
+   "item_name": "SLG-70 PAYAL MICRO",
+   "gr_wt": 16339.0,
+   "net_wt": 11836.599999999999
+  },
+  {
+   "item_name": "SLG-70 PAYAL",
+   "gr_wt": 12345.0,
+   "net_wt": 8552.5
+  },
+  {
+   "item_name": "SLG-70 MICRO HATHFUL",
+   "gr_wt": 3911.0,
+   "net_wt": 2842.6
+  },
+  {
+   "item_name": "SLG-70 MICRO BICCHIYA",
+   "gr_wt": 11638.0,
+   "net_wt": 8497.11
+  },
+  {
+   "item_name": "SLG-70 GUCCHA ANTIQUE",
+   "gr_wt": 1969.0,
+   "net_wt": 1514.5
+  },
+  {
+   "item_name": "SLG-70 CNC GUCCHA",
+   "gr_wt": 1593.0,
+   "net_wt": 1313.3
+  },
+  {
+   "item_name": "SLG-70 CHOTI",
+   "gr_wt": 2727.0,
+   "net_wt": 2413.65
+  },
+  {
+   "item_name": "SLG-70 BACCHA KADA",
+   "gr_wt": 63146.0,
+   "net_wt": 47862.94499999999
+  },
+  {
+   "item_name": "SLG 70 BICCHIYA-255",
+   "gr_wt": 30259.0,
+   "net_wt": 23577.91
+  },
+  {
+   "item_name": "SING1-253",
+   "gr_wt": 645.0,
+   "net_wt": 504.0
+  },
+  {
+   "item_name": "SIKKI KADA 80",
+   "gr_wt": 6815.0,
+   "net_wt": 5664.8
+  },
+  {
+   "item_name": "SHUBHI-70",
+   "gr_wt": 136354.0,
+   "net_wt": 123240.5
+  },
+  {
+   "item_name": "SHRIJI PAYAL-251",
+   "gr_wt": 68998.0,
+   "net_wt": 57991.4
+  },
+  {
+   "item_name": "SHETANBAZA-250",
+   "gr_wt": 4618.0,
+   "net_wt": 4531.0
+  },
+  {
+   "item_name": "SHAU DANA 65-60T",
+   "gr_wt": 4655.0,
+   "net_wt": 3910.0
+  },
+  {
+   "item_name": "SHAU DANA 60-55T",
+   "gr_wt": 3274.0,
+   "net_wt": 2692.0
+  },
+  {
+   "item_name": "SHAU DANA 45-40T",
+   "gr_wt": 10894.0,
+   "net_wt": 9404.0
+  },
+  {
+   "item_name": "SHAU DANA 30-25T-249",
+   "gr_wt": 12524.0,
+   "net_wt": 11298.0
+  },
+  {
+   "item_name": "SHAU DANA 25-20T-248",
+   "gr_wt": 4253.0,
+   "net_wt": 3913.0
+  },
+  {
+   "item_name": "SHABNAM KADA 70-247",
+   "gr_wt": 1196.0,
+   "net_wt": 1150.6
+  },
+  {
+   "item_name": "SHABNAM KADA 60-246",
+   "gr_wt": 977.0,
+   "net_wt": 931.6
+  },
+  {
+   "item_name": "SET MANU JI -70",
+   "gr_wt": 2338.0,
+   "net_wt": 1522.0
+  },
+  {
+   "item_name": "SET CULCUTTA-202",
+   "gr_wt": 2027.0,
+   "net_wt": 1726.3
+  },
+  {
+   "item_name": "SET -245",
+   "gr_wt": 54890.0,
+   "net_wt": 44747.16
+  },
+  {
+   "item_name": "SB PAYAL",
+   "gr_wt": 3696.0,
+   "net_wt": 3424.2
+  },
+  {
+   "item_name": "SALANGA YASH-186",
+   "gr_wt": 10667.0,
+   "net_wt": 9661.6
+  },
+  {
+   "item_name": "SALANGA AMAN-185",
+   "gr_wt": 5068.0,
+   "net_wt": 4553.9
+  },
+  {
+   "item_name": "SAJ-244",
+   "gr_wt": 2918.0,
+   "net_wt": 2555.0
+  },
+  {
+   "item_name": "RUPALI YASH 40-203",
+   "gr_wt": 40232.0,
+   "net_wt": 39302.0
+  },
+  {
+   "item_name": "RUPALI AMAN 60-242",
+   "gr_wt": 13717.0,
+   "net_wt": 13026.0
+  },
+  {
+   "item_name": "RUPALI ADITYA 50-241",
+   "gr_wt": 9109.0,
+   "net_wt": 8694.0
+  },
+  {
+   "item_name": "RS-1-239",
+   "gr_wt": 15614.0,
+   "net_wt": 10934.0
+  },
+  {
+   "item_name": "RP KASTING KANDOURA 46",
+   "gr_wt": 19717.0,
+   "net_wt": 17771.9
+  },
+  {
+   "item_name": "RP KASTING HATHFUL 46",
+   "gr_wt": 11571.0,
+   "net_wt": 9628.4
+  },
+  {
+   "item_name": "RP KASTING GUCCHA 46",
+   "gr_wt": 1002.0,
+   "net_wt": 833.5
+  },
+  {
+   "item_name": "RP KASTING CHOTI 46",
+   "gr_wt": 6322.0,
+   "net_wt": 5603.75
+  },
+  {
+   "item_name": "RP JUDA FUL 46",
+   "gr_wt": 1054.0,
+   "net_wt": 891.8
+  },
+  {
+   "item_name": "RP DOUBLE JUDA 46",
+   "gr_wt": 2645.0,
+   "net_wt": 2184.0
+  },
+  {
+   "item_name": "RP CHECKS HATHFUL 46",
+   "gr_wt": 1686.0,
+   "net_wt": 1440.25
+  },
+  {
+   "item_name": "RP BOMBAY BELT 46",
+   "gr_wt": 14802.0,
+   "net_wt": 12727.95
+  },
+  {
+   "item_name": "RP BAJUBAND 46",
+   "gr_wt": 2444.0,
+   "net_wt": 2062.1
+  },
+  {
+   "item_name": "RP AMBOJ KANDOURA 46",
+   "gr_wt": 41454.0,
+   "net_wt": 37102.4
+  },
+  {
+   "item_name": "RP AMBOJ JUDA 46",
+   "gr_wt": 6086.0,
+   "net_wt": 5428.0
+  },
+  {
+   "item_name": "RP AMBOJ HATHFUL 46",
+   "gr_wt": 14385.0,
+   "net_wt": 11675.9
+  },
+  {
+   "item_name": "RP AMBOJ CHOTI 46",
+   "gr_wt": 10112.0,
+   "net_wt": 8820.0
+  },
+  {
+   "item_name": "ROCKET KADA-238",
+   "gr_wt": 1453.0,
+   "net_wt": 1387.5
+  },
+  {
+   "item_name": "RING NUG BR -237",
+   "gr_wt": 6248.0,
+   "net_wt": 5984.54
+  },
+  {
+   "item_name": "RING NUG 65 -236",
+   "gr_wt": 6153.0,
+   "net_wt": 5877.14
+  },
+  {
+   "item_name": "RING MOTI",
+   "gr_wt": 10057.0,
+   "net_wt": 9025.64
+  },
+  {
+   "item_name": "RING KASTING 65-235",
+   "gr_wt": 50570.0,
+   "net_wt": 46294.0
+  },
+  {
+   "item_name": "RING DHALAI 80-234",
+   "gr_wt": 2800.0,
+   "net_wt": 2208.0
+  },
+  {
+   "item_name": "RING AMRITSARI",
+   "gr_wt": 11186.0,
+   "net_wt": 10099.0
+  },
+  {
+   "item_name": "RING 92.5-031",
+   "gr_wt": 128191.0,
+   "net_wt": 94572.97000000002
+  },
+  {
+   "item_name": "RH-60 BICCHIYA",
+   "gr_wt": 186848.0,
+   "net_wt": 166133.0
+  },
+  {
+   "item_name": "RG-60 BICHIYA",
+   "gr_wt": 30031.0,
+   "net_wt": 24724.5
+  },
+  {
+   "item_name": "RATH",
+   "gr_wt": 88742.0,
+   "net_wt": 17218.0
+  },
+  {
+   "item_name": "RAMNUMI-233",
+   "gr_wt": 2406.0,
+   "net_wt": 2081.0
+  },
+  {
+   "item_name": "RAKHI SHUBH-70-231",
+   "gr_wt": 75.0,
+   "net_wt": 62.0
+  },
+  {
+   "item_name": "RAKHI POP-60-229",
+   "gr_wt": 183.0,
+   "net_wt": 142.8
+  },
+  {
+   "item_name": "RAKHI NM-60",
+   "gr_wt": 291.0,
+   "net_wt": 130.05
+  },
+  {
+   "item_name": "RAKHI KK",
+   "gr_wt": 450.0,
+   "net_wt": 175.2
+  },
+  {
+   "item_name": "RAKHI JCO-LX-228",
+   "gr_wt": 226.0,
+   "net_wt": 195.4
+  },
+  {
+   "item_name": "RAKHI GT-277",
+   "gr_wt": 1234.0,
+   "net_wt": 847.0
+  },
+  {
+   "item_name": "RAKHI BHAKTI-224",
+   "gr_wt": 1358.0,
+   "net_wt": 772.8
+  },
+  {
+   "item_name": "PUJA SAMAN 925-222",
+   "gr_wt": 76.0,
+   "net_wt": 73.0
+  },
+  {
+   "item_name": "PUJA SAMAN 60-221",
+   "gr_wt": 3961.0,
+   "net_wt": 3679.0
+  },
+  {
+   "item_name": "PUJA SAMAN 46-153",
+   "gr_wt": 27668.0,
+   "net_wt": 25717.0
+  },
+  {
+   "item_name": "PS-60 MICRO BICCHHYA",
+   "gr_wt": 37057.0,
+   "net_wt": 30564.489999999998
+  },
+  {
+   "item_name": "PS-60 FANCY BICCHIYA",
+   "gr_wt": 16336.0,
+   "net_wt": 13774.14
+  },
+  {
+   "item_name": "PS-60 BANGKOK BICHHIYA",
+   "gr_wt": 1952.0,
+   "net_wt": 1630.54
+  },
+  {
+   "item_name": "POP-60 PAYAL-220",
+   "gr_wt": 52329.0,
+   "net_wt": 39374.36
+  },
+  {
+   "item_name": "PINJRA-057",
+   "gr_wt": 3735.0,
+   "net_wt": 3592.4
+  },
+  {
+   "item_name": "PINJRA PAYAL -218",
+   "gr_wt": 51081.0,
+   "net_wt": 44736.05
+  },
+  {
+   "item_name": "PENDEL BHIWANI",
+   "gr_wt": 2137.0,
+   "net_wt": 1986.0
+  },
+  {
+   "item_name": "PENDEL AMRITSARI",
+   "gr_wt": 2433.0,
+   "net_wt": 2127.0
+  },
+  {
+   "item_name": "PENDAL SALMAN",
+   "gr_wt": 245.0,
+   "net_wt": 96.0
+  },
+  {
+   "item_name": "PENDAL DIL-215",
+   "gr_wt": 2405.0,
+   "net_wt": 2220.0
+  },
+  {
+   "item_name": "PAYAL AS-70",
+   "gr_wt": 30160.0,
+   "net_wt": 20360.3
+  },
+  {
+   "item_name": "PARIBANDH-213",
+   "gr_wt": 2123.0,
+   "net_wt": 2064.0
+  },
+  {
+   "item_name": "PAIRFUL -212",
+   "gr_wt": 10930.0,
+   "net_wt": 9859.5
+  },
+  {
+   "item_name": "PAHADI BICCHIYA",
+   "gr_wt": 4812.0,
+   "net_wt": 4762.0
+  },
+  {
+   "item_name": "NM LX",
+   "gr_wt": 79893.0,
+   "net_wt": 57397.24
+  },
+  {
+   "item_name": "ND ITEM-064",
+   "gr_wt": 18026.0,
+   "net_wt": 15268.46
+  },
+  {
+   "item_name": "NARIYAL SS SMALL",
+   "gr_wt": 2923.0,
+   "net_wt": 2727.5
+  },
+  {
+   "item_name": "NARIYAL SS -073",
+   "gr_wt": 3873.0,
+   "net_wt": 3714.0
+  },
+  {
+   "item_name": "NARIYAL GOLDEN B1-209",
+   "gr_wt": 1002.0,
+   "net_wt": 952.0
+  },
+  {
+   "item_name": "NAJARIYA PLAIN 92.5",
+   "gr_wt": 9182.0,
+   "net_wt": 6211.25
+  },
+  {
+   "item_name": "NAJARIYA CHARMS 92.5",
+   "gr_wt": 256.0,
+   "net_wt": 100.65
+  },
+  {
+   "item_name": "NAJARIYA ADJUSTABLE 92.5",
+   "gr_wt": 3980.0,
+   "net_wt": 3166.8500000000004
+  },
+  {
+   "item_name": "MURTI PENDAL RAJKOT-208",
+   "gr_wt": 21732.0,
+   "net_wt": 20239.0
+  },
+  {
+   "item_name": "MURTI PENDAL KM-208",
+   "gr_wt": 1385.0,
+   "net_wt": 1385.0
+  },
+  {
+   "item_name": "MURTI PENDAL -207",
+   "gr_wt": 5134.0,
+   "net_wt": 4792.0
+  },
+  {
+   "item_name": "MURTI KP-70 -205",
+   "gr_wt": 24336.0,
+   "net_wt": 23505.6
+  },
+  {
+   "item_name": "MURTI KP 92.5-204",
+   "gr_wt": 2857.0,
+   "net_wt": 2789.4
+  },
+  {
+   "item_name": "MURTI KP 70 NICE",
+   "gr_wt": 797.0,
+   "net_wt": 729.1
+  },
+  {
+   "item_name": "MURTI KAPOOR 92.5",
+   "gr_wt": 3798.0,
+   "net_wt": 3080.3
+  },
+  {
+   "item_name": "MURTI KAPOOR -203",
+   "gr_wt": 8937.0,
+   "net_wt": 7631.7
+  },
+  {
+   "item_name": "MURTI DELHI",
+   "gr_wt": 1347.0,
+   "net_wt": 1322.12
+  },
+  {
+   "item_name": "MURTI 92.5 ACPL",
+   "gr_wt": 2653.0,
+   "net_wt": 2625.8
+  },
+  {
+   "item_name": "MUNNI BELT BP PREMIUM",
+   "gr_wt": 27711.0,
+   "net_wt": 16121.8
+  },
+  {
+   "item_name": "MUNNI BELT",
+   "gr_wt": 30375.0,
+   "net_wt": 25068.0
+  },
+  {
+   "item_name": "MUKUT MINA 80-200",
+   "gr_wt": 4229.0,
+   "net_wt": 3859.0
+  },
+  {
+   "item_name": "MUKUT MINA - 70",
+   "gr_wt": 4780.0,
+   "net_wt": 3181.06
+  },
+  {
+   "item_name": "MUKUT CALCUTTA-201",
+   "gr_wt": 548.0,
+   "net_wt": 522.0
+  },
+  {
+   "item_name": "MSD GUCHA-199",
+   "gr_wt": 2768.0,
+   "net_wt": 2034.4
+  },
+  {
+   "item_name": "MP-60 PAYAL-117",
+   "gr_wt": 2784.0,
+   "net_wt": 2346.0
+  },
+  {
+   "item_name": "MP-40 BICCHIYA-196",
+   "gr_wt": 2079.0,
+   "net_wt": 1921.0
+  },
+  {
+   "item_name": "MD PAYAL-195",
+   "gr_wt": 44223.0,
+   "net_wt": 39074.8
+  },
+  {
+   "item_name": "MARC-70 PAYAL",
+   "gr_wt": 3758.0,
+   "net_wt": 2959.7
+  },
+  {
+   "item_name": "MANNU SHRI PAYAL-191",
+   "gr_wt": 120634.0,
+   "net_wt": 92222.5
+  },
+  {
+   "item_name": "MANGALSUTRA BLACK 60 -190",
+   "gr_wt": 830.0,
+   "net_wt": 614.2
+  },
+  {
+   "item_name": "MANGALSUTRA 65 -189",
+   "gr_wt": 3448.0,
+   "net_wt": 2788.25
+  },
+  {
+   "item_name": "MANGALSUTRA 48 -188",
+   "gr_wt": 8710.0,
+   "net_wt": 7067.55
+  },
+  {
+   "item_name": "MALA TULSI-194",
+   "gr_wt": 969.0,
+   "net_wt": 782.0
+  },
+  {
+   "item_name": "MALA MATAR-192",
+   "gr_wt": 2745.0,
+   "net_wt": 2383.55
+  },
+  {
+   "item_name": "MAGAR PEETH PAYAL-187",
+   "gr_wt": 13504.0,
+   "net_wt": 12617.2
+  },
+  {
+   "item_name": "MADRASI YASH SHOLDER -186",
+   "gr_wt": 28342.0,
+   "net_wt": 26954.0
+  },
+  {
+   "item_name": "MADRASI YASH -186",
+   "gr_wt": 64948.0,
+   "net_wt": 62300.0
+  },
+  {
+   "item_name": "MADRASI AMAN SOLDER-185",
+   "gr_wt": 15479.0,
+   "net_wt": 14780.0
+  },
+  {
+   "item_name": "MADRASI AMAN -185",
+   "gr_wt": 44309.0,
+   "net_wt": 42622.0
+  },
+  {
+   "item_name": "MADRASI ADITYA SOLDER-184",
+   "gr_wt": 28514.0,
+   "net_wt": 27154.0
+  },
+  {
+   "item_name": "MADRASI ADITYA B1-184",
+   "gr_wt": 59625.0,
+   "net_wt": 56860.0
+  },
+  {
+   "item_name": "MACHALI -183",
+   "gr_wt": 4866.0,
+   "net_wt": 4311.0
+  },
+  {
+   "item_name": "LUCHA KADA 70-181",
+   "gr_wt": 2295.0,
+   "net_wt": 2259.0
+  },
+  {
+   "item_name": "LUCHA KADA 45-182",
+   "gr_wt": 8791.0,
+   "net_wt": 8644.0
+  },
+  {
+   "item_name": "LUCCHA KADA 48",
+   "gr_wt": 103.0,
+   "net_wt": 98.0
+  },
+  {
+   "item_name": "LOTA",
+   "gr_wt": 319.0,
+   "net_wt": 304.0
+  },
+  {
+   "item_name": "LAILA MAJNU 48-179",
+   "gr_wt": 8655.0,
+   "net_wt": 8180.0
+  },
+  {
+   "item_name": "KK PAYAL-175",
+   "gr_wt": 88623.0,
+   "net_wt": 79635.2
+  },
+  {
+   "item_name": "KHILONA-174",
+   "gr_wt": 24393.0,
+   "net_wt": 23679.6
+  },
+  {
+   "item_name": "KHATU SHYAM PENDAL 92.5",
+   "gr_wt": 4051.0,
+   "net_wt": 3706.88
+  },
+  {
+   "item_name": "KEY RING-173",
+   "gr_wt": 402.0,
+   "net_wt": 306.25
+  },
+  {
+   "item_name": "KASTING KANDOURA PS-60-170",
+   "gr_wt": 203.0,
+   "net_wt": 201.0
+  },
+  {
+   "item_name": "KASTING KANDOURA -068",
+   "gr_wt": 7040.0,
+   "net_wt": 6344.4
+  },
+  {
+   "item_name": "KASTING KADA -70-172",
+   "gr_wt": 34630.0,
+   "net_wt": 33253.9
+  },
+  {
+   "item_name": "KASTING KADA -171",
+   "gr_wt": 26680.0,
+   "net_wt": 25477.7
+  },
+  {
+   "item_name": "KASTING HATHFUL -169",
+   "gr_wt": 6563.0,
+   "net_wt": 5438.9
+  },
+  {
+   "item_name": "KARVE",
+   "gr_wt": 847.0,
+   "net_wt": 815.0
+  },
+  {
+   "item_name": "KARAV 45-167",
+   "gr_wt": 4544.0,
+   "net_wt": 4221.0
+  },
+  {
+   "item_name": "KARAV 20",
+   "gr_wt": 26099.0,
+   "net_wt": 25454.0
+  },
+  {
+   "item_name": "KANPURI CHUTKI 60",
+   "gr_wt": 15086.0,
+   "net_wt": 14450.5
+  },
+  {
+   "item_name": "KANPURI CHUTKI 48",
+   "gr_wt": 281.0,
+   "net_wt": 276.0
+  },
+  {
+   "item_name": "KADI",
+   "gr_wt": 6073.0,
+   "net_wt": 5476.0
+  },
+  {
+   "item_name": "KADAWAL THOS -70",
+   "gr_wt": 5588.0,
+   "net_wt": 5039.0
+  },
+  {
+   "item_name": "KADA-AS 70",
+   "gr_wt": 72607.0,
+   "net_wt": 53134.100000000006
+  },
+  {
+   "item_name": "KADA THOS 65-164",
+   "gr_wt": 6620.0,
+   "net_wt": 6031.0
+  },
+  {
+   "item_name": "KADA THOS 48-163",
+   "gr_wt": 2842.0,
+   "net_wt": 2571.0
+  },
+  {
+   "item_name": "KADA SIMRAN 925",
+   "gr_wt": 755.0,
+   "net_wt": 551.37
+  },
+  {
+   "item_name": "KADA RP PREMIUM",
+   "gr_wt": 44820.0,
+   "net_wt": 34444.75
+  },
+  {
+   "item_name": "KADA LADIES ND-159",
+   "gr_wt": 18856.0,
+   "net_wt": 18167.35
+  },
+  {
+   "item_name": "KADA FANCY -80",
+   "gr_wt": 4743.0,
+   "net_wt": 3833.2
+  },
+  {
+   "item_name": "KADA DHALAI 80 -158",
+   "gr_wt": 9756.0,
+   "net_wt": 8843.2
+  },
+  {
+   "item_name": "KADA DEV 65",
+   "gr_wt": 24867.0,
+   "net_wt": 23902.5
+  },
+  {
+   "item_name": "KADA BR 65",
+   "gr_wt": 5441.0,
+   "net_wt": 5166.0
+  },
+  {
+   "item_name": "KADA 92.5",
+   "gr_wt": 15126.0,
+   "net_wt": 11488.65
+  },
+  {
+   "item_name": "KADA 60-155",
+   "gr_wt": 78783.0,
+   "net_wt": 77116.0
+  },
+  {
+   "item_name": "KADA 45 BR",
+   "gr_wt": 5395.0,
+   "net_wt": 4878.6
+  },
+  {
+   "item_name": "KADA 40 -162",
+   "gr_wt": 195738.0,
+   "net_wt": 188096.4
+  },
+  {
+   "item_name": "K.KRUPA-154",
+   "gr_wt": 3898.0,
+   "net_wt": 3182.3
+  },
+  {
+   "item_name": "JUTI VELVET",
+   "gr_wt": 6534.0,
+   "net_wt": 2837.5
+  },
+  {
+   "item_name": "JUTI ND",
+   "gr_wt": 333.0,
+   "net_wt": 327.0
+  },
+  {
+   "item_name": "JUDA NUG-197",
+   "gr_wt": 1114.0,
+   "net_wt": 796.5
+  },
+  {
+   "item_name": "JUDA FUL TULSI 70-265",
+   "gr_wt": 4964.0,
+   "net_wt": 3571.3999999999996
+  },
+  {
+   "item_name": "JUDA FUL BP PREMIUM",
+   "gr_wt": 2616.0,
+   "net_wt": 1898.9
+  },
+  {
+   "item_name": "JUDA FUL -152",
+   "gr_wt": 1161.0,
+   "net_wt": 675.8
+  },
+  {
+   "item_name": "JHUNJHUNE B1",
+   "gr_wt": 6842.0,
+   "net_wt": 6706.0
+  },
+  {
+   "item_name": "JHUNJHUNA CHALU",
+   "gr_wt": 1968.0,
+   "net_wt": 1946.0
+  },
+  {
+   "item_name": "JHUMKI 65",
+   "gr_wt": 1998.0,
+   "net_wt": 1838.0
+  },
+  {
+   "item_name": "JCO PAYAL",
+   "gr_wt": 23342.0,
+   "net_wt": 18763.2
+  },
+  {
+   "item_name": "JCO LX-151",
+   "gr_wt": 75461.0,
+   "net_wt": 48876.0
+  },
+  {
+   "item_name": "JCO GUCCHA-149",
+   "gr_wt": 15934.0,
+   "net_wt": 13094.0
+  },
+  {
+   "item_name": "JCO BELT-148",
+   "gr_wt": 21588.0,
+   "net_wt": 19913.9
+  },
+  {
+   "item_name": "JC-60 CHOTI BICHIYYA",
+   "gr_wt": 15828.0,
+   "net_wt": 13826.869999999999
+  },
+  {
+   "item_name": "JC-60 CASTING BICCHIYA",
+   "gr_wt": 50181.0,
+   "net_wt": 42003.91
+  },
+  {
+   "item_name": "JC-60 BICHHIYA-147",
+   "gr_wt": 205287.0,
+   "net_wt": 169441.8
+  },
+  {
+   "item_name": "JC-40 PAYAL-145",
+   "gr_wt": 28154.0,
+   "net_wt": 21467.4
+  },
+  {
+   "item_name": "JC-40 GUCCHA-146",
+   "gr_wt": 3846.0,
+   "net_wt": 3256.0
+  },
+  {
+   "item_name": "JC-40 BELT",
+   "gr_wt": 17824.0,
+   "net_wt": 16440.0
+  },
+  {
+   "item_name": "JB-70 RING SINGLE STONE",
+   "gr_wt": 12749.0,
+   "net_wt": 10225.04
+  },
+  {
+   "item_name": "JB-70 MURTI",
+   "gr_wt": 14012.0,
+   "net_wt": 13522.2
+  },
+  {
+   "item_name": "JB-70 KADA-144",
+   "gr_wt": 178415.0,
+   "net_wt": 131132.64999999997
+  },
+  {
+   "item_name": "JADAU RING-138",
+   "gr_wt": 1080.0,
+   "net_wt": 937.0
+  },
+  {
+   "item_name": "JADAU BICCHIYA SADHA",
+   "gr_wt": 11616.0,
+   "net_wt": 11491.0
+  },
+  {
+   "item_name": "JADAU BICCHIYA -137",
+   "gr_wt": 7425.0,
+   "net_wt": 7333.0
+  },
+  {
+   "item_name": "ITALY PAYAL 48-136",
+   "gr_wt": 452.0,
+   "net_wt": 281.0
+  },
+  {
+   "item_name": "INTH GOLI THOS 48-135",
+   "gr_wt": 4410.0,
+   "net_wt": 4118.0
+  },
+  {
+   "item_name": "INDI-134",
+   "gr_wt": 2483.0,
+   "net_wt": 2361.0
+  },
+  {
+   "item_name": "HOLO MURTI -133",
+   "gr_wt": 1832.0,
+   "net_wt": 1771.3
+  },
+  {
+   "item_name": "HATHRI DELHI BI-129",
+   "gr_wt": 1272.0,
+   "net_wt": 1248.0
+  },
+  {
+   "item_name": "HATHRI DELHI 70-130",
+   "gr_wt": 6702.0,
+   "net_wt": 6294.2
+  },
+  {
+   "item_name": "HATHI THOS -127",
+   "gr_wt": 18831.0,
+   "net_wt": 18142.46
+  },
+  {
+   "item_name": "HATHI 92.5",
+   "gr_wt": 6332.0,
+   "net_wt": 5994.0
+  },
+  {
+   "item_name": "HASLI-126",
+   "gr_wt": 1017.0,
+   "net_wt": 996.0
+  },
+  {
+   "item_name": "GT PAYAL-125",
+   "gr_wt": 26863.0,
+   "net_wt": 21966.0
+  },
+  {
+   "item_name": "GOBI PAYAL 60-122",
+   "gr_wt": 14528.0,
+   "net_wt": 13122.0
+  },
+  {
+   "item_name": "GOBI PAYAL 48-020",
+   "gr_wt": 11070.0,
+   "net_wt": 9897.0
+  },
+  {
+   "item_name": "GAJRA-116",
+   "gr_wt": 1131.0,
+   "net_wt": 1095.3
+  },
+  {
+   "item_name": "GADA-115",
+   "gr_wt": 2955.0,
+   "net_wt": 2875.0
+  },
+  {
+   "item_name": "FERVA 60-113",
+   "gr_wt": 107517.0,
+   "net_wt": 94805.0
+  },
+  {
+   "item_name": "FANCY HATHFUL 60-112",
+   "gr_wt": 952.0,
+   "net_wt": 741.2
+  },
+  {
+   "item_name": "FANCY HATHFUL 40-111",
+   "gr_wt": 18128.0,
+   "net_wt": 16252.9
+  },
+  {
+   "item_name": "DS-NX PAYAL",
+   "gr_wt": 8638.0,
+   "net_wt": 6655.3
+  },
+  {
+   "item_name": "DS-NX MICRO PAYAL",
+   "gr_wt": 1215.0,
+   "net_wt": 925.5
+  },
+  {
+   "item_name": "DSA-60 BICCHIYA-110",
+   "gr_wt": 57402.0,
+   "net_wt": 46877.05
+  },
+  {
+   "item_name": "DS-60 SINGAPURI MICRO",
+   "gr_wt": 2992.0,
+   "net_wt": 2922.05
+  },
+  {
+   "item_name": "DS-60 CASTING BICCHIYA",
+   "gr_wt": 2980.0,
+   "net_wt": 2520.25
+  },
+  {
+   "item_name": "DS-60 BOMBAY MINA BICHHIYA",
+   "gr_wt": 7479.0,
+   "net_wt": 5948.75
+  },
+  {
+   "item_name": "D-PAYAL SJ-094",
+   "gr_wt": 1018.0,
+   "net_wt": 907.3
+  },
+  {
+   "item_name": "DK-60-108",
+   "gr_wt": 44110.0,
+   "net_wt": 30768.199999999997
+  },
+  {
+   "item_name": "DISCO B1-106",
+   "gr_wt": 6594.0,
+   "net_wt": 6424.0
+  },
+  {
+   "item_name": "DISCO 70-107",
+   "gr_wt": 2679.0,
+   "net_wt": 2529.0
+  },
+  {
+   "item_name": "DIBBI ND-102",
+   "gr_wt": 8837.0,
+   "net_wt": 8275.0
+  },
+  {
+   "item_name": "DIBBI MINA",
+   "gr_wt": 5210.0,
+   "net_wt": 5077.0
+  },
+  {
+   "item_name": "DIBBI ANTIQUE",
+   "gr_wt": 105.0,
+   "net_wt": 100.7
+  },
+  {
+   "item_name": "D-GHUNGHRU 65",
+   "gr_wt": 5377.0,
+   "net_wt": 4817.0
+  },
+  {
+   "item_name": "D-GHUGROO 48-021-090",
+   "gr_wt": 41740.0,
+   "net_wt": 37725.9
+  },
+  {
+   "item_name": "DESI PAYAL DHALAI 70",
+   "gr_wt": 478.0,
+   "net_wt": 279.0
+  },
+  {
+   "item_name": "DESI PAYAL CHURU-104",
+   "gr_wt": 11691.0,
+   "net_wt": 10922.1
+  },
+  {
+   "item_name": "DESI PAYAL -104",
+   "gr_wt": 66112.0,
+   "net_wt": 60596.0
+  },
+  {
+   "item_name": "DESI BICCHIYA 48-103",
+   "gr_wt": 5944.0,
+   "net_wt": 5654.5
+  },
+  {
+   "item_name": "DESI ANKADA",
+   "gr_wt": 375.0,
+   "net_wt": 233.0
+  },
+  {
+   "item_name": "DEEPAK ND",
+   "gr_wt": 1591.0,
+   "net_wt": 1515.0
+  },
+  {
+   "item_name": "DEEPAK 70-100",
+   "gr_wt": 6734.0,
+   "net_wt": 6623.0
+  },
+  {
+   "item_name": "DEEPAK -101",
+   "gr_wt": 4333.0,
+   "net_wt": 4344.0
+  },
+  {
+   "item_name": "DC-60 PAYAL",
+   "gr_wt": 368.0,
+   "net_wt": 289.8
+  },
+  {
+   "item_name": "DAUJI-70 PAYAL",
+   "gr_wt": 5669.0,
+   "net_wt": 4534.1
+  },
+  {
+   "item_name": "DAST BANDH 48-096",
+   "gr_wt": 2004.0,
+   "net_wt": 1512.0
+  },
+  {
+   "item_name": "DAMAMA RING-095",
+   "gr_wt": 2784.0,
+   "net_wt": 2633.0
+  },
+  {
+   "item_name": "D PAYAL MK-093",
+   "gr_wt": 2694.0,
+   "net_wt": 2362.4
+  },
+  {
+   "item_name": "D GHUNGRU SM 60-091",
+   "gr_wt": 19411.0,
+   "net_wt": 18561.2
+  },
+  {
+   "item_name": "D GHUNGRU SM 48-284",
+   "gr_wt": 26945.0,
+   "net_wt": 24958.5
+  },
+  {
+   "item_name": "D CHALLA-089",
+   "gr_wt": 22948.0,
+   "net_wt": 22651.18
+  },
+  {
+   "item_name": "CUDI CHILAI-079",
+   "gr_wt": 4809.0,
+   "net_wt": 4723.0
+  },
+  {
+   "item_name": "COIN 92.5-085",
+   "gr_wt": 1494.0,
+   "net_wt": 1470.0
+  },
+  {
+   "item_name": "COIN 70 GOLDEN",
+   "gr_wt": 9957.0,
+   "net_wt": 9833.6
+  },
+  {
+   "item_name": "COIN 70 -084",
+   "gr_wt": 31379.0,
+   "net_wt": 30456.25
+  },
+  {
+   "item_name": "COIN 50 GOLDEN",
+   "gr_wt": 805.0,
+   "net_wt": 795.0
+  },
+  {
+   "item_name": "COIN 50 -083",
+   "gr_wt": 35184.0,
+   "net_wt": 35042.0
+  },
+  {
+   "item_name": "COIN 40 GOLDEN",
+   "gr_wt": 3856.0,
+   "net_wt": 3787.4
+  },
+  {
+   "item_name": "COIN 40 -082",
+   "gr_wt": 8762.0,
+   "net_wt": 8713.3
+  },
+  {
+   "item_name": "COIN 20 GOLDEN",
+   "gr_wt": 460.0,
+   "net_wt": 447.0
+  },
+  {
+   "item_name": "COIN 20 -081",
+   "gr_wt": 24088.0,
+   "net_wt": 23964.0
+  },
+  {
+   "item_name": "COIN 100 GOLDEN-080",
+   "gr_wt": 4171.0,
+   "net_wt": 4104.6
+  },
+  {
+   "item_name": "COIN 100 -080",
+   "gr_wt": 17162.0,
+   "net_wt": 16964.3
+  },
+  {
+   "item_name": "CHUDI CHILAI BR-70 12 PCS",
+   "gr_wt": 2633.0,
+   "net_wt": 2528.3
+  },
+  {
+   "item_name": "CHOTI-078",
+   "gr_wt": 1267.0,
+   "net_wt": 957.05
+  },
+  {
+   "item_name": "CHOTI PS-60",
+   "gr_wt": 2097.0,
+   "net_wt": 2095.0
+  },
+  {
+   "item_name": "CHITAI BARTAN -076",
+   "gr_wt": 1619.0,
+   "net_wt": 1565.0
+  },
+  {
+   "item_name": "CHIDIPAN 60-075",
+   "gr_wt": 5426.0,
+   "net_wt": 4894.0
+  },
+  {
+   "item_name": "CHIDIPAN 48-074",
+   "gr_wt": 8705.0,
+   "net_wt": 7885.0
+  },
+  {
+   "item_name": "CHHATAR SS -073",
+   "gr_wt": 9753.0,
+   "net_wt": 9087.0
+  },
+  {
+   "item_name": "CHHATAR GHUNTI-072",
+   "gr_wt": 1956.0,
+   "net_wt": 1807.0
+  },
+  {
+   "item_name": "CHHATAR GHUNTI B1",
+   "gr_wt": 581.0,
+   "net_wt": 429.0
+  },
+  {
+   "item_name": "CHHATAR DELHI",
+   "gr_wt": 7120.0,
+   "net_wt": 6652.0
+  },
+  {
+   "item_name": "CHEKS PANJA 60-070",
+   "gr_wt": 13798.0,
+   "net_wt": 12315.4
+  },
+  {
+   "item_name": "CHEKS PANJA -069",
+   "gr_wt": 27818.0,
+   "net_wt": 24094.0
+  },
+  {
+   "item_name": "CHAPPAL BADAYUN-067",
+   "gr_wt": 10099.0,
+   "net_wt": 9580.0
+  },
+  {
+   "item_name": "CHAMMACH 925",
+   "gr_wt": 9197.0,
+   "net_wt": 8640.0
+  },
+  {
+   "item_name": "CHALNI 60-066",
+   "gr_wt": 2750.0,
+   "net_wt": 2708.754
+  },
+  {
+   "item_name": "CHALNI 48 -065",
+   "gr_wt": 1906.0,
+   "net_wt": 1643.0
+  },
+  {
+   "item_name": "CHAIN-S",
+   "gr_wt": 2136.0,
+   "net_wt": 1848.0
+  },
+  {
+   "item_name": "CHAIN ZEE-063",
+   "gr_wt": 21202.0,
+   "net_wt": 18475.9
+  },
+  {
+   "item_name": "CHAIN MS-70",
+   "gr_wt": 72432.0,
+   "net_wt": 67277.1
+  },
+  {
+   "item_name": "CHAIN JAIN CASTING-062",
+   "gr_wt": 4477.0,
+   "net_wt": 3974.8
+  },
+  {
+   "item_name": "CHAIN BICHHIYA 40-059",
+   "gr_wt": 573.0,
+   "net_wt": 463.0
+  },
+  {
+   "item_name": "CHAIN BICCHIYA 60-060",
+   "gr_wt": 40205.0,
+   "net_wt": 36340.89
+  },
+  {
+   "item_name": "CHAIN 925",
+   "gr_wt": 11206.0,
+   "net_wt": 9893.5
+  },
+  {
+   "item_name": "CHAIN 92.5 DEREWALA",
+   "gr_wt": 24065.0,
+   "net_wt": 22176.68
+  },
+  {
+   "item_name": "CALCUTTA ITEM 85 T-056",
+   "gr_wt": 11902.0,
+   "net_wt": 6247.6
+  },
+  {
+   "item_name": "CALCUTTA ITEM 70-057",
+   "gr_wt": 16266.0,
+   "net_wt": 14368.54
+  },
+  {
+   "item_name": "BUTTON-055",
+   "gr_wt": 192.0,
+   "net_wt": 54.0
+  },
+  {
+   "item_name": "BS-053",
+   "gr_wt": 417319.0,
+   "net_wt": 313566.9
+  },
+  {
+   "item_name": "BRASLET BR-70",
+   "gr_wt": 1484.0,
+   "net_wt": 1243.7
+  },
+  {
+   "item_name": "BRASLET 48-050",
+   "gr_wt": 8546.0,
+   "net_wt": 7370.0
+  },
+  {
+   "item_name": "BRAS SALMAN DELHI -058",
+   "gr_wt": 4002.0,
+   "net_wt": 3604.9
+  },
+  {
+   "item_name": "BP PREMIUM PAYAL",
+   "gr_wt": 65730.0,
+   "net_wt": 49380.59999999999
+  },
+  {
+   "item_name": "BP PAYAL-049",
+   "gr_wt": 81333.0,
+   "net_wt": 61580.8
+  },
+  {
+   "item_name": "BOMBAY BICCHIYA 60 -048",
+   "gr_wt": 8458.0,
+   "net_wt": 8381.5
+  },
+  {
+   "item_name": "BOMBAY BICCHIYA 40 -047",
+   "gr_wt": 18842.0,
+   "net_wt": 18592.8
+  },
+  {
+   "item_name": "BOMBAY BELT SS-40",
+   "gr_wt": 1456.0,
+   "net_wt": 938.0
+  },
+  {
+   "item_name": "BOMBAY BELT BP PREMIUM",
+   "gr_wt": 49898.0,
+   "net_wt": 43670.1
+  },
+  {
+   "item_name": "BOMBAY BELT -045",
+   "gr_wt": 41676.0,
+   "net_wt": 34076.26
+  },
+  {
+   "item_name": "BICCHIYA SHUBH-60",
+   "gr_wt": 4148.0,
+   "net_wt": 3623.0
+  },
+  {
+   "item_name": "BHAKTI -042",
+   "gr_wt": 171676.0,
+   "net_wt": 153911.0
+  },
+  {
+   "item_name": "BARTAN-70 JAIPURI-278",
+   "gr_wt": 3021.0,
+   "net_wt": 2910.5
+  },
+  {
+   "item_name": "BARTAN-040",
+   "gr_wt": 96538.0,
+   "net_wt": 93174.4
+  },
+  {
+   "item_name": "BARTAN B1 FANCY-041",
+   "gr_wt": 32711.0,
+   "net_wt": 31675.0
+  },
+  {
+   "item_name": "BARTAN 925 JAIPURI",
+   "gr_wt": 8569.0,
+   "net_wt": 8453.7
+  },
+  {
+   "item_name": "BARTAN 92.5 FANCY-039",
+   "gr_wt": 6780.0,
+   "net_wt": 6526.9
+  },
+  {
+   "item_name": "BARTAN 92.5 -038",
+   "gr_wt": 26623.0,
+   "net_wt": 25631.4
+  },
+  {
+   "item_name": "BARTAN 70 FANCY-035",
+   "gr_wt": 34271.0,
+   "net_wt": 32888.9
+  },
+  {
+   "item_name": "BARTAN 70 -034",
+   "gr_wt": 68951.0,
+   "net_wt": 66130.2
+  },
+  {
+   "item_name": "BARELI ITEM-032",
+   "gr_wt": 25977.0,
+   "net_wt": 20613.03
+  },
+  {
+   "item_name": "BANDHAN PAYAL BR-60 SADHA",
+   "gr_wt": 239.0,
+   "net_wt": 75.80000000000001
+  },
+  {
+   "item_name": "BALI GENTS",
+   "gr_wt": 1161.0,
+   "net_wt": 1002.5
+  },
+  {
+   "item_name": "BALI",
+   "gr_wt": 7526.0,
+   "net_wt": 6731.25
+  },
+  {
+   "item_name": "BAJU BAND-029",
+   "gr_wt": 850.0,
+   "net_wt": 627.0
+  },
+  {
+   "item_name": "BACCHA TAGDI-028",
+   "gr_wt": 15093.0,
+   "net_wt": 14025.1
+  },
+  {
+   "item_name": "BACCHA PAYAL YASH KP-025",
+   "gr_wt": 11820.0,
+   "net_wt": 11554.0
+  },
+  {
+   "item_name": "BACCHA PAYAL BS-025",
+   "gr_wt": 47620.0,
+   "net_wt": 47059.0
+  },
+  {
+   "item_name": "BACCHA PAYAL AMAN-027",
+   "gr_wt": 24215.0,
+   "net_wt": 23678.0
+  },
+  {
+   "item_name": "BACCHA PAYAL ADITYA-026",
+   "gr_wt": 29073.0,
+   "net_wt": 28499.0
+  },
+  {
+   "item_name": "ATTHA YASH-024",
+   "gr_wt": 67224.0,
+   "net_wt": 60399.7
+  },
+  {
+   "item_name": "ATTHA SS B1-023",
+   "gr_wt": 40080.0,
+   "net_wt": 35522.2
+  },
+  {
+   "item_name": "ATTHA BN DELUX",
+   "gr_wt": 7525.0,
+   "net_wt": 6491.3
+  },
+  {
+   "item_name": "ATTHA BN",
+   "gr_wt": 57997.0,
+   "net_wt": 52160.2
+  },
+  {
+   "item_name": "ATTHA AMAN-70-022",
+   "gr_wt": 47735.0,
+   "net_wt": 42667.8
+  },
+  {
+   "item_name": "ATTHA ADITYA-021",
+   "gr_wt": 30120.0,
+   "net_wt": 26737.6
+  },
+  {
+   "item_name": "ANUSHKA-70 PAYAL",
+   "gr_wt": 46857.0,
+   "net_wt": 40098.4
+  },
+  {
+   "item_name": "ANKADA SUKH-018",
+   "gr_wt": 1569.0,
+   "net_wt": 1272.0
+  },
+  {
+   "item_name": "ANGUTHA 60 -017",
+   "gr_wt": 40899.0,
+   "net_wt": 36285.21
+  },
+  {
+   "item_name": "ANGUTHA 40-016",
+   "gr_wt": 6355.0,
+   "net_wt": 5400.32
+  },
+  {
+   "item_name": "AMRIT A1",
+   "gr_wt": 3190.0,
+   "net_wt": 3162.0
+  },
+  {
+   "item_name": "AMBOJ KANDOURA PS-60",
+   "gr_wt": 11390.0,
+   "net_wt": 10056.7
+  },
+  {
+   "item_name": "AMBOJ KANDOURA -014",
+   "gr_wt": 5193.0,
+   "net_wt": 4262.75
+  },
+  {
+   "item_name": "AMBOJ JUDA -010",
+   "gr_wt": 1180.0,
+   "net_wt": 873.0
+  },
+  {
+   "item_name": "AMBOJ HATHFUL PS-60",
+   "gr_wt": 174.0,
+   "net_wt": 170.0
+  },
+  {
+   "item_name": "AMBOJ HATHFUL -011",
+   "gr_wt": 1074.0,
+   "net_wt": 801.6
+  },
+  {
+   "item_name": "AMAN-70 PREMIUM-273",
+   "gr_wt": 9189.0,
+   "net_wt": 6161.799999999999
+  },
+  {
+   "item_name": "AMAN LX",
+   "gr_wt": 9091.0,
+   "net_wt": 6470.530000000001
+  },
+  {
+   "item_name": "AGRA TAGDI 48-009",
+   "gr_wt": 180.0,
+   "net_wt": 178.0
+  },
+  {
+   "item_name": "ACPL 925 JEWELLERY",
+   "gr_wt": 30461.0,
+   "net_wt": 14629.33
+  },
+  {
+   "item_name": "AARTA THAL B1-020",
+   "gr_wt": 3066.0,
+   "net_wt": 2950.0
+  },
+  {
+   "item_name": "AARTA THAL 70-019",
+   "gr_wt": 1102.0,
+   "net_wt": 1049.1
+  },
+  {
+   "item_name": "AA ATTHA 60-007",
+   "gr_wt": 3227.0,
+   "net_wt": 2469.8
+  },
+  {
+   "item_name": "AA ATTHA 40-005",
+   "gr_wt": 14911.0,
+   "net_wt": 12230.6
+  },
+  {
+   "item_name": "A-60 PAYAL-004",
+   "gr_wt": 79506.0,
+   "net_wt": 66142.0
+  },
+  {
+   "item_name": "84-65-003",
+   "gr_wt": 21640.0,
+   "net_wt": 20301.0
+  },
+  {
+   "item_name": "84-55-002",
+   "gr_wt": 27658.0,
+   "net_wt": 25716.0
+  },
+  {
+   "item_name": "84-46-001",
+   "gr_wt": 30663.0,
+   "net_wt": 28249.0
+  },
+  {
+   "item_name": ".CHAIN -058",
+   "gr_wt": 120633.0,
+   "net_wt": 113267.4
+  }
+ ]
+}

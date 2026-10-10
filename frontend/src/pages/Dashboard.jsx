@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
-import { Package, TrendingUp, AlertTriangle, CheckCircle2, Clock, FileText, Download, Calendar, Users, BarChart3, ArrowUpRight, RotateCcw, Filter, Scale, ChevronDown, ChevronRight } from 'lucide-react';
+import { Package, PackageX, TrendingUp, AlertTriangle, CheckCircle2, Clock, FileText, Download, Calendar, Users, BarChart3, ArrowUpRight, RotateCcw, Filter, Scale, ChevronDown, ChevronRight } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -309,6 +309,24 @@ export default function Dashboard() {
               </div>
             </div>
             <ArrowUpRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+          </CardContent>
+        </Card>
+      </Link>
+
+      {/* Dead Items link */}
+      <Link to="/dead-items" data-testid="dead-items-link" className="block group">
+        <Card className="border-border/30 shadow-sm transition-colors group-hover:border-destructive/50">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-md bg-destructive/10">
+                <PackageX className="h-4 w-4 text-destructive" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">Dead Items</p>
+                <p className="text-xs text-muted-foreground">Stock not turning over — stock vs all-years sales ratio</p>
+              </div>
+            </div>
+            <ArrowUpRight className="h-4 w-4 text-muted-foreground group-hover:text-destructive transition-colors" />
           </CardContent>
         </Card>
       </Link>

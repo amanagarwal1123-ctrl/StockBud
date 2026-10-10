@@ -38,6 +38,7 @@ import HistoricalUpload from './pages/HistoricalUpload';
 import StockAudit from './pages/StockAudit';
 import YearComparison from './pages/YearComparison';
 import CompareSalesDaywise from './pages/CompareSalesDaywise';
+import DeadItems from './pages/DeadItems';
 import Login from './pages/Login';
 import Layout from './components/Layout';
 import { Toaster } from '@/components/ui/sonner';
@@ -116,6 +117,7 @@ function App() {
                       <Route path="/visualization" element={<DataVisualization />} />
                       <Route path="/year-comparison" element={<YearComparison />} />
                       <Route path="/compare-sales-daywise" element={<CompareSalesDaywise />} />
+                      <Route path="/dead-items" element={<DeadItems />} />
                       <Route path="/seasonal-analysis" element={<SeasonalAnalysis />} />
                       <Route path="/stamp-assignments" element={<StampAssignments />} />
                       <Route path="/stamp/:stampName" element={<StampDetail />} />
