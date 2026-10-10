@@ -4467,11 +4467,7 @@
    "item_name": "ZVS-60 BICCHIYA-269",
    "gr_wt": -668.0,
    "net_wt": -55.0
-  },
-  {
-   "item_name": "Totals",
-   "gr_wt": 10583202.0,
-   "net_wt": 8160632.0
   }
- ]
+ ],
+ "version": 2
 }

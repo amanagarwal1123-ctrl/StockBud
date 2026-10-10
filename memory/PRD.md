@@ -554,3 +554,9 @@ Stock must be computed at the INDIVIDUAL ITEM level. Each item retains its own s
 - Fix (commit c7583af): BOTH branch-transfer paths (server.py ~line 624 non-chunked, ~line 969 chunked mapper) now use `re.fullmatch(r"\d+(?:\.0+)?", item_name.strip())` — rejects 4937, 4937.0, 122.0, 4937.000; keeps 84-46-001, 'PAYAL 122.0G'. Check runs BEFORE date/weight processing.
 - No changes to stock/profit formulas, dates, upload replacement policy, or DB records. User will re-upload files.
 - Separate open investigation: Oct-6 daily profit 28kg->20.307kg on production — code proven unchanged (profit_helpers.py/group_utils.py since 21-Jul); deployer debug agent dispatched for prod data RCA (replaced batches, new purchase rows, new item_mappings, purchase_ledger re-upload).
+
+## 2026-06 (fork): Dead Items — Totals row + bygones filter
+- "Totals" item (8160.632kg) was the Excel sheet's totals row inside stock_sale_baseline_2023.json. Removed from JSON (894->893), payload now has version:2; startup seed is version-aware (meta.version) so production auto-re-seeds on next deploy.
+- Added _dead_skip_name() guard (blank / 'total' in name / numeric incl. 4937.0 style) used in: baseline seed (line ~313), dead-items baseline loop, dead-items txn aggregation raw names.
+- Dead Items eligible list now filtered to items with POSITIVE net weight in CURRENT operational stock (_current_stock_keys() via get_current_inventory_cached + group-leader resolution). Bygones hidden; review/removed tabs unfiltered.
+- Verified via curl: 58 eligible items, 0 totals rows, 0 items absent from current stock. Needs redeploy to reach production.

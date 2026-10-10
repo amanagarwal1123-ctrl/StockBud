@@ -305,16 +305,18 @@ async def create_upload_indexes():
         if bl_path.exists():
             payload = json.loads(bl_path.read_text())
             bl_date = payload.get('baseline_date')
+            bl_ver = payload.get('version')
             meta = await db.stock_sale_baseline_meta.find_one({'key': 'meta'})
             count = await db.stock_sale_baseline.count_documents({})
-            if count == 0 or not meta or meta.get('baseline_date') != bl_date:
-                docs = list(payload.get('items', []))
+            if count == 0 or not meta or meta.get('baseline_date') != bl_date or meta.get('version') != bl_ver:
+                docs = [d for d in payload.get('items', [])
+                        if not _dead_skip_name(d.get('item_name'))]
                 if docs:
                     await db.stock_sale_baseline.delete_many({})
                     await db.stock_sale_baseline.insert_many(docs)
                     await db.stock_sale_baseline_meta.update_one(
                         {'key': 'meta'},
-                        {'$set': {'key': 'meta', 'baseline_date': bl_date,
+                        {'$set': {'key': 'meta', 'baseline_date': bl_date, 'version': bl_ver,
                                   'items': len(docs), 'source': payload.get('source')}},
                         upsert=True)
                     logger.info(f"Seeded stock_sale_baseline: {len(docs)} items as on {bl_date}")
@@ -5456,6 +5458,16 @@ def _dead_norm(name):
     return ' '.join(str(name).split()).upper()
 
 
+_NUMERIC_NAME_RE = re.compile(r"\d+(?:\.\d+)?")
+
+
+def _dead_skip_name(name) -> bool:
+    """True for sheet artifacts that are not real items: blank, 'Totals'-style
+    rows, or purely numeric names (calamine reads counts like 4937 as 4937.0)."""
+    s = str(name or '').strip()
+    return not s or 'total' in s.lower() or bool(_NUMERIC_NAME_RE.fullmatch(s))
+
+
 async def _compute_dead_items(as_of: str):
     """Analytical slow-stock estimate (Dead Items ONLY). Per consolidated item:
     opening = SIGNED 31/12/2023 baseline when present (movements counted from
@@ -5508,7 +5520,7 @@ async def _compute_dead_items(as_of: str):
     base_g = {}
     for b in _load_dead_baseline():
         name = b.get('item_name') or ''
-        if not name or str(name).isdigit():
+        if _dead_skip_name(name):
             continue
         bkey = _resolve(name)
         if not bkey or bkey in EXCLUDED:
@@ -5583,7 +5595,7 @@ async def _compute_dead_items(as_of: str):
             try:
                 async for d in coll.aggregate(pipe, allowDiskUse=True, maxTimeMS=60000):
                     raw = d["_id"]["i"] or ''
-                    if not raw or str(raw).isdigit():
+                    if _dead_skip_name(raw):
                         continue
                     key = _resolve(raw)
                     if not key or key in EXCLUDED:
@@ -5791,6 +5803,27 @@ async def _dead_coverage_cutoff():
     return max(last_dates) if last_dates else None
 
 
+async def _current_stock_keys() -> set:
+    """Normalized leader keys with POSITIVE net weight in the CURRENT operational
+    stock (same source as the Current Stock page). Used to hide bygone items."""
+    inv = await get_current_inventory_cached()
+    all_groups = await db.item_groups.find({}, {"_id": 0}).to_list(None)
+    mappings = await db.item_mappings.find({}, {"_id": 0}).to_list(None)
+    map_dict, m2l, _ = build_group_maps(all_groups, mappings)
+    map_norm = {_dead_norm(k): v for k, v in map_dict.items()}
+    m2l_norm = {_dead_norm(k): v for k, v in m2l.items()}
+    totals = {}
+    for si in inv.get('stamp_items', []):
+        raw = si.get('item_name') or ''
+        if not raw:
+            continue
+        master = map_norm.get(_dead_norm(raw), str(raw).strip())
+        leader = m2l_norm.get(_dead_norm(master), master)
+        k = _dead_norm(leader)
+        totals[k] = totals.get(k, 0.0) + (si.get('net_wt') or 0)
+    return {k for k, g in totals.items() if g > _DEAD_EPS_G}
+
+
 async def _dead_items_data(as_of: Optional[str]):
     today_ist = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
     cutoff = await _dead_coverage_cutoff()
@@ -5816,6 +5849,9 @@ async def _dead_items_data(as_of: Optional[str]):
     removed_docs = await db.dead_item_removals.find({}, {"_id": 0}).to_list(2000)
     removed_map = {r['item_name']: r for r in removed_docs}
     items, review, removed = _dead_split(data, removed_map)
+    # Only items present in CURRENT operational stock are listed — bygones are hidden
+    live_keys = await _current_stock_keys()
+    items = [r for r in items if _dead_norm(r['item_name']) in live_keys]
     return data, items, review, removed, coverage
 
 
