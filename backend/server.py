@@ -6803,7 +6803,6 @@ async def find_orphan_transactions(
     total_net_wt = sum(t.get('net_wt', 0) * (1 if t['type'] in ['sale', 'purchase', 'issue'] else -1) for t in all_txns)
     
     # Group by batch_id
-    from collections import defaultdict, Counter
     batch_groups = defaultdict(list)
     for t in all_txns:
         bid = t.get('batch_id', 'NO_BATCH')

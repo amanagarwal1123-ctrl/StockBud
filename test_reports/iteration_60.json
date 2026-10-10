@@ -1,0 +1,51 @@
+{
+  "summary": "Validated Dead Items v4 methodology (actual stock + windowed months-to-clear) and new Daily Closing Stock tab. 12/13 backend tests pass, 1 skipped (back-roll net_delta_kg field not exposed by API). Frontend verified end-to-end: Dead Items page with correct columns, window selector working, Stock Audit tabs including Daily Closing Stock with chart/table/range-buttons, current total matches /inventory/current (15.163 kg).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/stock-audit/daily-closing", "issue": "Response does not include per-day net_delta_kg field, so back-roll consistency (closing[d-1] = closing[d] - delta[d]) cannot be verified from API; test SKIPPED. Values look flat because preview DB coverage cutoff is 2026-07-15 and there are no deltas between 2026-09-11 and today."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard (pre-existing, NOT related to this task)", "issues": ["Hydration warning: Badge <div> rendered inside <p> at Dashboard line 338 — data-testid='dead-dashboard-count'. Should wrap in <span> or change parent."]},
+      {"screen": "Daily Closing Stock (minor)", "issues": ["Recharts initial render emits width(-1)/height(-1) warnings — resolves after mount; cosmetic only."]}
+    ]
+  },
+  "verified_assertions": [
+    "GET /api/analytics/dead-items returns window_days, avg_daily_closing_kg, window_start, sale_events per row; no 'Totals'/numeric names; all stock_net_kg > 0 (60 rows).",
+    "window_days 30 vs 180 changes months_to_clear values (verified).",
+    "Dead items stock_net_kg matches sum of net_wt (grams/1000) in /api/inventory/current for item + merged_names (checked 5 items; tolerance 2%).",
+    "POST /api/dead-items/remove and /restore work with admin token.",
+    "GET /api/analytics/dead-items/summary returns {summary:{confirmed_dead,provisional_dead,no_net_sales,needs_review,dead_total,threshold}} — 25 confirmed, 1 provisional, 5 no-net-sales, 29 review.",
+    "Non-admin TEST_EXEC gets 403 on both /analytics/dead-items and /stock-audit/daily-closing.",
+    "GET /api/stock-audit/daily-closing?days=30 last entry closing_kg == /inventory/current total (15.163 kg).",
+    "Dead Items UI columns match spec: Item, Current Stock (kg), Avg Daily Closing (kg), First Purchase, Net Sales (kg), Avg Monthly (kg), Months to Clear, Last Sale.",
+    "data-testid present: window-days-select, export-excel-btn, tab-upload-audit, tab-daily-closing, closing-chart, closing-table, closing-current-total, closing-range-{30,60,90,180,365}.",
+    "Current Stock page (329 rows) and Profit Analysis endpoint still load (regression OK)."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_dead_items_v4_and_daily_closing.py",
+    "/app/test_reports/pytest/iter60_v4.xml"
+  ],
+  "action_items": [
+    "(Optional) Expose per-day net_delta_kg in /api/stock-audit/daily-closing response to enable back-roll consistency validation.",
+    "(Pre-existing, cosmetic) Fix Dashboard hydration warning: Badge rendered inside <p> at Dashboard.jsx:338 — wrap value in <span> instead of <p>."
+  ],
+  "critical_code_review_comments": [
+    "server.py is very large (>5000 lines). Dead-items module should be split into its own router file.",
+    "Daily-closing endpoint should include net_delta_kg per day to support client-side audit and tests.",
+    "Semaphore 503 design is fine but consider returning Retry-After header to help clients back off deterministically."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_dead_items_v4_and_daily_closing.py"
+  ],
+  "success_rate": {"backend": "100% (12/12 executed, 1 skipped)", "frontend": "100%"},
+  "test_credentials": "admin/admin123, TEST_EXEC/exec123",
+  "seed_data_creation": "None (used existing DB)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Preview DB coverage cutoff is 2026-07-15; Dead Items 'As-of' defaults there (expected). Daily closing flat line (15.163 kg) across last 30 days is correct because no transactions after cutoff. Use /app/backend/tests/test_dead_items_v4_and_daily_closing.py for regression. The old test_dead_items_v3_fixtures.py is intentionally deleted."
+}
