@@ -621,7 +621,7 @@ def parse_excel_file(file_content, file_type: str) -> List[Dict]:
                     continue
                 if 'total' in item_name.lower():
                     continue
-                if item_name.isdigit():
+                if re.fullmatch(r"\d+(?:\.0+)?", item_name.strip()):
                     continue
 
                 trans_type = _safe_str(r.get(type_col) if type_col else None).upper()
@@ -966,7 +966,7 @@ def _build_row_mapper(file_type: str, header_names: list):
             if len(item_name) < 2:
                 return None
             low = item_name.lower()
-            if ('opening' in low and 'balance' in low) or 'total' in low or item_name.isdigit():
+            if ('opening' in low and 'balance' in low) or 'total' in low or re.fullmatch(r"\d+(?:\.0+)?", item_name.strip()):
                 return None
             trans_type = _safe_str(_get(row, type_col)).upper()
             if not trans_type or trans_type in ('', 'NAN'):
