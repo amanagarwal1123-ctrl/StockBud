@@ -240,6 +240,23 @@ async def seed_admin():
 
 app = FastAPI()
 
+async def _build_heavy_indexes():
+    """Runs in background — index builds on 500k+ prod docs must not block startup probes."""
+    try:
+        # dead-items/date-sorted scans on historical_transactions had NO date index (prod MaxTimeMSExpired)
+        await db.historical_transactions.create_index("date")
+        await db.historical_transactions.create_index([("date", 1), ("type", 1)])
+        # distinct() support for /api/stats and stamp history
+        await db.transactions.create_index("party_name")
+        await db.transactions.create_index("item_name")
+        await db.transactions.create_index("stamp")
+        await db.stamp_verifications.create_index([("stamp", 1), ("verified_at", -1)])
+        await db.stamp_approvals.create_index([("stamp", 1), ("approved_at", -1)])
+        logging.getLogger(__name__).info("heavy index build complete")
+    except Exception as e:
+        logging.getLogger(__name__).error(f"heavy index build failed: {e}")
+
+
 @app.on_event("startup")
 async def create_upload_indexes():
     """Create indexes for chunked upload collections and clean stale tasks"""
@@ -250,6 +267,7 @@ async def create_upload_indexes():
     await db.historical_transactions.create_index([("type", 1), ("item_name", 1)])
     await db.historical_transactions.create_index("batch_id")
     await db.transactions.create_index([("type", 1), ("item_name", 1)])
+    asyncio.create_task(_build_heavy_indexes())
 
     # Performance indexes for inventory computation (critical at 17K+ transactions)
     await db.transactions.create_index("date")
@@ -5468,11 +5486,17 @@ async def _compute_dead_items(as_of: str):
         if s is None:
             s = acc[key] = {'w': {t: 0.0 for t in ALL_T}, 'first_purchase': None,
                             'first_move': None, 'last_sale': None, 'sale_events': 0,
-                            'daily': {}, 'ids_t': {}, 'ids_h': {}}
+                            'bal': 0.0, 'min_bal': 0.0, 'ambiguous': False}
         return s
 
+    def _blank(i):
+        return i.strip('|').strip() == ''
+
     # Per item/type/DAY so zero-weight rows can't invent events and daily
-    # balances can be replayed. 'ids' = refno|party identity of positive rows.
+    # balances can be replayed. Daily deltas and identity sets live only for the
+    # current quarter window (a given day always falls in exactly one window),
+    # keeping memory bounded at production scale (>500k docs): balances fold
+    # into running bal/min_bal at each window end, identity sets are discarded.
     for wa, wb in _quarter_windows(hist_start, min(as_of, last_txn_date) if last_txn_date else as_of):
         pipe = [
             {"$match": {"date": {"$gte": wa, "$lte": min(wb, as_of) + " 23:59:59"},
@@ -5487,7 +5511,10 @@ async def _compute_dead_items(as_of: str):
                                          {"$toString": {"$ifNull": ["$party_name", ""]}}]},
                             None]}}}},
         ]
-        for coll, tag in ((db.transactions, 't'), (db.historical_transactions, 'h')):
+        wdaily = {}  # key -> {day: signed delta}, this window only
+        whids = {}   # key -> {(type, day): historical identity set}, this window only
+        # historical first so main-collection rows can be identity-checked against it
+        for coll, tag in ((db.historical_transactions, 'h'), (db.transactions, 't')):
             try:
                 async for d in coll.aggregate(pipe, allowDiskUse=True, maxTimeMS=60000):
                     raw = d["_id"]["i"] or ''
@@ -5503,9 +5530,17 @@ async def _compute_dead_items(as_of: str):
                         continue
                     s = _acc(key)
                     s['w'][t] += w
-                    s['daily'][day] = s['daily'].get(day, 0.0) + (w if t in _DEAD_IN_T else -w)
-                    s[f'ids_{tag}'].setdefault((t, day), set()).update(
-                        i for i in (d.get("ids") or []) if i is not None)
+                    kd = wdaily.setdefault(key, {})
+                    kd[day] = kd.get(day, 0.0) + (w if t in _DEAD_IN_T else -w)
+                    ids = {i for i in (d.get("ids") or []) if i is not None}
+                    if tag == 'h':
+                        whids.setdefault(key, {}).setdefault((t, day), set()).update(ids)
+                    elif not s['ambiguous']:
+                        hids = whids.get(key, {}).get((t, day))
+                        # possible overlap only on same item+type+day in BOTH sources
+                        # AND identities match or are unavailable
+                        if hids is not None and ((hids & ids) or any(map(_blank, hids | ids))):
+                            s['ambiguous'] = True
                     if t == 'purchase':
                         if s['first_purchase'] is None or day < s['first_purchase']:
                             s['first_purchase'] = day
@@ -5520,6 +5555,15 @@ async def _compute_dead_items(as_of: str):
             except Exception as e:
                 logging.getLogger(__name__).error(f"dead-items window {wa}..{wb} failed: {e}")
                 raise HTTPException(status_code=503, detail="Dead items aggregation timed out — please retry in a moment.")
+        # fold this window's daily deltas into running balances, then discard
+        for key, days in wdaily.items():
+            s = acc[key]
+            bal, mn = s['bal'], s['min_bal']
+            for day in sorted(days):
+                bal += days[day]
+                if bal < mn:
+                    mn = bal
+            s['bal'], s['min_bal'] = bal, mn
 
     # Net sales in the last 90 days ending at as_of (recent-stoppage signal)
     d90_from = (datetime.strptime(as_of, '%Y-%m-%d') - timedelta(days=89)).strftime('%Y-%m-%d')
@@ -5550,21 +5594,9 @@ async def _compute_dead_items(as_of: str):
                   (w['sale'] + w['purchase_return'] + w['issue'])
         net_sales_g = w['sale'] - w['sale_return']
 
-        # Replay daily closing balances from zero opening
-        bal = min_bal = 0.0
-        for day in sorted(s['daily']):
-            bal += s['daily'][day]
-            if bal < min_bal:
-                min_bal = bal
-
-        # Possible overlap only when same item+type+day exists in BOTH sources
-        # AND identities match or are unavailable (distinct vouchers = distinct events)
-        ambiguous = False
-        for k in set(s['ids_t']) & set(s['ids_h']):
-            a, b = s['ids_t'][k], s['ids_h'][k]
-            if (a & b) or any(i.strip('|').strip() == '' for i in a | b):
-                ambiguous = True
-                break
+        # Negative daily closing balance / overlap flags were folded in per window
+        min_bal = s['min_bal']
+        ambiguous = s['ambiguous']
 
         review = []
         if s['first_purchase'] is None:
@@ -7537,13 +7569,13 @@ async def get_stats(current_user: dict = Depends(get_current_user)):
     all_parties = await db.transactions.distinct("party_name")
     total_parties = len([p for p in all_parties if p])
     
-    # Get transaction date range
+    # Get transaction date range (index-backed, no full-collection $group scan)
     date_range = {"from_date": None, "to_date": None}
     if total_transactions > 0:
-        pipeline = [{"$group": {"_id": None, "min_date": {"$min": "$date"}, "max_date": {"$max": "$date"}}}]
-        async for doc in db.transactions.aggregate(pipeline):
-            date_range["from_date"] = doc.get("min_date")
-            date_range["to_date"] = doc.get("max_date")
+        first = await db.transactions.find_one({"date": {"$gt": ""}}, {"_id": 0, "date": 1}, sort=[("date", 1)])
+        last = await db.transactions.find_one({"date": {"$gt": ""}}, {"_id": 0, "date": 1}, sort=[("date", -1)])
+        date_range["from_date"] = first["date"] if first else None
+        date_range["to_date"] = last["date"] if last else None
     
     # Get unique items count
     all_items = await db.transactions.distinct("item_name")

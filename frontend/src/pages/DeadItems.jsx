@@ -8,7 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
-import { PackageX, ArrowUp, ArrowDown, RotateCcw, Trash2, ArchiveRestore, AlertTriangle, Sparkles } from 'lucide-react';
+import { PackageX, ArrowUp, ArrowDown, RotateCcw, Trash2, ArchiveRestore, AlertTriangle, Sparkles, FileDown } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -125,6 +126,39 @@ export default function DeadItems() {
     } catch (e) { toast.error('Failed to restore item'); }
   };
 
+  const exportExcel = () => {
+    if (!data) return;
+    const n3 = (v) => (v === null || v === undefined ? null : Number(v.toFixed(3)));
+    const base = (r) => ({
+      Item: r.item_name,
+      Stamp: r.stamp,
+      'Merged Names': (r.merged_names || []).join(', '),
+      'Stock (kg)': n3(r.stock_net_kg),
+      'First Purchase': r.first_purchase || '',
+      'Observed Days': r.observed_days ?? '',
+      'Net Sales (kg)': n3(r.total_net_sales_kg),
+      'Avg Monthly (kg)': n3(r.avg_monthly_sale_kg),
+      'Months to Clear': n3(r.months_to_clear),
+      'Last 90d (kg)': n3(r.sales_90d_kg),
+      'Last Sale': r.last_sale_date || '',
+      Status: r.status,
+    });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([
+      { Info: 'As-of', Value: data.as_of },
+      { Info: 'Coverage (Unverified) through', Value: data.coverage?.cutoff || '' },
+      { Info: 'Dead threshold (months to clear)', Value: th },
+      { Info: 'Method', Value: data.method },
+    ]), 'Info');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(deadRows.map(base)), 'Dead Items');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(provisionalRows.map(base)), 'New Provisional');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet((data.review || []).map((r) => ({
+      ...base(r), 'Review Reasons': (r.review_reasons || []).join(', '),
+    }))), 'Needs Review');
+    XLSX.writeFile(wb, `dead-items-${data.as_of}.xlsx`);
+    toast.success('Excel exported');
+  };
+
   const renderRow = (r, extra) => (
     <tr key={r.item_name} className="border-b border-border/20 hover:bg-muted/30" data-testid={`dead-row-${r.item_name}`}>
       <td className="px-3 py-2">
@@ -225,6 +259,9 @@ export default function DeadItems() {
         )}
         <Button variant="outline" size="sm" className="h-8" onClick={() => fetchData(asOf)} disabled={loading} data-testid="refresh-dead-items">
           <RotateCcw className={`h-3.5 w-3.5 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+        </Button>
+        <Button variant="outline" size="sm" className="h-8" onClick={exportExcel} disabled={!data || loading} data-testid="export-excel-btn">
+          <FileDown className="h-3.5 w-3.5 mr-1.5" /> Excel
         </Button>
       </div>
 
