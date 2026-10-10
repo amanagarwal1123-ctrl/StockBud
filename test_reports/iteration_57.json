@@ -1,0 +1,32 @@
+{
+  "summary": "Verified Stock:Sale ratio baseline fix + new Dead Items feature end-to-end. 10/10 backend pytest cases pass, all frontend flows (nav, threshold, sort, remove/restore, merged subtext) pass. Baseline seed is idempotent (count stays 358 across backend restart).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_dead_items_and_ratio.py",
+    "/app/test_reports/pytest/iter57.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Login form inputs lack data-testid (username-input/password-input/login-button). Minor; placeholder-based selectors work but adding testids would harden regression suites.",
+    "server.py appears quite large (ratio logic + dead-items + baseline seed + sales report all in one file); consider splitting into analytics/ submodules per code_review_guidelines on file size."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_dead_items_and_ratio.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin/admin123, TEST_SM/sm123 (both from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None; used existing seeded preview data + startup-seeded stock_sale_baseline (358 docs).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "verification_evidence": {
+    "ratio_fix": "BS-053 avg_stock_kg=313.567 and stock_sale_ratio≈86.0 for 2025 ALL (asserted). 2026 ALL returns non-null ratios. Pre-baseline range (2022-01-01..2022-06-30) returns null ratios without error. No ratio >2000 observed.",
+    "baseline_seed_idempotent": "Mongo count = 358 before and 358 after `sudo supervisorctl restart backend` + 10s wait. Startup log line: 'Seeded stock_sale_baseline: 358 items as on 2022-12-21'.",
+    "dead_items_endpoint": "months_span=~45.6; all items stock_net_kg >= 0.05; ratio == stock/avg within rounding for rows where avg>0.05; TEST_SM gets 403.",
+    "remove_restore": "POST /api/dead-items/remove returns 200 (admin), item appears in removed[] with removed_by='admin', not in items[]. Restore moves it back. Unknown item => 404; empty item_name => 400; SM gets 403 on both.",
+    "frontend_dead_items_page": "Dashboard shows dead-items-link; /dead-items table has 78 rows, default sort shows 'Never sold' at top (ITEM-ALPHA). Threshold input default='3'; setting to 100 shrinks to 18 rows and badge updates to '18 dead items'. Sort buttons sort-stock_net_kg and sort-stock_sale_ratio toggle without error.",
+    "frontend_remove_restore": "Remove button on first row removes row and 'Removed items (1)' link appears; dialog [data-testid=removed-items-dialog] opens; restore-dead-<item> button restores row and link updates to 'Removed items (0)'. Table shows 'incl.' subtext for merged items. Removed list left EMPTY as required.",
+    "sales_report_regression": "/sales-report page loads cleanly (260KB HTML). Note: default view is current month Oct 2026 with no data; backend pytest already validated 2025 and 2026 ALL ratios are sane and anchored."
+  },
+  "context_for_next_testing_agent": "Admin login returns {access_token, ...} — key is 'access_token' not 'token'. Dead-items endpoint is cached 5min inside _report_cache but remove/restore filtering is applied post-cache so changes are immediate. BS-053 anchor avg_stock_kg≈313.567 is the canonical check for the ratio fix."
+}
